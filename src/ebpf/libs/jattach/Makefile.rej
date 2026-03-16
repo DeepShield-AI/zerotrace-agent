@@ -1,6 +1,6 @@
 --- Makefile
 +++ Makefile
-@@ -15,6 +15,8 @@ else
+@@ -15,6 +15,8 @@
    else
      CFLAGS ?= -O3
      JATTACH_DLL=libjattach.so
@@ -9,7 +9,7 @@
    endif
  
    ifeq ($(UNAME_S),Linux)
-@@ -30,7 +32,7 @@ endif
+@@ -30,7 +32,7 @@
  
  all: build build/$(JATTACH_EXE)
  
@@ -18,7 +18,7 @@
  
  build:
  	mkdir -p build
-@@ -41,6 +43,12 @@ build/jattach: src/posix/*.c src/posix/*.h
+@@ -41,6 +43,12 @@
  build/$(JATTACH_DLL): src/posix/*.c src/posix/*.h
  	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -fPIC -shared -fvisibility=hidden -o $@ src/posix/*.c
  
