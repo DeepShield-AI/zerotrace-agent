@@ -5,3 +5,6 @@
 	path = src/ebpf/libs/jattach
 	url = https://github.com/deepflowio/jattach.git
 	ignore = dirty
+[submodule "message"]
+	path = message
+	url = /home/ubuntu/smore/zerotrace-message
