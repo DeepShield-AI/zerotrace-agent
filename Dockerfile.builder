@@ -11,7 +11,7 @@ RUN cargo install cargo-chef --version 0.1.68 --locked
 # ==============================================================================
 # 第一阶段：分析项目结构，提取所有的 Cargo.toml 和依赖信息
 FROM base AS planner
-COPY ./agent /build/agent
+COPY . /build/agent
 WORKDIR /build/agent
 RUN cargo chef prepare --recipe-path recipe.json
 

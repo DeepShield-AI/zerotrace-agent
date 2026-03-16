@@ -1,10 +1,10 @@
 ### Table of Contents
 
-**[ZeroTrace release v6.6.1](#v6.6.1)**<br/>
+**[zerotrace-agent release v6.6.1](#v6.6.1)**<br/>
 
 # Changelog
 
-### <a id="v6.6.1"></a>ZeroTrace release v6.6.1
+### <a id="v6.6.1"></a>zerotrace-agent release v6.6.1
 
 #### New Feature
 

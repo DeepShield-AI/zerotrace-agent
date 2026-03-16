@@ -1,59 +1,32 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+/target
 
-# Test binary, built with `go test -c`
-*.test
+# generated protobuf files
+!src/proto/mod.rs
+!src/integration/
+!src/integration/mod.rs
+src/proto/*.rs
+src/proto/integration/*.rs
+# src/plugin/wasm/wasm_plugin.rs
+src/flow_generator/protocol_logs/mq/pulsar.proto.rs
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
+src/ebpf/data
+src/ebpf/.data_done
+src/ebpf/libtrace.a
+src/ebpf/zerotrace-ebpfctl
+src/ebpf/kernel/*.elf.tmp
+src/ebpf/kernel/socket_trace.ll
+src/ebpf/tools/ebpftobuffer
 
-# IDEA
-.idea/
-target/
+*.o
+*.elf
+*.objdump
+src/ebpf/samples/rust/src/ebpf.rs
+src/ebpf/samples/rust/target/*
+src/ebpf/llvm-clang-11.0.0-2.el7.x86_64.rpm
+src/ebpf/tools/ebpftobuffer
 
-# Dependency directories (remove the comment below to include it)
-/server/vendor/
-/server/bin/
-/server/controller/cloud/aliyun/api_response.gen.go
-/server/controller/recorder/cache/cache_test.db
-/server/libs/geo/ip_info.go
-/server/libs/kubernetes/watcher.gen.go
-/cli/vendor/
-/cli/bin/
-/server/libs/flow-metrics/pb/metric.proto
-/server/libs/flow-metrics/pb/metric.pb.go
-/server/libs/datatype/pb/flow_log.proto
-/server/libs/stats/pb/stats.proto
-/server/libs/stats/pb/stats.pb.go
-/agent/src/ebpf/kernel/*.ll
-/agent/src/ebpf/kernel/*.objdump
-/agent/src/ebpf/kernel/*.elf
-/agent/src/ebpf/user/socket_trace_bpf_5_2.c
-/agent/src/ebpf/user/socket_trace_bpf_core.c
-/agent/src/ebpf/user/socket_trace_bpf_common.c
-/agent/src/ebpf/user/socket_trace_bpf_5_2_plus.c
-/agent/src/ebpf/user/socket_trace_bpf_kylin.c
-/agent/src/ebpf/user/perf_profiler_bpf_common.c
-/agent/src/ebpf/user/af_packet_fanout_bpf_common.c
-/agent/src/ebpf/user/zerotrace_ebpfctl_bin.c
-/agent/src/ebpf/user/profile/java_agent_so_gnu.c
-/agent/src/ebpf/user/profile/java_agent_so_musl.c
-/agent/src/ebpf/tools/bintobuffer
-/agent/src/ebpf/zerotrace-jattach
-/agent/src/ebpf/user/profile/zerotrace_jattach_bin.c
-/agent/src/ebpf/.profiler
-/agent/src/ebpf/.socket-tracer
-/agent/src/ebpf/samples/rust/profiler/target
-/agent/src/ebpf/samples/rust/profiler/src/ebpf.rs
-/agent/src/ebpf/samples/rust/socket-tracer/build.rs
-/agent/src/ebpf/samples/rust/socket-tracer/target
-/agent/src/ebpf/samples/rust/socket-tracer/src/ebpf.rs
-/agent/src/ebpf/.flamegraph.pl
-/agent/src/ebpf/kernel/*.tmp
+.rpmbuild/
+actual.txt
 
-
-
+plugins/**/Cargo.lock
+logs/

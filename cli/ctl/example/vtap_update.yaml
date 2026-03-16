@@ -1,8 +1,0 @@
-# agent name
-name: xxxxxxxx
-# tap_mode
-tap_mode: 0
-# enable/disable
-enable: 1
-# agent_group_id
-agent_group_id: g-xxxxxxxx

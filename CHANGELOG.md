@@ -1,11 +1,11 @@
 ### Table of Contents
 
-**[ZeroTrace release main](#main)**<br/>
+**[zerotrace-agent release main](#main)**<br/>
 **[Changelog for v6.5](https://github.com/zerotraceio/zerotrace/blob/v6.5/docs/CHANGELOG-6-5.md)**<br/>
 
 # Changelog
 
-### <a id="main"></a>ZeroTrace release main
+### <a id="main"></a>zerotrace-agent release main
 
 #### Bug Fix
 * fix: agnet - eBPF Fix the kernel kick on CPU0 was not triggered [#8817](https://github.com/zerotraceio/zerotrace/pull/8817) by [yinjiping](https://github.com/yinjiping)
