@@ -74,7 +74,7 @@ def update_changelog(changelog_file, categorized_prs, branch):
     if not os.path.exists(changelog_file):
         logging.info(f"{changelog_file} does not exist. Creating a new file.")
         with open(changelog_file, 'w', encoding='utf-8') as f:
-            f.write(f"### Table of Contents\n\n**[ZeroTrace release {branch}](#{branch})**<br/>\n\n# Changelog\n\n### <a id=\"{branch}\"></a>ZeroTrace release {branch}\n\n#### New Feature\n\n#### Bug Fix\n\n")
+            f.write(f"### Table of Contents\n\n**[zerotrace-agent release {branch}](#{branch})**<br/>\n\n# Changelog\n\n### <a id=\"{branch}\"></a>zerotrace-agent release {branch}\n\n#### New Feature\n\n#### Bug Fix\n\n")
 
     with open(changelog_file, 'r', encoding='utf-8') as f:
         content = f.read()
