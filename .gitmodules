@@ -7,4 +7,4 @@
 	ignore = dirty
 [submodule "message"]
 	path = message
-	url = /home/ubuntu/smore/zerotrace-message
+	url = ../zerotrace-message.git
