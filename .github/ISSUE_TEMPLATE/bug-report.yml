@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-name: ZeroTrace bug report
+name: zerotrace-agent bug report
 description: Suggest an idea for this project
 title: "[BUG] "
 labels: [ "bug" ]
@@ -21,11 +21,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        <img src="https://github.com/zerotraceio/zerotrace/blob/main/docs/zerotrace-logo.png?raw=true" alt="ZeroTrace logo" height="90px" align="right" />
+        <img src="https://github.com/zerotraceio/zerotrace/blob/main/docs/zerotrace-logo.png?raw=true" alt="zerotrace-agent logo" height="90px" align="right" />
 
         Thank you for finding the time to propose new feature!
 
-        We really appreciate the community efforts to improve ZeroTrace.
+        We really appreciate the community efforts to improve zerotrace-agent.
 
   - type: checkboxes
     attributes:
@@ -42,9 +42,9 @@ body:
 
   - type: dropdown
     attributes:
-      label: ZeroTrace Component
+      label: zerotrace-agent Component
       description: |
-        What ZeroTrace component are you using? ZeroTrace  has many component, please make sure to choose the component that you found the bug. 
+        What zerotrace-agent component are you using? zerotrace-agent  has many component, please make sure to choose the component that you found the bug. 
       multiple: false
       options:
         - "Agent"
@@ -86,7 +86,7 @@ body:
 
   - type: textarea
     attributes:
-      label: ZeroTrace version
+      label: zerotrace-agent version
       description: >
         Please provide the version information to facilitate inspection.
         
@@ -105,7 +105,7 @@ body:
 
   - type: textarea
     attributes:
-      label: ZeroTrace agent list
+      label: zerotrace-agent agent list
       description: >
         Please provide the Kubernetes CNI information to facilitate inspection.
 
@@ -163,7 +163,7 @@ body:
       description: >
         This is absolutely not required, but we are happy to guide you in the contribution process
         especially if you already have a good understanding of how to implement the feature.
-        ZeroTrace is a totally community-driven project and we love to bring new contributors in.
+        zerotrace-agent is a totally community-driven project and we love to bring new contributors in.
       options:
         - label: Yes I am willing to submit a PR!
 

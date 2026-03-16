@@ -1,6 +1,6 @@
 <!--
 
-Thank you for contributing to ZeroTrace!
+Thank you for contributing to zerotrace-agent!
 Please read this template before submitting pull requests.
 Texts surrounded by `<` and `>` should be replaced accordingly.
 Put an `x` in `[ ]` to mark the item as checked. `[x]`
