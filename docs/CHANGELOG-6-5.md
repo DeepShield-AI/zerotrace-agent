@@ -1,10 +1,10 @@
 ### Table of Contents
 
-**[ZeroTrace release v6.5](#v65)**<br/>
+**[zerotrace-agent release v6.5](#v65)**<br/>
 
 # Changelog
 
-### <a id="v65"></a>ZeroTrace release v6.5
+### <a id="v65"></a>zerotrace-agent release v6.5
 
 #### New Feature
 * feat: Add Changelog [#7095](https://github.com/zerotraceio/zerotrace/pull/7095)
