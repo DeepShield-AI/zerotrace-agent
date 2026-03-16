@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/zerotrace-logo.png" alt="ZeroTrace" width="300" />
+  <img src="./docs/zerotrace-logo.png" alt="zerotrace-agent" width="300" />
 
   <p align="center">Instant Observability for Cloud & AI Applications</p>
   <p align="center">Zero Code, Full Stack, eBPF & Wasm</p>
@@ -7,7 +7,7 @@
 <p align="center">
     <a href="https://zenodo.org/badge/latestdoi/448599559"><img src="https://zenodo.org/badge/448599559.svg" alt="DOI"></a>
     <img alt="GitHub Release" src="https://img.shields.io/github/v/release/zerotraceio/zerotrace"> </a>
-    <img alt="GitCode" src="https://gitcode.com/ZeroTrace/zerotrace/star/badge.svg"> </a>
+    <img alt="GitCode" src="https://gitcode.com/zerotrace-agent/zerotrace/star/badge.svg"> </a>
     <img alt="docker pulls" src="https://img.shields.io/docker/pulls/zerotracece/zerotrace-agent?color=green?label=docker pulls"> </a>
     <img alt="License" src="https://img.shields.io/github/license/zerotraceio/zerotrace?color=purple"> </a>
 </p>
@@ -16,9 +16,9 @@
 
 简体中文 | [English](./README.md) | [日本語](./README-JP.md)
 
-# 什么是 ZeroTrace
+# 什么是 zerotrace-agent
 
-ZeroTrace 开源项目旨在为复杂的云原生及 AI 应用提供深度可观测性。ZeroTrace 基于 eBPF 实现了**零侵扰**（**Zero Code**）的指标、分布式追踪、调用日志、函数剖析数据采集，并结合智能标签（**SmartEncoding**）技术实现了所有观测数据的**全栈**（**Full Stack**）关联和高效存取。使用 ZeroTrace，可以让云原生及 AI 应用自动具有深度可观测性，从而消除开发者不断插桩的沉重负担，并为 DevOps/SRE 团队提供从代码到基础设施的监控及诊断能力。
+zerotrace-agent 开源项目旨在为复杂的云原生及 AI 应用提供深度可观测性。zerotrace-agent 基于 eBPF 实现了**零侵扰**（**Zero Code**）的指标、分布式追踪、调用日志、函数剖析数据采集，并结合智能标签（**SmartEncoding**）技术实现了所有观测数据的**全栈**（**Full Stack**）关联和高效存取。使用 zerotrace-agent，可以让云原生及 AI 应用自动具有深度可观测性，从而消除开发者不断插桩的沉重负担，并为 DevOps/SRE 团队提供从代码到基础设施的监控及诊断能力。
 
 # 核心特性
 
@@ -34,32 +34,32 @@ ZeroTrace 开源项目旨在为复杂的云原生及 AI 应用提供深度可观
 
 # 快速上手
 
-ZeroTrace 共有三种版本：
-- ZeroTrace Community：ZeroTrace 社区版，面向开发人员
-- ZeroTrace Enterprise：ZeroTrace 企业版，面向组织、解决团队协作的问题
-- ZeroTrace Cloud：ZeroTrace SaaS 服务，目前处于测试阶段
+zerotrace-agent 共有三种版本：
+- zerotrace-agent Community：zerotrace-agent 社区版，面向开发人员
+- zerotrace-agent Enterprise：zerotrace-agent 企业版，面向组织、解决团队协作的问题
+- zerotrace-agent Cloud：zerotrace-agent SaaS 服务，目前处于测试阶段
 
-ZeroTrace 社区版由企业版的核心组件构成。通过开源，我们希望让观测更自动，让全世界的开发者更自由。
+zerotrace-agent 社区版由企业版的核心组件构成。通过开源，我们希望让观测更自动，让全世界的开发者更自由。
 
-## 部署 ZeroTrace Community
+## 部署 zerotrace-agent Community
 
-请参考[文档](https://zerotrace.io/docs/zh/ce-install/all-in-one/?from=github)部署 ZeroTrace Community。
+请参考[文档](https://zerotrace.io/docs/zh/ce-install/all-in-one/?from=github)部署 zerotrace-agent Community。
 
-同时我们也搭建了一个完整的 [ZeroTrace Community Demo](https://ce-demo.zerotrace.yunshan.net/?from=github)，欢迎体验。登录账号 / 密码：zerotrace / zerotrace-2026
+同时我们也搭建了一个完整的 [zerotrace-agent Community Demo](https://ce-demo.zerotrace.yunshan.net/?from=github)，欢迎体验。登录账号 / 密码：zerotrace / zerotrace-2026
 
-## 体验 ZeroTrace Enterprise
+## 体验 zerotrace-agent Enterprise
 
-你可以访问 [ZeroTrace Enterprise Demo](https://zerotrace.io/)，目前仅支持中文。
+你可以访问 [zerotrace-agent Enterprise Demo](https://zerotrace.io/)，目前仅支持中文。
 
-# 从源码编译 ZeroTrace
+# 从源码编译 zerotrace-agent
 
 - [编译 zerotrace-agent](./agent/build_cn.md)
 
 # 软件架构
 
-ZeroTrace Community 版本主要由 Agent 和 Server 两个进程组成。每个 K8s 容器节点、传统服务器或云主机中运行一个 Agent ，负责该服务器上所有应用进程的数据采集。Server 运行在一个 K8s 集群中，提供 Agent 管理、标签注入、数据写入、数据查询服务。
+zerotrace-agent Community 版本主要由 Agent 和 Server 两个进程组成。每个 K8s 容器节点、传统服务器或云主机中运行一个 Agent ，负责该服务器上所有应用进程的数据采集。Server 运行在一个 K8s 集群中，提供 Agent 管理、标签注入、数据写入、数据查询服务。
 
-![ZeroTrace 软件架构](./docs/zerotrace-architecture.png)
+![zerotrace-agent 软件架构](./docs/zerotrace-architecture.png)
 
 # 里程碑
 
@@ -68,7 +68,7 @@ ZeroTrace Community 版本主要由 Agent 和 Server 两个进程组成。每个
 # 联系我们
 
 - Discord：点击 [此链接](https://discord.gg/QJ7Dyj4wWM) 加入 Discord 频道.
-- Twitter：[ZeroTrace](https://twitter.com/zerotraceio)
+- Twitter：[zerotrace-agent](https://twitter.com/zerotraceio)
 - 微信群：
 <img src=./docs/wechat-group-keeper.png width=30% />
 
@@ -79,7 +79,7 @@ ZeroTrace Community 版本主要由 Agent 和 Server 两个进程组成。每个
 
 # 荣誉
 
-- ZeroTrace 的论文 [Network-Centric Distributed Tracing with ZeroTrace: Troubleshooting Your Microservices in Zero Code](https://dl.acm.org/doi/10.1145/3603269.3604823) 已被国际顶会 ACM SIGCOMM 2023 录用
-- ZeroTrace 已加入 <a href="https://landscape.cncf.io/?selected=deep-flow">CNCF CLOUD NATIVE Landscape</a>
-- ZeroTrace 已加入 <a href="https://landscape.cncf.io/?selected=deep-flow&group=cnai&item=cnai--model-llm-observability--zerotrace">CNCF CNAI (Cloud-Native AI) Landscape</a>
-- ZeroTrace 已加入 <a href="https://ebpf.io/applications#zerotrace">eBPF Project Landscape</a>
+- zerotrace-agent 的论文 [Network-Centric Distributed Tracing with zerotrace-agent: Troubleshooting Your Microservices in Zero Code](https://dl.acm.org/doi/10.1145/3603269.3604823) 已被国际顶会 ACM SIGCOMM 2023 录用
+- zerotrace-agent 已加入 <a href="https://landscape.cncf.io/?selected=deep-flow">CNCF CLOUD NATIVE Landscape</a>
+- zerotrace-agent 已加入 <a href="https://landscape.cncf.io/?selected=deep-flow&group=cnai&item=cnai--model-llm-observability--zerotrace">CNCF CNAI (Cloud-Native AI) Landscape</a>
+- zerotrace-agent 已加入 <a href="https://ebpf.io/applications#zerotrace">eBPF Project Landscape</a>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/zerotrace-logo.png" alt="ZeroTrace" width="300" />
+  <img src="./docs/zerotrace-logo.png" alt="zerotrace-agent" width="300" />
 
   <p align="center">クラウド＆AIアプリケーションのためのインスタントオブザーバビリティ</p>
   <p align="center">ゼロコード、フルスタック、eBPF＆Wasm</p>
@@ -7,7 +7,7 @@
 <p align="center">
     <a href="https://zenodo.org/badge/latestdoi/448599559"><img src="https://zenodo.org/badge/448599559.svg" alt="DOI"></a>
     <img alt="GitHub Release" src="https://img.shields.io/github/v/release/zerotraceio/zerotrace"> </a>
-    <img alt="GitCode" src="https://gitcode.com/ZeroTrace/zerotrace/star/badge.svg"> </a>
+    <img alt="GitCode" src="https://gitcode.com/zerotrace-agent/zerotrace/star/badge.svg"> </a>
     <img alt="docker pulls" src="https://img.shields.io/docker/pulls/zerotracece/zerotrace-agent?color=green?label=docker pulls"> </a>
     <img alt="License" src="https://img.shields.io/github/license/zerotraceio/zerotrace?color=purple"> </a>
 </p>
@@ -16,9 +16,9 @@
 
 [English](./README.md) | [简体中文](./README-CN.md) | 日本語
 
-# ZeroTraceとは
+# zerotrace-agentとは
 
-ZeroTraceオープンソースプロジェクトは、複雑なクラウドネイティブおよびAIアプリケーションに深い可観測性を提供することを目的としています。ZeroTraceは、eBPFを使用してメトリック、分散トレーシング、リクエストログ、関数プロファイリングデータの**ゼロコード**データ収集を実装し、**SmartEncoding**と組み合わせて、すべての可観測性データの**フルスタック**相関と効率的なアクセスを実現しています。ZeroTraceを使用すると、クラウドネイティブおよびAIアプリケーションは自動的に深い可観測性を備えることができ、開発者がコードに継続的にインストルメントを挿入するという重い負担を取り除き、DevOps/SREチームにコードからインフラストラクチャまでの監視および診断機能を提供します。
+zerotrace-agentオープンソースプロジェクトは、複雑なクラウドネイティブおよびAIアプリケーションに深い可観測性を提供することを目的としています。zerotrace-agentは、eBPFを使用してメトリック、分散トレーシング、リクエストログ、関数プロファイリングデータの**ゼロコード**データ収集を実装し、**SmartEncoding**と組み合わせて、すべての可観測性データの**フルスタック**相関と効率的なアクセスを実現しています。zerotrace-agentを使用すると、クラウドネイティブおよびAIアプリケーションは自動的に深い可観測性を備えることができ、開発者がコードに継続的にインストルメントを挿入するという重い負担を取り除き、DevOps/SREチームにコードからインフラストラクチャまでの監視および診断機能を提供します。
 
 # 主な特徴
 
@@ -34,32 +34,32 @@ ZeroTraceオープンソースプロジェクトは、複雑なクラウドネ�
 
 # クイックスタート
 
-ZeroTraceには3つのバージョンがあります：
-- ZeroTrace Community：開発者向けのZeroTraceコミュニティ版
-- ZeroTrace Enterprise：組織向けのZeroTraceエンタープライズ版、チーム協力の問題を解決
-- ZeroTrace Cloud：ZeroTraceのSaaSサービス、現在ベータテスト中
+zerotrace-agentには3つのバージョンがあります：
+- zerotrace-agent Community：開発者向けのzerotrace-agentコミュニティ版
+- zerotrace-agent Enterprise：組織向けのzerotrace-agentエンタープライズ版、チーム協力の問題を解決
+- zerotrace-agent Cloud：zerotrace-agentのSaaSサービス、現在ベータテスト中
 
-ZeroTraceコミュニティ版は、エンタープライズ版のコアコンポーネントで構成されています。オープンソースを通じて、私たちは観測をより自動化し、世界中の開発者がより自由になることを願っています。
+zerotrace-agentコミュニティ版は、エンタープライズ版のコアコンポーネントで構成されています。オープンソースを通じて、私たちは観測をより自動化し、世界中の開発者がより自由になることを願っています。
 
-## ZeroTrace Communityのデプロイ
+## zerotrace-agent Communityのデプロイ
 
-[ドキュメント](https://zerotrace.io/docs/ce-install/all-in-one/?from=github)に従って、ZeroTrace Communityをデプロイしてください。
+[ドキュメント](https://zerotrace.io/docs/ce-install/all-in-one/?from=github)に従って、zerotrace-agent Communityをデプロイしてください。
 
-また、完全な[ZeroTrace Community Demo](https://ce-demo.zerotrace.yunshan.net/?from=github)も構築していますので、ぜひ体験してみてください。ログインアカウント/パスワード：zerotrace / zerotrace-2026
+また、完全な[zerotrace-agent Community Demo](https://ce-demo.zerotrace.yunshan.net/?from=github)も構築していますので、ぜひ体験してみてください。ログインアカウント/パスワード：zerotrace / zerotrace-2026
 
-## ZeroTrace Enterpriseを体験する
+## zerotrace-agent Enterpriseを体験する
 
-[ZeroTrace Enterprise Demo](https://zerotrace.io/)にアクセスしてください。現在、中国語のみをサポートしています。
+[zerotrace-agent Enterprise Demo](https://zerotrace.io/)にアクセスしてください。現在、中国語のみをサポートしています。
 
-# ZeroTraceのソースコードからのコンパイル
+# zerotrace-agentのソースコードからのコンパイル
 
 - [zerotrace-agentのコンパイル](./agent/build.md)
 
 # ソフトウェアアーキテクチャ
 
-ZeroTrace Community版は、AgentとServerの2つのプロセスで構成されています。各K8sコンテナノード、従来のサーバー、またはクラウドサーバーには、そのサーバー上のすべてのアプリケーションプロセスのデータ収集を担当するAgentが1つ実行されます。ServerはK8sクラスター内で実行され、Agent管理、タグ注入、データ書き込み、データクエリサービスを提供します。
+zerotrace-agent Community版は、AgentとServerの2つのプロセスで構成されています。各K8sコンテナノード、従来のサーバー、またはクラウドサーバーには、そのサーバー上のすべてのアプリケーションプロセスのデータ収集を担当するAgentが1つ実行されます。ServerはK8sクラスター内で実行され、Agent管理、タグ注入、データ書き込み、データクエリサービスを提供します。
 
-![ZeroTrace ソフトウェアアーキテクチャ](./docs/zerotrace-architecture.png)
+![zerotrace-agent ソフトウェアアーキテクチャ](./docs/zerotrace-architecture.png)
 
 # マイルストーン
 
@@ -68,7 +68,7 @@ ZeroTrace Community版は、AgentとServerの2つのプロセスで構成され�
 # お問い合わせ
 
 - Discord：[こちら](https://discord.gg/QJ7Dyj4wWM)をクリックして、Discordチャンネルに参加してください。
-- Twitter：[ZeroTrace](https://twitter.com/zerotraceio)
+- Twitter：[zerotrace-agent](https://twitter.com/zerotraceio)
 - WeChatグループ：
 <img src=./docs/wechat-group-keeper.png width=30% />
 
@@ -79,7 +79,7 @@ ZeroTrace Community版は、AgentとServerの2つのプロセスで構成され�
 
 # 名誉
 
-- ZeroTraceの論文[Network-Centric Distributed Tracing with ZeroTrace: Troubleshooting Your Microservices in Zero Code](https://dl.acm.org/doi/10.1145/3603269.3604823)が、国際トップ会議ACM SIGCOMM 2023に採択されました。
-- ZeroTraceは<a href="https://landscape.cncf.io/?selected=deep-flow">CNCF CLOUD NATIVE Landscape</a>に追加されました。
-- ZeroTraceは<a href="https://landscape.cncf.io/?selected=deep-flow&group=cnai&item=cnai--model-llm-observability--zerotrace">CNCF CNAI (Cloud-Native AI) Landscape</a>に追加されました。
-- ZeroTraceは<a href="https://ebpf.io/applications#zerotrace">eBPF Project Landscape</a>に追加されました。
+- zerotrace-agentの論文[Network-Centric Distributed Tracing with zerotrace-agent: Troubleshooting Your Microservices in Zero Code](https://dl.acm.org/doi/10.1145/3603269.3604823)が、国際トップ会議ACM SIGCOMM 2023に採択されました。
+- zerotrace-agentは<a href="https://landscape.cncf.io/?selected=deep-flow">CNCF CLOUD NATIVE Landscape</a>に追加されました。
+- zerotrace-agentは<a href="https://landscape.cncf.io/?selected=deep-flow&group=cnai&item=cnai--model-llm-observability--zerotrace">CNCF CNAI (Cloud-Native AI) Landscape</a>に追加されました。
+- zerotrace-agentは<a href="https://ebpf.io/applications#zerotrace">eBPF Project Landscape</a>に追加されました。
