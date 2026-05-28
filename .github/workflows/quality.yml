@@ -1,0 +1,80 @@
+# Lightweight quality gate. Complements (does not replace) the inherited
+# DeepFlow agent-build / agent-verify workflows.
+#
+# Runs:  fmt → clippy → cargo-deny → unit tests (no eBPF / native deps)
+# Skips: full build (covered by agent-build.yml), integration tests
+
+name: Quality
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings -C force-frame-pointers=yes"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+  test:
+    name: unit tests (no-default-features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo nextest run --workspace --no-default-features
+
+  hakari:
+    name: workspace-hack verify
+    runs-on: ubuntu-latest
+    # Gate on hakari being initialized post-M0. Until then, the verify step is a no-op.
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hakari
+      - run: cargo hakari verify
+      - run: cargo hakari generate --diff

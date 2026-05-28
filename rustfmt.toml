@@ -1,0 +1,11 @@
+# Stable-only options. Nightly-only fields (group_imports / imports_granularity)
+# intentionally omitted so `cargo fmt` works on the pinned 1.78 toolchain.
+
+edition = "2021"
+max_width = 100
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true
+reorder_imports = true
+reorder_modules = true
+match_block_trailing_comma = true

@@ -1,0 +1,37 @@
+# cargo-hakari config. Run `cargo hakari generate` to regenerate workspace-hack
+# after adding new workspace members or changing feature flags.
+# Docs: https://docs.rs/cargo-hakari/latest/cargo_hakari/
+
+# Name of the workspace-hack crate.
+hakari-package = "workspace-hack"
+
+# Cargo resolver version (must match workspace `resolver`).
+resolver = "2"
+
+# Format of generated workspace-hack/Cargo.toml.
+dep-format-version = "4"
+
+# Style for workspace-hack lines in member Cargo.toml files.
+workspace-hack-line-style = "workspace-dotted"
+
+# Platforms to unify features for. Match the ones in deny.toml [graph.targets].
+platforms = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-linux-android",
+]
+
+# Crates to exclude from unification (e.g. proc-macros, build-scripts that need
+# their own resolution).
+[traversal-excludes]
+workspace-members = [
+    "public-derive-internals",
+    "public-derive",
+]
+
+# After M0 when many crates exist, run:
+#   cargo install cargo-hakari
+#   cargo hakari generate
+#   cargo hakari manage-deps
+# to populate workspace-hack and wire member crates to depend on it.

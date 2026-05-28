@@ -1,0 +1,11 @@
+[package]
+name        = "xtask"
+version     = "0.0.0"
+edition     = "2021"
+publish     = false
+description = "Build helpers for the zerotrace workspace (gen schema, BTF bundle, release, audits)."
+
+[dependencies]
+anyhow = "1"
+clap   = { version = "4", features = ["derive"] }
+xshell = "0.2"
