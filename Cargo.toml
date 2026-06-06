@@ -7,7 +7,12 @@ default-run = "zerotrace-agent"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["crates/*", "plugins/packet_segmentation_reassembly"]
+members = [
+    "crates/*",
+    "plugins/packet_segmentation_reassembly",
+    "workspace-hack",
+    "xtask",
+]
 exclude = [
     "src/ebpf/samples/rust/profiler",
     "src/ebpf/samples/rust/socket-tracer",
@@ -144,6 +149,7 @@ kube-derive = "0.98"
 openshift-openapi = { version = "0.3.1", features = ["v4_5"] }
 schemars = "0.8"
 trace-utils = { path = "crates/trace-utils" }
+zerotrace-forwarder = { path = "crates/zerotrace-forwarder" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.9", features = [

@@ -15,3 +15,13 @@ linker = "/opt/rh/devtoolset-8/root/usr/bin/cc"
 
 [target.aarch64-linux-android]
 linker = "/opt/android-ndk-r26/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
+
+# ────────────────────────────────────────────────────────────
+# Cargo aliases. Invoke via `cargo <alias>` from anywhere in the workspace.
+[alias]
+xtask  = "run --package xtask --release --"
+ck     = "check --workspace --all-targets --no-default-features"
+ckf    = "check --workspace --all-targets"
+fmtck  = "fmt --all -- --check"
+clip   = "clippy --workspace --all-targets --no-default-features -- -D warnings"
+nt     = "nextest run --workspace --no-default-features"

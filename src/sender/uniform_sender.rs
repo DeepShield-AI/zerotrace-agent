@@ -43,6 +43,7 @@ use crate::config::{
     TrafficOverflowAction,
 };
 use crate::exception::ExceptionHandler;
+use crate::reporters::http::HttpForwarder;
 use crate::trident::SenderEncoder;
 use crate::utils::stats::{
     self, Collector, Countable, Counter, CounterType, CounterValue, RefCountable,
@@ -427,6 +428,8 @@ pub struct UniformSender<T> {
     written_size: u64,
 
     cached: bool,
+    // Lazily-built HTTP reporter (zerotrace-forwarder) used when data_via_http is on.
+    http_forwarder: Option<HttpForwarder>,
 }
 
 impl<T: Sendable> UniformSender<T> {
@@ -480,6 +483,7 @@ impl<T: Sendable> UniformSender<T> {
             pre_file_path: String::new(),
             written_size: 0,
             cached: true,
+            http_forwarder: None,
         }
     }
 
@@ -551,7 +555,52 @@ impl<T: Sendable> UniformSender<T> {
         }
     }
 
+    // Ship the encoded wire buffer to the server over HTTP via the forwarder-backed
+    // reporter, lazily building it on first use. Interim bridge: the reporter blocks
+    // on its own runtime; the M0/M1 async pipeline will replace this.
+    fn send_buffer_http(&mut self, config: &SenderConfig) {
+        if self.http_forwarder.is_none() {
+            let base_url = format!("http://{}:{}", config.dest_ip, config.data_http_port);
+            match HttpForwarder::new(
+                base_url,
+                config.api_key.clone(),
+                Some(config.agent_id.to_string()),
+            ) {
+                Ok(f) => self.http_forwarder = Some(f),
+                Err(e) => {
+                    error!("{} http forwarder init failed: {}", self.name, e);
+                    self.counter.dropped.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
+        let buffer = self.encoder.get_buffer();
+        let result = self.http_forwarder.as_ref().unwrap().upload(buffer);
+        match result {
+            Ok(()) => {
+                self.counter.tx.fetch_add(1, Ordering::Relaxed);
+                self.counter
+                    .tx_bytes
+                    .fetch_add(buffer.len() as u64, Ordering::Relaxed);
+            }
+            Err(e) => {
+                if self.counter.dropped.load(Ordering::Relaxed) == 0 {
+                    self.exception_handler.set(Exception::AnalyzerSocketError);
+                    error!("{} http forwarder upload failed: {}", self.name, e);
+                }
+                self.counter.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
     fn send_buffer(&mut self, config: &SenderConfig) {
+        // ZeroTrace: when HTTP data upload is enabled, ship the encoded wire buffer
+        // through the HTTP reporter (zerotrace-forwarder) instead of the raw TCP
+        // stream. The TCP path below is untouched.
+        if config.data_via_http {
+            self.send_buffer_http(config);
+            return;
+        }
         if self.is_traffic_overflow(config) {
             return;
         }
@@ -657,6 +706,7 @@ impl<T: Sendable> UniformSender<T> {
             };
         }
     }
+
 
     fn log_when_traffic_overflow(&mut self, config: &SenderConfig) {
         let now = SystemTime::now()

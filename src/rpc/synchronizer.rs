@@ -1312,6 +1312,17 @@ impl Synchronizer {
         self.threads.lock().push(self.runtime.spawn(async move {
             let mut grpc_failed_count = 0;
             while running.load(Ordering::SeqCst) {
+                // HTTP is the default: no server->agent push stream (Datadog-style);
+                // config arrives via periodic HTTP Sync polling in the main run loop.
+                // Idle here instead of opening a gRPC push stream. Only the explicit
+                // ZT_DATA_VIA_HTTP=false|0|no opt-out re-enables the gRPC push.
+                let http_disabled = std::env::var("ZT_DATA_VIA_HTTP")
+                    .map(|v| matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
+                    .unwrap_or(false);
+                if !http_disabled {
+                    time::sleep(Duration::from_secs(60)).await;
+                    continue;
+                }
                 let response = session
                     .grpc_push_with_statsd(Synchronizer::generate_sync_request(
                         &agent_id,

@@ -1,0 +1,43 @@
+# typos config. Run `typos` to check; `typos --write-changes` to auto-fix.
+# Docs: https://github.com/crate-ci/typos
+
+[default]
+extend-ignore-re = [
+    # Allow line-level disable via `# spellchecker:disable-line`
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+    # Allow hex literals
+    "\\b0x[0-9a-fA-F]+\\b",
+]
+
+[default.extend-words]
+# Project-specific identifiers and tool names.
+zerotrace = "zerotrace"
+deepflow  = "deepflow"
+trident   = "trident"
+ebpf      = "ebpf"
+fentry    = "fentry"
+fexit     = "fexit"
+kprobe    = "kprobe"
+uprobe    = "uprobe"
+uprobes   = "uprobes"
+syscall   = "syscall"
+syscalls  = "syscalls"
+hpack     = "hpack"
+procfs    = "procfs"
+hakari    = "hakari"
+
+[files]
+extend-exclude = [
+    "target/",
+    "src/ebpf/libs/",
+    "src/ebpf/samples/",
+    "message/",
+    "Cargo.lock",
+    "*.pcap",
+    "*.pcapng",
+    "*.pptx",
+    "*.ppt",
+    "*.png",
+    "*.jpg",
+    "CHANGELOG.md",
+]
