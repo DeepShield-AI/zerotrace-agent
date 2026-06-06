@@ -3622,6 +3622,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "reqwest"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "566cafdd92868e0939d3fb961bd0dc25fcfaaed179291093b3d43e6b3150ea10"
+dependencies = [
+ "base64 0.22.1",
+ "bytes 1.10.1",
+ "futures-core",
+ "futures-util",
+ "http 1.1.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
+ "ipnet",
+ "js-sys",
+ "log 0.4.22",
+ "mime",
+ "once_cell",
+ "percent-encoding",
+ "pin-project-lite",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper 0.1.2",
+ "tokio",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "winreg",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4981,6 +5016,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-bindgen-futures"
+version = "0.4.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d1985d03709c53167ce907ff394f5316aa22cb4e12761295c5dc57dacb6297e"
+dependencies = [
+ "cfg-if",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "wasm-bindgen-macro"
 version = "0.2.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5861,6 +5908,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
 
 [[package]]
+name = "winreg"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "winx"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6065,7 +6122,20 @@ dependencies = [
  "wasmtime-wasi",
  "winapi",
  "windows 0.30.0",
+ "zerotrace-forwarder",
  "zstd 0.13.2",
+]
+
+[[package]]
+name = "zerotrace-forwarder"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.22",
+ "prost",
+ "public",
+ "reqwest",
+ "thiserror 1.0.47",
+ "tokio",
 ]
 
 [[package]]

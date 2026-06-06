@@ -2512,6 +2512,14 @@ pub struct Communication {
     pub request_via_nat_ip: bool,
     pub proxy_controller_ip: String,
     pub proxy_controller_port: u16,
+    // ZeroTrace: upload observability data over HTTP short connections instead of the
+    // raw TCP stream to the ingester. The on-wire payload (BaseHeader[+FlowHeader]+
+    // protobuf) is identical; only the transport changes.
+    pub data_via_http: bool,
+    // Controller HTTP port serving POST /api/v1/data/ingest (default 30417).
+    pub data_http_port: u16,
+    // API key sent in the X-Api-Key header for HTTP data upload.
+    pub api_key: String,
 }
 
 pub const GRPC_BUFFER_SIZE_MIN: usize = 1 << 20;
@@ -2529,6 +2537,11 @@ impl Default for Communication {
             max_throughput_to_ingester: 100,
             ingester_traffic_overflow_action: TrafficOverflowAction::Waiting,
             request_via_nat_ip: false,
+            // HTTP is the default transport now; set ZT_DATA_VIA_HTTP=false to fall
+            // back to the legacy gRPC/TCP path (kept until it is removed).
+            data_via_http: true,
+            data_http_port: 30417,
+            api_key: "".to_string(),
         }
     }
 }

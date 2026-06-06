@@ -34,6 +34,7 @@ use crate::{
     utils::stats::{self, AtomicTimeStats},
 };
 use grpc::dial as grpc_dial;
+use zerotrace_forwarder::Forwarder;
 
 use public::{
     counter::{Countable, Counter, CounterType, CounterValue, RefCountable},
@@ -152,6 +153,9 @@ pub struct Session {
     exception_handler: ExceptionHandler,
     counters: Vec<Arc<GrpcCallCounter>>,
     message_counter: Arc<GrpcMessageCounter>,
+    // ZeroTrace: HTTP control-plane forwarder, cached per current-server IP. Built on
+    // demand when full-HTTP mode is enabled; None means fall back to gRPC.
+    http_forwarder: RwLock<Option<(String, Forwarder)>>,
 }
 
 impl Session {
@@ -208,6 +212,51 @@ impl Session {
             counters,
             message_counter,
             controller_cert_file_prefix,
+            http_forwarder: RwLock::new(None),
+        }
+    }
+
+    // http_control_forwarder returns an HTTP forwarder targeting the *current*
+    // controller when full-HTTP mode is enabled (ZT_DATA_VIA_HTTP), else None so the
+    // caller falls back to gRPC. Cached per current-server IP, rebuilt on rotation.
+    // api_key/port come from env (ZT_API_KEY / ZT_DATA_HTTP_PORT, default 30417) — the
+    // same knobs as the data path.
+    fn http_control_forwarder(&self) -> Option<Forwarder> {
+        // HTTP control plane is the default; ZT_DATA_VIA_HTTP=false|0|no falls back to gRPC.
+        let disabled = std::env::var("ZT_DATA_VIA_HTTP")
+            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
+            .unwrap_or(false);
+        if disabled {
+            return None;
+        }
+        let (ip, _grpc_port) = self.get_current_server();
+        if ip.is_empty() {
+            return None;
+        }
+        if let Some((cached_ip, fwd)) = self.http_forwarder.read().as_ref() {
+            if *cached_ip == ip {
+                return Some(fwd.clone());
+            }
+        }
+        let port: u16 = std::env::var("ZT_DATA_HTTP_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30417);
+        let api_key = std::env::var("ZT_API_KEY").unwrap_or_default();
+        match Forwarder::builder()
+            .base_url(format!("http://{}:{}", ip, port))
+            .api_key(api_key)
+            .timeout(SESSION_TIMEOUT)
+            .build()
+        {
+            Ok(fwd) => {
+                *self.http_forwarder.write() = Some((ip, fwd.clone()));
+                Some(fwd)
+            }
+            Err(e) => {
+                error!("build http control forwarder failed: {}", e);
+                None
+            }
         }
     }
 
@@ -335,6 +384,22 @@ impl Session {
     ) -> Result<tonic::Response<agent::SyncResponse>, tonic::Status> {
         log::trace!("grpc sync prepare client");
         self.update_current_server().await;
+        if let Some(fwd) = self.http_control_forwarder() {
+            let now = Instant::now();
+            return match fwd.sync(&request).await {
+                Ok(resp) => {
+                    if with_statsd {
+                        self.counters[SYNC_ENDPOINT].delay.update(now.elapsed());
+                        self.update_message_counter(resp.encoded_len());
+                    }
+                    Ok(tonic::Response::new(resp))
+                }
+                Err(e) => {
+                    self.set_request_failed(true);
+                    Err(tonic::Status::unavailable(format!("http sync: {}", e)))
+                }
+            };
+        }
         let (channel, rx_size) = match self.get_client() {
             Some(c) => c,
             None => {
@@ -392,6 +457,13 @@ impl Session {
         request: agent::NtpRequest,
     ) -> Result<tonic::Response<agent::NtpResponse>, tonic::Status> {
         // Ntp rpc name is `query`
+        if let Some(fwd) = self.http_control_forwarder() {
+            return fwd
+                .query_time(&request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(|e| tonic::Status::unavailable(e.to_string()));
+        }
         sync_grpc_call_unary!(self, query, request, NTP_ENDPOINT)
     }
 
@@ -399,6 +471,13 @@ impl Session {
         &self,
         request: agent::GenesisSyncRequest,
     ) -> Result<tonic::Response<agent::GenesisSyncResponse>, tonic::Status> {
+        if let Some(fwd) = self.http_control_forwarder() {
+            return fwd
+                .genesis_sync(&request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(|e| tonic::Status::unavailable(e.to_string()));
+        }
         sync_grpc_call_unary!(self, genesis_sync, request, GENESIS_SYNC_ENDPOINT)
     }
 
@@ -406,6 +485,13 @@ impl Session {
         &self,
         request: agent::KubernetesApiSyncRequest,
     ) -> Result<tonic::Response<agent::KubernetesApiSyncResponse>, tonic::Status> {
+        if let Some(fwd) = self.http_control_forwarder() {
+            return fwd
+                .kubernetes_api_sync(&request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(|e| tonic::Status::unavailable(e.to_string()));
+        }
         sync_grpc_call_unary!(
             self,
             kubernetes_api_sync,
@@ -418,6 +504,13 @@ impl Session {
         &self,
         request: agent::KubernetesClusterIdRequest,
     ) -> Result<tonic::Response<agent::KubernetesClusterIdResponse>, tonic::Status> {
+        if let Some(fwd) = self.http_control_forwarder() {
+            return fwd
+                .kubernetes_cluster_id(&request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(|e| tonic::Status::unavailable(e.to_string()));
+        }
         sync_grpc_call_unary!(
             self,
             get_kubernetes_cluster_id,
@@ -430,6 +523,13 @@ impl Session {
         &self,
         request: agent::GpidSyncRequest,
     ) -> Result<tonic::Response<agent::GpidSyncResponse>, tonic::Status> {
+        if let Some(fwd) = self.http_control_forwarder() {
+            return fwd
+                .gpid_sync(&request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(|e| tonic::Status::unavailable(e.to_string()));
+        }
         sync_grpc_call_unary!(self, gpid_sync, request, GPID_SYNC_ENDPOINT)
     }
 

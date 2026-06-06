@@ -268,6 +268,10 @@ pub struct SenderConfig {
     pub server_tx_bandwidth_threshold: u64,
     pub bandwidth_probe_interval: Duration,
     pub enabled: bool,
+    // ZeroTrace HTTP data upload (see Communication.data_via_http).
+    pub data_via_http: bool,
+    pub data_http_port: u16,
+    pub api_key: String,
 }
 
 impl Default for SenderConfig {
@@ -2153,6 +2157,18 @@ impl TryFrom<(Config, UserConfig)> for ModuleConfig {
                 organize_id: conf.global.common.organize_id,
                 // 发送目标端口
                 dest_port: conf.global.communication.ingester_port,
+                // ZeroTrace: HTTP 数据上报 (短连接, 与 TCP 同样的 wire 负载)。
+                // 环境变量优先 (Datadog DD_API_KEY 风格), 便于容器化部署注入凭据而不落盘:
+                //   ZT_DATA_VIA_HTTP=true|1|yes   ZT_DATA_HTTP_PORT=30417   ZT_API_KEY=<key>
+                data_via_http: std::env::var("ZT_DATA_VIA_HTTP")
+                    .map(|v| !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
+                    .unwrap_or(conf.global.communication.data_via_http),
+                data_http_port: std::env::var("ZT_DATA_HTTP_PORT")
+                    .ok()
+                    .and_then(|v| v.parse::<u16>().ok())
+                    .unwrap_or(conf.global.communication.data_http_port),
+                api_key: std::env::var("ZT_API_KEY")
+                    .unwrap_or_else(|_| conf.global.communication.api_key.clone()),
                 // NPB (网络包分发) 目标端口
                 npb_port: conf.outputs.npb.target_port,
                 // 自定义 VXLAN Flags
