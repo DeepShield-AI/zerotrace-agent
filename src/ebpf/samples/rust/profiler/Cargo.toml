@@ -1,0 +1,22 @@
+[package]
+name = "profiler"
+version = "0.1.0"
+authors = ["Yin Jiping <jiping@yunshan.net>"]
+edition = "2021"
+build = "build.rs"
+
+[build-dependencies]
+dunce = "0.1.1"
+
+[dependencies]
+cfg-if = "1.0"
+libc = "0.2"
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+lazy_static = "1.4.0"
+log = "0.4"
+env_logger = "0.9"
+trace-utils = { path = "../../../../../crates/trace-utils" }
+
+[profile.release]
+debug = true
