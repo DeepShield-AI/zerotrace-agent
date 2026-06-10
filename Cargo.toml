@@ -14,6 +14,7 @@ members = [
     "xtask",
 ]
 exclude = [
+    "crates/legacy",
     "src/ebpf/samples/rust/profiler",
     "src/ebpf/samples/rust/socket-tracer",
 ]
@@ -25,9 +26,9 @@ k8s-openapi = { version = "0.24", features = ["v1_32", "schemars"] }
 kube = { version = "0.98", default-features = false }
 num_enum = "0.7"
 prost = "0.12"
-public = { path = "crates/public" }
-public-derive = { path = "crates/public-derive" }
-public-derive-internals = { path = "crates/public-derive-internals" }
+public = { path = "crates/legacy/public" }
+public-derive = { path = "crates/legacy/public-derive" }
+public-derive-internals = { path = "crates/legacy/public-derive-internals" }
 regex = "1"
 semver = { version = "1.0", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -56,48 +57,48 @@ cadence = "0.27.0"
 cfg-if.workspace = true
 chrono = "0.4"
 clap = { version = "3.2.8", features = ["derive"] }
-cloud_platform = { path = "plugins/cloud_platform" }
+cloud_platform = { path = "crates/plugins/cloud_platform" }
 dashmap = "5.3.3"
 dns-lookup = "1.0.8"
 elf = "0.4.0"
-enterprise-utils = { path = "crates/enterprise-utils", optional = true }
+enterprise-utils = { path = "crates/legacy/enterprise-utils", optional = true }
 enum_dispatch = "0.3.7"
 envmnt = "0.10.4"
 flate2 = "1.0"
 flexi_logger = { version = "0.29", features = ["compress"] }
 fs2 = "0.4"
 futures = "~0.3"
-grpc = { path = "plugins/grpc" }
+grpc = { path = "crates/plugins/grpc" }
 hex = "0.4.3"
 hostname = "0.3.1"
 hpack = { git = "https://github.com/deepflowio/hpack-rs/" }
 http = "0.2.5"
-http2 = { path = "plugins/http2" }
+http2 = { path = "crates/plugins/http2" }
 humantime = "2.1"
 humantime-serde = "1.0"
 hyper = { version = "0.14", features = ["full"] }
-integration_skywalking = { path = "plugins/integration_skywalking", optional = true }
-integration_vector = { path = "plugins/integration_vector", optional = true }
+integration_skywalking = { path = "crates/plugins/integration_skywalking", optional = true }
+integration_vector = { path = "crates/plugins/integration_vector", optional = true }
 ipnet = "2.4.0"
 ipnetwork = "0.18.0"
 lazy_static = "1.5.0"
-l7 = { path = "plugins/l7" }
+l7 = { path = "crates/plugins/l7" }
 libc = "0.2.103"
 log = "0.4"
 lru = "0.9.0"
 md-5 = "0.10"
 nom = "7"
-npb_handler = { path = "plugins/npb_handler" }
-npb_pcap_policy = { path = "plugins/npb_pcap_policy" }
-npb_sender = { path = "plugins/npb_sender" }
+npb_handler = { path = "crates/plugins/npb_handler" }
+npb_pcap_policy = { path = "crates/plugins/npb_pcap_policy" }
+npb_sender = { path = "crates/plugins/npb_sender" }
 num_enum.workspace = true
-packet_dedup = { path = "plugins/packet_dedup" }
-packet_segmentation_reassembly = { path = "plugins/packet_segmentation_reassembly" }
-packet_sequence_block = { path = "plugins/packet_sequence_block" }
+packet_dedup = { path = "crates/plugins/packet_dedup" }
+packet_segmentation_reassembly = { path = "crates/plugins/packet_segmentation_reassembly" }
+packet_sequence_block = { path = "crates/plugins/packet_sequence_block" }
 page_size = "0.4.2"
 parking_lot = "0.11"
 pcap = "2.4"
-pcap_assembler = { path = "plugins/pcap_assembler" }
+pcap_assembler = { path = "crates/plugins/pcap_assembler" }
 pcap-parser = { version = "0.17", optional = true }
 pcap-sys = "0.1.3"
 pnet = "^0.29"
@@ -115,7 +116,7 @@ serde_yaml = "0.9"
 signal-hook = "0.3"
 simple-dns = "0.10"
 socket2 = "0.4.4"
-special_recv_engine = { path = "plugins/special_recv_engine" }
+special_recv_engine = { path = "crates/plugins/special_recv_engine" }
 strum.workspace = true
 strum_macros.workspace = true
 sysinfo = { version = "0.26", default-features = false }
@@ -123,7 +124,7 @@ thiserror = "1.0"
 time = "0.3.9"
 tokio = { version = "1.20.1", features = ["full"] }
 tonic.workspace = true
-tunnel = { path = "plugins/tunnel" }
+tunnel = { path = "crates/plugins/tunnel" }
 uuid = "1"
 wasmtime = "12.0.1"
 wasmtime-wasi = "12.0.1"
@@ -135,7 +136,7 @@ nix = "0.23"
 # As of procfs 0.16.0, Process::fd().iter() still not giving correct results on kernel 2.6.32
 # ref: https://github.com/eminence/procfs/pull/241
 procfs = { git = "https://github.com/deepflowio/procfs/" }
-reorder = { path = "plugins/reorder" }
+reorder = { path = "crates/plugins/reorder" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 k8s-openapi.workspace = true
@@ -148,7 +149,7 @@ kube = { workspace = true, features = [
 kube-derive = "0.98"
 openshift-openapi = { version = "0.3.1", features = ["v4_5"] }
 schemars = "0.8"
-trace-utils = { path = "crates/trace-utils" }
+trace-utils = { path = "crates/legacy/trace-utils" }
 zerotrace-forwarder = { path = "crates/zerotrace-forwarder" }
 
 [target.'cfg(target_os = "windows")'.dependencies]

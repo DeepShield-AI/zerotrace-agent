@@ -1,10 +1,10 @@
-[submodule "message/opentelemetry"]
-	path = message/opentelemetry
+[submodule "proto/opentelemetry"]
+	path = proto/opentelemetry
 	url = https://github.com/deepflowio/opentelemetry-proto.git
-[submodule "src/ebpf/libs/jattach"]
-	path = src/ebpf/libs/jattach
+[submodule "src/collectors/ebpf/legacy/libs/jattach"]
+	path = src/collectors/ebpf/legacy/libs/jattach
 	url = https://github.com/deepflowio/jattach.git
 	ignore = dirty
-[submodule "message"]
-	path = message
+[submodule "proto"]
+	path = proto
 	url = ../zerotrace-message.git

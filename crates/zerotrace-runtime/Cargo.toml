@@ -1,0 +1,12 @@
+[package]
+name = "zerotrace-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+zerotrace-core = { path = "../zerotrace-core" }
+zerotrace-kernel = { path = "../zerotrace-kernel" }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+tokio = { version = "1", features = ["full"] }

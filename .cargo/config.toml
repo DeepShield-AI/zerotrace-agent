@@ -2,10 +2,10 @@
 rustflags = ["-C", "force-frame-pointers=yes"]
 
 [target.x86_64-unknown-linux-gnu]
-linker = "/opt/rh/devtoolset-11/root/usr/bin/cc"
+linker = "/usr/bin/cc"
 
 [target.x86_64-unknown-linux-musl]
-linker = "/opt/rh/devtoolset-11/root/usr/bin/cc"
+linker = "/usr/bin/cc"
 
 [target.aarch64-unknown-linux-gnu]
 linker = "/opt/rh/devtoolset-8/root/usr/bin/cc"
