@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 hyper = { version = "0.14", features = ["full"] }
-public = { path = "../../public" }
+public = { path = "../../legacy/public" }
 prost.workspace = true

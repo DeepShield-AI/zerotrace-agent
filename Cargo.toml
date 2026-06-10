@@ -35,11 +35,11 @@ members = [
     "crates/plugins/special_recv_engine",
     "crates/plugins/tunnel",
     # ── Legacy crates ──
-    "crates/public",
-    "crates/public-derive",
-    "crates/public-derive-internals",
-    "crates/trace-utils",
-    "crates/enterprise-utils",
+    "crates/legacy/public",
+    "crates/legacy/public-derive",
+    "crates/legacy/public-derive-internals",
+    "crates/legacy/trace-utils",
+    "crates/legacy/enterprise-utils",
 ]
 exclude = [
     "crates/plugins",
@@ -55,9 +55,9 @@ k8s-openapi = { version = "0.24", features = ["v1_32", "schemars"] }
 kube = { version = "0.98", default-features = false }
 num_enum = "0.7"
 prost = "0.12"
-public = { path = "crates/public" }
-public-derive = { path = "crates/public-derive" }
-public-derive-internals = { path = "crates/public-derive-internals" }
+public = { path = "crates/legacy/public" }
+public-derive = { path = "crates/legacy/public-derive" }
+public-derive-internals = { path = "crates/legacy/public-derive-internals" }
 regex = "1"
 semver = { version = "1.0", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -97,7 +97,7 @@ cloud_platform = { path = "crates/plugins/cloud_platform" }
 dashmap = "5.3"
 dns-lookup = "1.0"
 elf = "0.4"
-enterprise-utils = { path = "crates/enterprise-utils", optional = true }
+enterprise-utils = { path = "crates/legacy/enterprise-utils", optional = true }
 enum_dispatch = "0.3"
 envmnt = "0.10"
 flate2 = "1"
@@ -183,7 +183,7 @@ kube = { workspace = true, features = [
 kube-derive = "0.98"
 openshift-openapi = { version = "0.3", features = ["v4_5"] }
 schemars = "0.8"
-trace-utils = { path = "crates/trace-utils" }
+trace-utils = { path = "crates/legacy/trace-utils" }
 zerotrace-forwarder = { path = "crates/zerotrace-forwarder" }
 
 [target.'cfg(target_os = "windows")'.dependencies]

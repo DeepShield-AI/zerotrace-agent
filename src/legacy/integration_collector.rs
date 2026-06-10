@@ -632,7 +632,7 @@ async fn handler(
 ) -> Result<Response<Body>, GenericError> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
-            let doc_bytes = include_bytes!("../resources/doc/integration_collector.pdf");
+            let doc_bytes = include_bytes!("../../resources/doc/integration_collector.pdf");
             Ok(Response::builder()
                 .header("Content-Type", "application/pdf")
                 .body(doc_bytes.as_slice().into())

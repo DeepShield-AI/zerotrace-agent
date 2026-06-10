@@ -23,23 +23,23 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
         .out_dir("src/proto")
         .compile(
             &[
-                "../../proto/metric.proto",
-                "../../proto/flow_log.proto",
-                "../../proto/stats.proto",
-                "../../proto/k8s_event.proto",
+                "../../../proto/metric.proto",
+                "../../../proto/flow_log.proto",
+                "../../../proto/stats.proto",
+                "../../../proto/k8s_event.proto",
             ],
-            &["../../proto"],
+            &["../../../proto"],
         )?;
     tonic_build::configure()
         .build_server(true)
         .out_dir("src/proto")
-        .compile(&["../../proto/agent.proto"], &["../../proto"])?;
+        .compile(&["../../../proto/agent.proto"], &["../../../proto"])?;
     tonic_build::configure()
         .build_server(false)
         .out_dir("src/proto/integration")
         .compile(
-            &["../../proto/opentelemetry/opentelemetry/proto/trace/v1/trace.proto"],
-            &["../../proto/opentelemetry"],
+            &["../../../proto/opentelemetry/opentelemetry/proto/trace/v1/trace.proto"],
+            &["../../../proto/opentelemetry"],
         )?;
 
     // FIXME: Wait for the rustfmt ignore attribute to be removed in stable rust support
