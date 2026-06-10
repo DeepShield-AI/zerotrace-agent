@@ -1,0 +1,73 @@
+/*
+ * Copyright (c) 2024 Yunshan Networks
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
+
+use serde::Serialize;
+
+use crate::utils::stats::{Counter, CounterType, CounterValue, RefCountable};
+
+// 每次获取统计数据后此结构体都会被清零，不能在其中保存Flow级别的信息避免被清空
+#[derive(Debug, Default, PartialEq, Clone, Serialize)]
+pub struct PerfStats {
+    pub req_count: u32,
+    pub resp_count: u32,
+    pub req_err_count: u32,
+    pub resp_err_count: u32,
+    pub rrt_count: u32,
+    pub rrt_max: Duration,
+    pub rrt_last: Duration,
+    pub rrt_sum: Duration,
+}
+
+#[derive(Default)]
+pub struct FlowPerfCounter {
+    closed: AtomicBool,
+
+    // tcp stats
+    pub ignored_packet_count: AtomicU64,
+    pub invalid_packet_count: AtomicU64,
+
+    // L7 stats
+    pub unknown_l7_protocol: AtomicU64,
+}
+
+impl RefCountable for FlowPerfCounter {
+    fn get_counters(&self) -> Vec<Counter> {
+        let ignored = self.ignored_packet_count.swap(0, Ordering::Relaxed);
+        let invalid = self.invalid_packet_count.swap(0, Ordering::Relaxed);
+        let unknown_l7_protocol = self.unknown_l7_protocol.swap(0, Ordering::Relaxed);
+
+        vec![
+            (
+                "ignore_packet_count",
+                CounterType::Counted,
+                CounterValue::Unsigned(ignored),
+            ),
+            (
+                "invalid_packet_count",
+                CounterType::Counted,
+                CounterValue::Unsigned(invalid),
+            ),
+            (
+                "unknown_l7_protocol",
+                CounterType::Counted,
+                CounterValue::Unsigned(unknown_l7_protocol),
+            ),
+        ]
+    }
+}

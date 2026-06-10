@@ -6120,10 +6120,35 @@ dependencies = [
  "walkdir",
  "wasmtime",
  "wasmtime-wasi",
- "winapi",
  "windows 0.30.0",
  "zerotrace-forwarder",
  "zstd 0.13.2",
+]
+
+[[package]]
+name = "zerotrace-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml 0.9.25",
+ "thiserror 2.0.12",
+ "zerotrace-core",
+]
+
+[[package]]
+name = "zerotrace-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "zerotrace-debug"
+version = "0.1.0"
+dependencies = [
+ "zerotrace-core",
 ]
 
 [[package]]
@@ -6136,6 +6161,45 @@ dependencies = [
  "reqwest",
  "thiserror 1.0.47",
  "tokio",
+]
+
+[[package]]
+name = "zerotrace-kernel"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "parking_lot 0.12.1",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "zerotrace-core",
+]
+
+[[package]]
+name = "zerotrace-platform"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zerotrace-core",
+]
+
+[[package]]
+name = "zerotrace-plugin-abi"
+version = "0.1.0"
+dependencies = [
+ "zerotrace-core",
+]
+
+[[package]]
+name = "zerotrace-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_yaml 0.9.25",
+ "tokio",
+ "zerotrace-core",
+ "zerotrace-kernel",
 ]
 
 [[package]]
