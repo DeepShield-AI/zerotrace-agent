@@ -1,7 +1,0 @@
-# Others
-
-## TODO
-
-## TODO
-
-## TODO

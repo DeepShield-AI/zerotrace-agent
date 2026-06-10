@@ -6,9 +6,9 @@
 !src/integration/mod.rs
 src/proto/*.rs
 src/proto/integration/*.rs
-# src/plugin/wasm/wasm_plugin.rs
-src/flow_generator/protocol_logs/mq/pulsar.proto.rs
+src/legacy/flow_generator/protocol_logs/mq/pulsar.proto.rs
 
+# eBPF build artifacts
 src/collectors/ebpf/legacy/data
 src/collectors/ebpf/legacy/.data_done
 src/collectors/ebpf/legacy/libtrace.a

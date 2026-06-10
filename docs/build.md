@@ -1,38 +1,38 @@
-# Compile in Linux
+# Linux 下编译
 
-Here is the documentation about how to compile agent in Linux system
+这里是通用的 Linux 系统编译文档
 
-## Use docker
+## 使用 docker 编译
 
-The easiest way is to use our docker image:
+最简单的方法是使用我们构建好的编译环境：
 ```bash
 git clone --recursive https://github.com/zerotraceio/zerotrace.git 
 cd zerotrace 
 docker run --privileged --rm -it -v \
-    $(pwd):/zerotrace hub.zerotrace.yunshan.net/public/rust-build bash -c \
+    $(pwd):/zerotrace -v ~/.cargo:/usr/local/cargo hub.zerotrace.yunshan.net/public/rust-build bash -c \
     "cd /zerotrace/agent && cargo build"
 
 # binary file directory: ./agent/target/debug/zerotrace-agent
 ```
 
-## Manually compilation
+## 手动编译
 
-Agent compilation requires the following environments:
-- Clang/LLVM: 11/12
-- rust: 1.61+
+agent 编译需要准备以下环境:
+- Clang/LLVM 11 或 Clang/LLVM 12
+- rust       1.61以上
 
-Install basic tools:
-- ubuntu, debian, kali, etc.
+安装基本工具：
+- ubuntu、debian、kali 等使用 apt 安装:
   ```bash
   apt-get install -y clang-11 gcc llvm-11 llvm-11-dev libpcap0.8-dev libelf-dev make
   ```
-- fedora
+- fedora:
   ```bash
   yum install llvm11 gcc  libpcap-devel glibc-static elfutils-libelf-devel make
   yum --releasever=33 install clang   # install clang11
   ```
 
-Create soft link:
+添加软链接：
 ```bash
 ln -s /usr/bin/clang-11 /usr/bin/clang
 ln -s /usr/bin/llvm-objdump-11 /usr/bin/llvm-objdump
@@ -40,7 +40,7 @@ ln -s /usr/bin/llc-11 /usr/bin/llc
 ln -s /usr/bin/llvm-strip-11 /usr/bin/llvm-strip
 ```
 
-Compile static libraries:
+编译依赖的静态库：
 ```bash
 # bcc
 # reference：https://github.com/iovisor/bcc/blob/master/INSTALL.md
@@ -52,7 +52,7 @@ cd bcc && cmake3 . && make && make install
 git clone https://github.com/bitdefender/bddisasm
 cd bddisasm
 make && make install && make clean
-ln -s /usr/local/lib/libbddisasm.a /usr/lib/libbddisasm.a
+ln -s /usr/local/lib/libbddisasm.a /usr/lib/libbddisasm.a # 建立软链接, agent 静态库目录是 /usr/lib/ 和 /usr/lib64
 
 # zlib
 wget https://www.zlib.net/fossils/zlib-1.2.12.tar.gz
@@ -71,8 +71,7 @@ make && make install && make clean
 ln -s /usr/local/lib/libdwarf.a /usr/lib/libdwarf.a
 
 # libelf
-# libelf.a in elfutils not include in some Linux distribution default repository.
-# compile elfutils requires a lot of dependencies, please solve it according to your Linux distribution.
+# 个别系统的 elfutils 库没有 libelf.a，编译 elfutils 需要大量依赖，请根据不同平台自行处理
 wget https://sourceware.org/elfutils/ftp/0.187/elfutils-0.187.tar.bz2
 tar -xf elfutils-0.187.tar.bz2
 cd elfutils-0.187
@@ -81,14 +80,14 @@ make && make install && make clean
 ln -s /usr/local/lib/libelf.a /usr/lib/libelf.a
 
 # libGoReSym
-# Install or upgrade golang version to 1.18
+# 安装/升级golang版本到go1.18
 wget https://github.com/zerotraceio/libGoReSym/archive/refs/tags/v0.0.1-2.tar.gz
 tar -xzf v0.0.1-2.tar.gz
 cd libGoReSym-0.0.1-2
 make && make install && make clean
 ```
 
-Compile agent：
+编译 agent：
 ```bash
 git clone --recursive https://github.com/zerotraceio/zerotrace.git
 cd zerotrace/agent
