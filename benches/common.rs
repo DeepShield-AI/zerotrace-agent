@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-use std::time::Instant;
-
 use criterion::*;
-
+use std::time::Instant;
 use zerotrace_agent::common::CaptureNetworkTyper;
 
 fn bench_tap_typer(c: &mut Criterion) {

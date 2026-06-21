@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-use std::mem;
-use std::sync::Arc;
-use std::thread;
-use std::time::{Duration, Instant};
-
 use criterion::*;
-
-use public::{queue, LeakyBucket};
+use public::{LeakyBucket, queue};
+use std::{
+    mem,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
 
 fn queue(c: &mut Criterion) {
     c.bench_function("queue_send", |b| {

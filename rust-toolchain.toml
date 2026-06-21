@@ -1,0 +1,7 @@
+# Pinned Rust toolchain. Takes precedence over the legacy plain-text `rust-toolchain` file.
+# Update this in lock-step with workspace `rust-version` and CI image.
+
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy", "rust-src"]
+profile = "minimal"

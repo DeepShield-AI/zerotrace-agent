@@ -31,7 +31,7 @@ impl From<&Vec<String>> for FeatureFlags {
             match flag.to_lowercase().as_str() {
                 // match a new feature flag like:
                 // "otel_metrics" => features.set(FeatureFlags::OTEL_METRICS, true),
-                _ => {}
+                _ => {},
             }
         }
 

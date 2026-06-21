@@ -14,15 +14,11 @@
  * limitations under the License.
  */
 
+use public::netns::{self, NsFile};
 use regex::Regex;
 
-use public::netns::{self, NsFile};
-
 fn main() {
-    flexi_logger::Logger::try_with_env()
-        .unwrap()
-        .start()
-        .unwrap();
+    flexi_logger::Logger::try_with_env().unwrap().start().unwrap();
     let re = Regex::new("").unwrap();
     let mut files = vec![NsFile::Root];
     files.extend(netns::find_ns_files_by_regex(&re));

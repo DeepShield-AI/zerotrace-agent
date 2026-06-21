@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-use std::borrow::Borrow;
-use std::hash::Hash;
-
 use lru::LruCache;
+use std::{borrow::Borrow, hash::Hash};
 
 pub struct Lru<K, V> {
     cache: LruCache<K, V>,

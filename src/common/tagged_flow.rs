@@ -13,18 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
-
+use super::{TapPort, flow::Flow, tag::Tag};
 use prost::Message;
-use public::sender::{SendMessageType, Sendable};
+use public::{
+    proto::flow_log,
+    sender::{SendMessageType, Sendable},
+};
 use serde::Serialize;
-
-use super::flow::Flow;
-use super::tag::Tag;
-use super::TapPort;
-
-use public::proto::flow_log;
+use std::{
+    fmt,
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+};
 
 #[derive(Serialize, Default, Clone, Debug)]
 pub struct TaggedFlow {
@@ -53,7 +52,7 @@ impl TaggedFlow {
             self.flow.flow_metrics_peers[0].nat_real_ip,
         ) {
             // now support ipv4 only
-            (IpAddr::V4(v4_src), IpAddr::V4(v4_real)) => {
+            (IpAddr::V4(v4_src), IpAddr::V4(v4_real)) =>
                 if v4_real == Ipv4Addr::UNSPECIFIED {
                     None
                 } else {
@@ -64,8 +63,7 @@ impl TaggedFlow {
                             self.flow.flow_metrics_peers[0].nat_real_port,
                         )),
                     ))
-                }
-            }
+                },
             _ => None,
         }
     }
@@ -85,9 +83,7 @@ impl Sendable for BoxedTaggedFlow {
         let pb_tagged_flow = flow_log::TaggedFlow {
             flow: Some(self.0.flow.into()),
         };
-        pb_tagged_flow
-            .encode(buf)
-            .map(|_| pb_tagged_flow.encoded_len())
+        pb_tagged_flow.encode(buf).map(|_| pb_tagged_flow.encoded_len())
     }
 
     fn to_kv_string(&self, dst: &mut String) {
@@ -107,13 +103,13 @@ impl Sendable for BoxedTaggedFlow {
 
 #[cfg(test)]
 mod tests {
-    use prost::Message;
-
     use super::*;
-
     use crate::common::{
-        decapsulate::TunnelType, flow::FlowPerfStats, flow::L4Protocol, Timestamp,
+        Timestamp,
+        decapsulate::TunnelType,
+        flow::{FlowPerfStats, L4Protocol},
     };
+    use prost::Message;
 
     // test run: cargo test --package trident --lib -- common::tagged_flow::tests::sequential_merge --exact --nocapture
     #[test]

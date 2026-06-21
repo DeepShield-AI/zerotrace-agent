@@ -14,22 +14,19 @@
  * limitations under the License.
  */
 
+use super::{XflowKey, enums::CaptureNetworkType};
+use log::warn;
+use public::proto::agent;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
     net::Ipv4Addr,
     str::FromStr,
     sync::{
-        atomic::{AtomicU16, Ordering},
         RwLock,
+        atomic::{AtomicU16, Ordering},
     },
 };
-
-use log::warn;
-
-use public::proto::agent;
-
-use super::{enums::CaptureNetworkType, XflowKey};
 
 const VLAN_MAX: u16 = 4096;
 
@@ -110,7 +107,7 @@ impl CaptureNetworkTyper {
                     } else {
                         self.packet[vlan as usize].store(tap, Ordering::Relaxed);
                     }
-                }
+                },
                 _ => {
                     let tap = tap_type.capture_network_type() as u16;
                     let tap_idx = tap_type.capture_network_port();
@@ -131,15 +128,15 @@ impl CaptureNetworkTyper {
                                 tap_idx,
                             };
                             xflow.insert(xflow_key, tap_type);
-                        }
+                        },
                         Err(err) => {
                             warn!(
                                 "prase tap_type from protocol buffer CaptureNetworkType error: {}",
                                 err
                             );
-                        }
+                        },
                     }
-                }
+                },
             }
         }
 
@@ -230,9 +227,13 @@ mod tests {
         let xflow_key = XflowKey { ip, tap_idx };
         let tap_actual = tap_typer.get_tap_type_by_xflow_key(&xflow_key).unwrap();
 
-        assert_eq!(tap, u16::from(tap_actual),
+        assert_eq!(
+            tap,
+            u16::from(tap_actual),
             "actual tap_type[flowKey:{0}, taptype:{1}], but expected tap_type[flowKey:{0}, taptype:{2}]",
-            xflow_key, u16::from(tap_actual), tap
+            xflow_key,
+            u16::from(tap_actual),
+            tap
         );
     }
 

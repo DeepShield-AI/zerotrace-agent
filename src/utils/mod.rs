@@ -34,8 +34,7 @@ pub use public::bytes;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
-use std::thread;
-use std::time::Duration;
+use std::{thread, time::Duration};
 
 pub fn clean_and_exit(code: i32) {
     thread::sleep(Duration::from_secs(1));

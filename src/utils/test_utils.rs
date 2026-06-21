@@ -14,36 +14,33 @@
  * limitations under the License.
  */
 
-use std::{
-    fmt,
-    fs::File,
-    io::{self, BufRead, BufReader},
-    net::IpAddr,
-    path::Path,
-    sync::{atomic::AtomicI64, Arc},
-    time::Duration,
+use crate::{
+    common::{
+        TaggedFlow,
+        flow::L7Stats,
+        meta_packet::{MetaPacket, PcapData},
+    },
+    config::{FlowConfig, UserConfig},
+    flow_generator::{AppProto, FlowTimeout, TcpTimeout, flow_map::FlowMap},
+    policy::Policy,
+    utils::stats,
 };
-
 use nom::IResult;
 use pcap::{self, Linktype};
-
 use public::{
     buffer::BatchedBox,
     debug::QueueDebugger,
     proto::agent::AgentType,
     queue::{self, Receiver},
 };
-
-use crate::{
-    common::{
-        flow::L7Stats,
-        meta_packet::{MetaPacket, PcapData},
-        TaggedFlow,
-    },
-    config::{FlowConfig, UserConfig},
-    flow_generator::{flow_map::FlowMap, AppProto, FlowTimeout, TcpTimeout},
-    policy::Policy,
-    utils::stats,
+use std::{
+    fmt,
+    fs::File,
+    io::{self, BufRead, BufReader},
+    net::IpAddr,
+    path::Path,
+    sync::{Arc, atomic::AtomicI64},
+    time::Duration,
 };
 
 cfg_if::cfg_if! {
@@ -184,7 +181,7 @@ impl EbpfDataDump {
             _ => {
                 let len = container_id.len().min(data.container_id.len());
                 data.container_id[..len].copy_from_slice(&container_id.as_bytes()[..len]);
-            }
+            },
         }
 
         let (input, source) = preceded(tag(" SOURCE "), digit1)(input)?;
@@ -220,12 +217,12 @@ impl EbpfDataDump {
                 data.tuple.addr_len = 4;
                 data.tuple.laddr[..4].copy_from_slice(&src.octets());
                 data.tuple.raddr[..4].copy_from_slice(&dst.octets());
-            }
+            },
             (IpAddr::V6(src), IpAddr::V6(dst)) => {
                 data.tuple.addr_len = 16;
                 data.tuple.laddr[..16].copy_from_slice(&src.octets());
                 data.tuple.raddr[..16].copy_from_slice(&dst.octets());
-            }
+            },
             _ => (),
         }
         data.tuple.lport = src_port;
@@ -308,7 +305,7 @@ impl EbpfDataDump {
                 Ok((_, meta_packet)) => {
                     self.lineno += 2;
                     Ok(Some(meta_packet))
-                }
+                },
                 Err(e) => panic!(
                     "Error parsing ebpf data dump line {}-{}: {e}",
                     self.lineno,

@@ -14,31 +14,18 @@
  * limitations under the License.
  */
 
-use std::net::IpAddr;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Instant;
-
 use criterion::*;
 use ipnet::IpNet;
-
-use zerotrace_agent::_Acl as Acl;
-use zerotrace_agent::_Cidr as Cidr;
-use zerotrace_agent::_DirectionType as DirectionType;
-use zerotrace_agent::_EndpointData as EndpointData;
-use zerotrace_agent::_EndpointInfo as EndpointInfo;
-use zerotrace_agent::_EndpointTableType as EndpointTableType;
-use zerotrace_agent::_FeatureFlags as FeatureFlags;
-use zerotrace_agent::_FirstPath as FirstPath;
-use zerotrace_agent::_IpGroupData as IpGroupData;
-use zerotrace_agent::_Labeler as Labeler;
-use zerotrace_agent::_LookupKey as LookupKey;
-use zerotrace_agent::_NpbAction as NpbAction;
-use zerotrace_agent::_NpbTunnelType as NpbTunnelType;
-use zerotrace_agent::_PortRange as PortRange;
-use zerotrace_agent::_TapSide as TapSide;
-use zerotrace_agent::{_IpSubnet as IpSubnet, _PlatformData as PlatformData};
 use public::utils::net::MacAddr;
+use std::{net::IpAddr, str::FromStr, sync::Arc, time::Instant};
+use zerotrace_agent::{
+    _Acl as Acl, _Cidr as Cidr, _DirectionType as DirectionType, _EndpointData as EndpointData,
+    _EndpointInfo as EndpointInfo, _EndpointTableType as EndpointTableType,
+    _FeatureFlags as FeatureFlags, _FirstPath as FirstPath, _IpGroupData as IpGroupData,
+    _IpSubnet as IpSubnet, _Labeler as Labeler, _LookupKey as LookupKey, _NpbAction as NpbAction,
+    _NpbTunnelType as NpbTunnelType, _PlatformData as PlatformData, _PortRange as PortRange,
+    _TapSide as TapSide,
+};
 
 fn bench_labeler(c: &mut Criterion) {
     c.bench_function("labeler", |b| {
@@ -57,11 +44,11 @@ fn bench_labeler(c: &mut Criterion) {
         iface_list.push(Arc::new(interface));
 
         for i in 0..100 {
-            let ip = "192.168.".to_string().as_str().to_owned()
-                + ((i >> 8) & 0xff).to_string().as_str()
-                + ".".to_string().as_str()
-                + (i & 0xff).to_string().as_str()
-                + "/32".to_string().as_str();
+            let ip = "192.168.".to_string().as_str().to_owned() +
+                ((i >> 8) & 0xff).to_string().as_str() +
+                ".".to_string().as_str() +
+                (i & 0xff).to_string().as_str() +
+                "/32".to_string().as_str();
             let cidr: Cidr = Cidr {
                 ip: IpNet::from_str(&ip).unwrap(),
                 epc_id: 10,
@@ -105,11 +92,11 @@ fn bench_labeler(c: &mut Criterion) {
         iface_list.push(Arc::new(interface));
 
         for i in 0..100 {
-            let ip = "192.168.".to_string().as_str().to_owned()
-                + ((i >> 8) & 0xff).to_string().as_str()
-                + ".".to_string().as_str()
-                + (i & 0xff).to_string().as_str()
-                + "/32".to_string().as_str();
+            let ip = "192.168.".to_string().as_str().to_owned() +
+                ((i >> 8) & 0xff).to_string().as_str() +
+                ".".to_string().as_str() +
+                (i & 0xff).to_string().as_str() +
+                "/32".to_string().as_str();
             let cidr: Cidr = Cidr {
                 ip: IpNet::from_str(&ip).unwrap(),
                 epc_id: 10,

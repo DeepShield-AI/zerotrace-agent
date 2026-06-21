@@ -14,6 +14,27 @@
  * limitations under the License.
  */
 
+use super::{
+    TaggedFlow,
+    decapsulate::TunnelType,
+    enums::{CaptureNetworkType, EthernetType, IpProtocol, TcpFlags},
+    tap_port::TapPort,
+};
+use crate::{
+    common::{Timestamp, endpoint::EPC_INTERNET, timestamp_to_micros},
+    flow_generator::{FlowState, protocol_logs::to_string_format},
+    metric::document::{Direction, TapSide},
+    utils::environment::{is_tt_pod, is_tt_workload},
+};
+use log::{error, warn};
+use public::{
+    buffer::BatchedBox,
+    packet::SECONDS_IN_MINUTE,
+    proto::{agent::AgentType, flow_log},
+    utils::net::MacAddr,
+};
+pub use public::{enums::L4Protocol, l7_protocol::*};
+use serde::{Serialize, Serializer};
 use std::{
     fmt,
     mem::swap,
@@ -21,36 +42,6 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-
-use log::{error, warn};
-use serde::{Serialize, Serializer};
-
-use super::{
-    decapsulate::TunnelType,
-    enums::{CaptureNetworkType, EthernetType, IpProtocol, TcpFlags},
-    tap_port::TapPort,
-    TaggedFlow,
-};
-
-use crate::{
-    common::{endpoint::EPC_INTERNET, timestamp_to_micros, Timestamp},
-    metric::document::Direction,
-};
-use crate::{
-    flow_generator::protocol_logs::to_string_format,
-    flow_generator::FlowState,
-    metric::document::TapSide,
-    utils::environment::{is_tt_pod, is_tt_workload},
-};
-use public::utils::net::MacAddr;
-use public::{
-    buffer::BatchedBox,
-    packet::SECONDS_IN_MINUTE,
-    proto::{agent::AgentType, flow_log},
-};
-
-pub use public::enums::L4Protocol;
-pub use public::l7_protocol::*;
 
 const COUNTER_FLOW_ID_MASK: u64 = 0x00FFFFFF;
 
@@ -78,21 +69,21 @@ pub enum CloseType {
 
 impl CloseType {
     pub fn is_client_error(self) -> bool {
-        self == CloseType::TcpClientRst
-            || self == CloseType::ClientHalfClose
-            || self == CloseType::ClientSourcePortReuse
-            || self == CloseType::ServerSynAckRepeat
-            || self == CloseType::ClientEstablishReset
+        self == CloseType::TcpClientRst ||
+            self == CloseType::ClientHalfClose ||
+            self == CloseType::ClientSourcePortReuse ||
+            self == CloseType::ServerSynAckRepeat ||
+            self == CloseType::ClientEstablishReset
     }
 
     pub fn is_server_error(self) -> bool {
-        self == CloseType::TcpServerRst
-            || self == CloseType::Timeout
-            || self == CloseType::ServerHalfClose
-            || self == CloseType::ServerReset
-            || self == CloseType::ServerQueueLack
-            || self == CloseType::ServerEstablishReset
-            || self == CloseType::ClientSynRepeat
+        self == CloseType::TcpServerRst ||
+            self == CloseType::Timeout ||
+            self == CloseType::ServerHalfClose ||
+            self == CloseType::ServerReset ||
+            self == CloseType::ServerQueueLack ||
+            self == CloseType::ServerEstablishReset ||
+            self == CloseType::ClientSynRepeat
     }
 }
 
@@ -170,12 +161,10 @@ impl fmt::Display for FlowKey {
 impl From<FlowKey> for flow_log::FlowKey {
     fn from(f: FlowKey) -> Self {
         let (ip4_src, ip4_dst, ip6_src, ip6_dst) = match (f.ip_src, f.ip_dst) {
-            (IpAddr::V4(ip4), IpAddr::V4(ip4_1)) => {
-                (ip4, ip4_1, Ipv6Addr::UNSPECIFIED, Ipv6Addr::UNSPECIFIED)
-            }
-            (IpAddr::V6(ip6), IpAddr::V6(ip6_1)) => {
-                (Ipv4Addr::UNSPECIFIED, Ipv4Addr::UNSPECIFIED, ip6, ip6_1)
-            }
+            (IpAddr::V4(ip4), IpAddr::V4(ip4_1)) =>
+                (ip4, ip4_1, Ipv6Addr::UNSPECIFIED, Ipv6Addr::UNSPECIFIED),
+            (IpAddr::V6(ip6), IpAddr::V6(ip6_1)) =>
+                (Ipv4Addr::UNSPECIFIED, Ipv4Addr::UNSPECIFIED, ip6, ip6_1),
             _ => panic!("FlowKey({:?}) ip_src,ip_dst type mismatch", &f),
         };
         flow_log::FlowKey {
@@ -283,13 +272,20 @@ impl fmt::Display for TunnelField {
             write!(f, "none")
         } else {
             write!(
-            f,
-            "{}, tx_id:{}, rx_id:{}, tier:{}, tx_0:{} {:08x}, tx_1:{} {:08x}, rx_0:{} {:08x}, rx_1:{} {:08x}",
-            self.tunnel_type, self.tx_id, self.rx_id, self.tier,
-            self.tx_ip0, self.tx_mac0,
-            self.tx_ip1, self.tx_mac1,
-            self.rx_ip0, self.rx_mac0,
-            self.rx_ip1, self.rx_mac1,
+                f,
+                "{}, tx_id:{}, rx_id:{}, tier:{}, tx_0:{} {:08x}, tx_1:{} {:08x}, rx_0:{} {:08x}, rx_1:{} {:08x}",
+                self.tunnel_type,
+                self.tx_id,
+                self.rx_id,
+                self.tier,
+                self.tx_ip0,
+                self.tx_mac0,
+                self.tx_ip1,
+                self.tx_mac1,
+                self.rx_ip0,
+                self.rx_mac0,
+                self.rx_ip1,
+                self.rx_mac1,
             )
         }
     }
@@ -693,7 +689,7 @@ where
         IpAddr::V6(ip) if ip.to_ipv4().is_some() => {
             let ip = ip.to_ipv4().unwrap();
             u32::from(ip)
-        }
+        },
         _ => 0,
     };
     let real_ip_1 = match v[1].nat_real_ip {
@@ -701,7 +697,7 @@ where
         IpAddr::V6(ip) if ip.to_ipv4().is_some() => {
             let ip = ip.to_ipv4().unwrap();
             u32::from(ip)
-        }
+        },
         _ => 0,
     };
 
@@ -956,8 +952,8 @@ fn tunnel_is_none(t: &TunnelField) -> bool {
 impl Flow {
     pub fn start_time_in_minute(&self) -> u64 {
         let second_in_minute = self.start_time.as_secs() % SECONDS_IN_MINUTE;
-        (self.flow_stat_time.as_secs() - second_in_minute) / SECONDS_IN_MINUTE * SECONDS_IN_MINUTE
-            + second_in_minute
+        (self.flow_stat_time.as_secs() - second_in_minute) / SECONDS_IN_MINUTE * SECONDS_IN_MINUTE +
+            second_in_minute
     }
 
     fn swap_flow_ip_and_real_ip(&mut self) {
@@ -1060,8 +1056,8 @@ impl Flow {
         //                                     SYN-ACK
         //            [ACK]
         //            RST|RST-ACK
-        src_tcp_flags.contains(TcpFlags::SYN | TcpFlags::RST)
-            && dst_tcp_flags.contains(TcpFlags::SYN_ACK)
+        src_tcp_flags.contains(TcpFlags::SYN | TcpFlags::RST) &&
+            dst_tcp_flags.contains(TcpFlags::SYN_ACK)
     }
 
     pub fn update_close_type(&mut self, flow_state: FlowState) {
@@ -1069,17 +1065,16 @@ impl Flow {
             FlowState::Exception => CloseType::Unknown,
             FlowState::Opening1 => CloseType::ClientSynRepeat,
             FlowState::Opening2 => CloseType::ServerSynAckRepeat,
-            FlowState::Established => {
+            FlowState::Established =>
                 if self.flow_key.proto == IpProtocol::TCP {
                     CloseType::Timeout
                 } else {
                     CloseType::Finish
-                }
-            }
+                },
             FlowState::ClosingTx1 => CloseType::ServerHalfClose,
             FlowState::ClosingRx1 => CloseType::ClientHalfClose,
             FlowState::ClosingTx2 | FlowState::ClosingRx2 | FlowState::Closed => CloseType::Finish,
-            FlowState::Reset => {
+            FlowState::Reset =>
                 if self.is_heartbeat() {
                     CloseType::TcpFinClientRst
                 } else {
@@ -1091,28 +1086,26 @@ impl Flow {
                     } else {
                         CloseType::TcpClientRst
                     }
-                }
-            }
-            FlowState::Syn1 | FlowState::ClientL4PortReuse => {
+                },
+            FlowState::Syn1 | FlowState::ClientL4PortReuse =>
                 if self.is_heartbeat() {
                     CloseType::TcpFinClientRst
                 } else {
                     CloseType::ClientSourcePortReuse
-                }
-            }
+                },
             FlowState::ServerReset => CloseType::ServerReset,
             FlowState::SynAck1 => CloseType::ServerQueueLack,
             FlowState::ServerCandidateQueueLack => {
                 const TCP_SYN_RETRANSE_MIN_TIMES: u64 = 3;
-                if self.flow_metrics_peers[FlowMetricsPeer::DST as usize].total_packet_count
-                    > TCP_SYN_RETRANSE_MIN_TIMES
+                if self.flow_metrics_peers[FlowMetricsPeer::DST as usize].total_packet_count >
+                    TCP_SYN_RETRANSE_MIN_TIMES
                 {
                     CloseType::ServerQueueLack
                 } else {
                     CloseType::TcpClientRst
                 }
-            }
-            FlowState::EstablishReset | FlowState::OpeningRst => {
+            },
+            FlowState::EstablishReset | FlowState::OpeningRst =>
                 if self.is_heartbeat() {
                     CloseType::TcpFinClientRst
                 } else {
@@ -1124,15 +1117,14 @@ impl Flow {
                     } else {
                         CloseType::ClientEstablishReset
                     }
-                }
-            }
+                },
             _ => {
                 warn!(
                     "unexpected 'unknown' close type, flow id is {}",
                     self.flow_id
                 );
                 CloseType::Unknown
-            }
+            },
         }
     }
 
@@ -1175,10 +1167,28 @@ impl fmt::Display for Flow {
         \n\t flow_metrics_peers_src:{:?} \
         \n\t flow_metrics_peers_dst:{:?} \
         \n\t flow_perf_stats:{:?}",
-            self.flow_id, self.signal_source, self.tunnel, self.close_type, self.is_active_service, self.is_new_flow, self.queue_hash,
-            self.syn_seq, self.synack_seq, self.last_keepalive_seq, self.last_keepalive_ack, self.flow_stat_time,
-            self.start_time, self.end_time, self.duration,
-            self.vlan, self.eth_type, self.reversed, self.otel_service, self.otel_instance, self.request_domain, self.flow_key,
+            self.flow_id,
+            self.signal_source,
+            self.tunnel,
+            self.close_type,
+            self.is_active_service,
+            self.is_new_flow,
+            self.queue_hash,
+            self.syn_seq,
+            self.synack_seq,
+            self.last_keepalive_seq,
+            self.last_keepalive_ack,
+            self.flow_stat_time,
+            self.start_time,
+            self.end_time,
+            self.duration,
+            self.vlan,
+            self.eth_type,
+            self.reversed,
+            self.otel_service,
+            self.otel_instance,
+            self.request_domain,
+            self.flow_key,
             self.flow_metrics_peers[0],
             self.flow_metrics_peers[1],
             self.flow_perf_stats
@@ -1252,18 +1262,18 @@ fn get_direction(
                 src_direct = Direction::None
             }
             return [src_direct, dst_direct];
-        }
+        },
         SignalSource::XFlow => {
             return [Direction::None, Direction::None];
-        }
+        },
         _ => {
             // workload and container collector need to collect loopback port flow
-            if flow.flow_key.mac_src == flow.flow_key.mac_dst
-                && (is_tt_pod(agent_type) || is_tt_workload(agent_type))
+            if flow.flow_key.mac_src == flow.flow_key.mac_dst &&
+                (is_tt_pod(agent_type) || is_tt_workload(agent_type))
             {
                 return [Direction::None, Direction::LocalToLocal];
             }
-        }
+        },
     }
 
     // 返回值分别为统计点对应的zerodoc.DirectionEnum以及及是否添加追踪数据的开关，在微软
@@ -1324,7 +1334,7 @@ fn get_direction(
                         }
                     }
                 }
-            }
+            },
             AgentType::TtHyperVCompute => {
                 // 仅采集宿主机物理口
                 if l2_end {
@@ -1335,7 +1345,7 @@ fn get_direction(
                         Direction::ServerHypervisorToClient,
                     );
                 }
-            }
+            },
             AgentType::TtHyperVNetwork => {
                 // 仅采集宿主机物理口
                 if is_ep {
@@ -1354,7 +1364,7 @@ fn get_direction(
                         Direction::ClientGatewayHypervisorToServer,
                     );
                 }
-            }
+            },
             AgentType::TtPublicCloud | AgentType::TtPhysicalMachine => {
                 // 该采集器类型中统计位置为客户端网关/服务端网关或存在VIP时，会使用VIP创建Doc和Log.
                 // VIP：
@@ -1370,7 +1380,7 @@ fn get_direction(
                         );
                     }
                 }
-            }
+            },
             AgentType::TtHostPod | AgentType::TtVmPod | AgentType::TtK8sSidecar => {
                 if is_ep {
                     if tunnel_tier == 0 {
@@ -1413,7 +1423,7 @@ fn get_direction(
                         //其他情况: BUM流量
                     }
                 }
-            }
+            },
             AgentType::TtProcess => {
                 if cloud_gateway_traffic {
                     if l2_end {
@@ -1529,17 +1539,16 @@ fn get_direction(
                     }
                     //其他情况: BUM流量
                 }
-            }
-            AgentType::TtVm => {
+            },
+            AgentType::TtVm =>
                 if tunnel_tier == 0 && is_ep {
                     return (Direction::ClientToServer, Direction::ServerToClient);
-                }
-            }
+                },
             _ => {
                 // 采集器类型不正确，不应该发生
                 error!("invalid agent type, zerotrace-agent restart...");
                 crate::utils::clean_and_exit(1);
-            }
+            },
         }
         (Direction::None, Direction::None)
     }
@@ -1582,12 +1591,12 @@ fn get_direction(
             // L4FlowLog and Doc data to count a Rest record.
             // ======================================================================================================
             // 当专属采集器采集的 IDC 流量无法区分 Direction 时，L4FlowLog 和 Doc数据中统计一份 Rest 记录。
-        } else if (src_direct == Direction::ClientToServer || src_ep.is_l2_end)
-            && dst_direct != Direction::ServerToClient
+        } else if (src_direct == Direction::ClientToServer || src_ep.is_l2_end) &&
+            dst_direct != Direction::ServerToClient
         {
             dst_direct = Direction::None;
-        } else if (dst_direct == Direction::ServerToClient || dst_ep.is_l2_end)
-            && src_direct != Direction::ClientToServer
+        } else if (dst_direct == Direction::ServerToClient || dst_ep.is_l2_end) &&
+            src_direct != Direction::ClientToServer
         {
             src_direct = Direction::None;
         } else if src_ep.is_local_mac {

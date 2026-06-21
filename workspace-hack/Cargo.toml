@@ -1,0 +1,29 @@
+# This file is managed by `cargo hakari`. To regenerate, run:
+#   cargo hakari generate
+#
+# This crate is an empty placeholder until hakari is initialized post-M0.
+# Until then it adds zero compile-time cost.
+
+[package]
+name        = "workspace-hack"
+version     = "0.1.0"
+edition     = "2021"
+publish     = false
+description = "workspace-hack package, managed by hakari"
+license     = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+### BEGIN HAKARI SECTION
+# Hakari will populate dependency blocks below. Do not hand-edit.
+
+[dependencies]
+
+[build-dependencies]
+
+[target.x86_64-unknown-linux-gnu.dependencies]
+[target.aarch64-unknown-linux-gnu.dependencies]
+[target.x86_64-pc-windows-msvc.dependencies]
+[target.aarch64-linux-android.dependencies]
+### END HAKARI SECTION

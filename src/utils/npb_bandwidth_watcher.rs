@@ -14,26 +14,32 @@
  * limitations under the License.
  */
 
-use std::net::IpAddr;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
-    Arc, Mutex, RwLock,
+use crate::{
+    common::{
+        FlowAclListener, FlowAclListenerId,
+        platform_data::PlatformData,
+        policy::{Acl, Cidr, IpGroupData, PeerConnection},
+    },
+    exception::ExceptionHandler,
+    utils::stats::{Counter, CounterType, CounterValue, RefCountable},
 };
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-
 use log::{error, info, warn};
+use npb_pcap_policy::{NOT_SUPPORT, NpbTunnelType};
+use public::{
+    LeakyBucket,
+    proto::agent::{AgentType, Exception},
+    utils::net::get_route_src_ip_interface_name,
+};
+use std::{
+    net::IpAddr,
+    sync::{
+        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
 use sysinfo::{NetworkExt, System, SystemExt};
-
-use crate::common::platform_data::PlatformData;
-use crate::common::policy::{Acl, Cidr, IpGroupData, PeerConnection};
-use crate::common::{FlowAclListener, FlowAclListenerId};
-use crate::exception::ExceptionHandler;
-use crate::utils::stats::{Counter, CounterType, CounterValue, RefCountable};
-use npb_pcap_policy::{NpbTunnelType, NOT_SUPPORT};
-use public::proto::agent::{AgentType, Exception};
-use public::utils::net::get_route_src_ip_interface_name;
-use public::LeakyBucket;
 
 #[derive(Default)]
 pub struct InterfaceTraffic {
@@ -140,8 +146,7 @@ impl Watcher {
     }
 
     fn npb_start(&self, tx_bps: u64) -> bool {
-        self.npb_leaky_bucket
-            .set_rate(Some(self.npb_bps_threshold.load(Relaxed)));
+        self.npb_leaky_bucket.set_rate(Some(self.npb_bps_threshold.load(Relaxed)));
         self.exception_handler.clear(Exception::NpbFuse);
         info!("Npb reopen, tx bandwidth is {} bps.", tx_bps);
 
@@ -284,7 +289,8 @@ impl NpbBandwidthWatcher {
         }
         let watcher = self.watcher.clone();
         watcher.is_running.store(true, Relaxed);
-        info!("Npb bandwidth watcher start with: npb bandwidth {}, npb nic bandwidth {}, interval {}.",
+        info!(
+            "Npb bandwidth watcher start with: npb bandwidth {}, npb nic bandwidth {}, interval {}.",
             watcher.npb_bps_threshold.load(Relaxed),
             watcher.nic_bps_threshold.load(Relaxed),
             watcher.interval.load(Relaxed),
@@ -340,8 +346,8 @@ impl FlowAclListener for Arc<NpbBandwidthWatcher> {
         let mut ips = vec![];
         acls.iter().for_each(|x| {
             for action in &x.npb_actions {
-                if action.tunnel_type() == NpbTunnelType::GreErspan
-                    || action.tunnel_type() == NpbTunnelType::VxLan
+                if action.tunnel_type() == NpbTunnelType::GreErspan ||
+                    action.tunnel_type() == NpbTunnelType::VxLan
                 {
                     ips.push(action.tunnel_ip());
                 }

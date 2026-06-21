@@ -1,0 +1,18 @@
+[package]
+name = "zerotrace-forwarder"
+version = "0.1.0"
+edition = "2024"
+
+# Agent -> server HTTP short-connection forwarder. Two faces:
+#   control plane  : protobuf request/response to /api/v1/agent/* (replaces gRPC Synchronizer)
+#   data    plane  : wire-frame firehose to /api/v1/data/ingest (-> ingester -> flow_log.*)
+
+[dependencies]
+public = { workspace = true }
+prost = { workspace = true }
+reqwest = { version = "0.12", default-features = false }
+thiserror = "1"
+log = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }

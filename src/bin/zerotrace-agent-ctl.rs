@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+use anyhow::{Result, anyhow};
+use bincode::{config, decode_from_std_read};
+use clap::{ArgEnum, Parser, Subcommand};
+#[cfg(target_os = "linux")]
+use flate2::write::ZlibDecoder;
+use public::{consts::DEFAULT_CONTROLLER_PORT, debug::QueueMessage};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, UdpSocket},
@@ -21,22 +27,14 @@ use std::{
 };
 #[cfg(target_os = "linux")]
 use std::{fmt, io::Write};
-
-use anyhow::{anyhow, Result};
-use bincode::{config, decode_from_std_read};
-use clap::{ArgEnum, Parser, Subcommand};
-#[cfg(target_os = "linux")]
-use flate2::write::ZlibDecoder;
-
 #[cfg(all(target_os = "linux", feature = "libtrace"))]
 use zerotrace_agent::debug::EbpfMessage;
 #[cfg(target_os = "linux")]
 use zerotrace_agent::debug::PlatformMessage;
 use zerotrace_agent::debug::{
-    Beacon, Client, CpuMessage, DiskMessage, MemoryMessage, Message, Module, NetworkMessage,
-    PolicyMessage, RpcMessage, DEBUG_QUEUE_IDLE_TIMEOUT, ZEROTRACE_AGENT_BEACON,
+    Beacon, Client, CpuMessage, DEBUG_QUEUE_IDLE_TIMEOUT, DiskMessage, MemoryMessage, Message,
+    Module, NetworkMessage, PolicyMessage, RpcMessage, ZEROTRACE_AGENT_BEACON,
 };
-use public::{consts::DEFAULT_CONTROLLER_PORT, debug::QueueMessage};
 
 const ERR_PORT_MSG: &str = "error: The following required arguments were not provided:
     \t--port <PORT> required arguments were not provided";
@@ -286,18 +284,18 @@ impl fmt::Display for Resource {
             Resource::Svc | Resource::Service | Resource::Services => write!(f, "services"),
             Resource::Deploy | Resource::Deployment | Resource::Deployments => {
                 write!(f, "deployments")
-            }
+            },
             Resource::Po | Resource::Pod | Resource::Pods => write!(f, "pods"),
             Resource::St | Resource::Statefulset | Resource::Statefulsets => {
                 write!(f, "statefulsets")
-            }
+            },
             Resource::Ds | Resource::Daemonset | Resource::Daemonsets => write!(f, "daemonsets"),
             Resource::Rc | Resource::Replicationcontroller | Resource::Replicationcontrollers => {
                 write!(f, "replicationcontrollers")
-            }
+            },
             Resource::Rs | Resource::Replicaset | Resource::Replicasets => {
                 write!(f, "replicasets")
-            }
+            },
             Resource::Ing | Resource::Ingress | Resource::Ingresses => write!(f, "ingresses"),
             Resource::Version => write!(f, "version"),
         }
@@ -388,7 +386,7 @@ impl Controller {
                     CpuMessage::Err(e) => println!("{}", e),
                     _ => unreachable!(),
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -414,7 +412,7 @@ impl Controller {
                     MemoryMessage::Err(e) => println!("{}", e),
                     _ => unreachable!(),
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -436,15 +434,14 @@ impl Controller {
                     return Ok(());
                 };
                 match res {
-                    DiskMessage::Context(stats) => {
+                    DiskMessage::Context(stats) =>
                         for stat in &stats {
                             println!("{}", stat);
-                        }
-                    }
+                        },
                     DiskMessage::Err(e) => println!("{}", e),
                     _ => unreachable!(),
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -466,15 +463,14 @@ impl Controller {
                     return Ok(());
                 };
                 match res {
-                    NetworkMessage::Context(stats) => {
+                    NetworkMessage::Context(stats) =>
                         for stat in &stats {
                             println!("{}", stat);
-                        }
-                    }
+                        },
                     NetworkMessage::Err(e) => println!("{}", e),
                     _ => unreachable!(),
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -482,13 +478,12 @@ impl Controller {
     fn new_client(&self) -> Result<Client> {
         let addr = match self.addr {
             IpAddr::V4(a) => IpAddr::V4(a),
-            IpAddr::V6(a) => {
+            IpAddr::V6(a) =>
                 if let Some(v4) = a.to_ipv4() {
                     IpAddr::V4(v4)
                 } else {
                     IpAddr::V6(a)
-                }
-            }
+                },
         };
 
         let client = Client::new(
@@ -560,7 +555,7 @@ impl Controller {
                         );
                         vtap_map.insert(beacon.agent_id);
                     }
-                }
+                },
                 Err(e) => return Err(anyhow!("{}", e)),
             };
         }
@@ -594,12 +589,12 @@ impl Controller {
                 continue;
             };
             match resp {
-                RpcMessage::Acls(v)
-                | RpcMessage::PlatformData(v)
-                | RpcMessage::CaptureNetworkTypes(v)
-                | RpcMessage::Cidr(v)
-                | RpcMessage::Groups(v)
-                | RpcMessage::Segments(v) => match v {
+                RpcMessage::Acls(v) |
+                RpcMessage::PlatformData(v) |
+                RpcMessage::CaptureNetworkTypes(v) |
+                RpcMessage::Cidr(v) |
+                RpcMessage::Groups(v) |
+                RpcMessage::Segments(v) => match v {
                     Some(v) => println!("{}", v),
                     None => return Err(anyhow!(format!("{:?} data is empty", c.get))),
                 },
@@ -637,7 +632,7 @@ impl Controller {
                 };
                 match res {
                     QueueMessage::Names(e) => match e {
-                        Some(e) => {
+                        Some(e) =>
                             for (i, (s, e)) in e.into_iter().enumerate() {
                                 println!(
                                     "{:<5} {:<45} {}",
@@ -645,8 +640,7 @@ impl Controller {
                                     s,
                                     if e { "enabled" } else { "disabled" }
                                 );
-                            }
-                        }
+                            },
                         None => return Err(anyhow!("cannot get queue names")),
                     },
                     QueueMessage::Fin => return Ok(()),
@@ -670,7 +664,7 @@ impl Controller {
                 QueueMessage::Fin => {
                     println!("turn off all queues successful");
                     return Ok(());
-                }
+                },
                 QueueMessage::Err(e) => return Err(anyhow!(e)),
                 _ => unreachable!(),
             }
@@ -689,7 +683,7 @@ impl Controller {
                 QueueMessage::Fin => {
                     println!("turn off queue={} successful", s);
                     return Ok(());
-                }
+                },
                 QueueMessage::Err(e) => return Err(anyhow!(e)),
                 _ => unreachable!(),
             }
@@ -724,11 +718,11 @@ impl Controller {
                     QueueMessage::Send(e) => {
                         println!("MSG-{} {}", seq, e);
                         seq += 1;
-                    }
+                    },
                     QueueMessage::Continue => {
                         println!("nothing received for {:?}", DEBUG_QUEUE_IDLE_TIMEOUT);
                         continue;
-                    }
+                    },
                     QueueMessage::Fin => return Ok(()),
                     QueueMessage::Err(e) => return Err(anyhow!(e)),
                     _ => unreachable!(),
@@ -775,14 +769,13 @@ impl Controller {
                             13                       01:02:03:04:05:06
                             14                       01:02:03:04:05:06
                             */
-                            Some(e) => {
+                            Some(e) =>
                                 for (idx, m) in e {
                                     println!("{:<15} \t {}", idx, m);
-                                }
-                            }
+                                },
                             None => return Err(anyhow!("mac mappings is empty")),
                         }
-                    }
+                    },
                     PlatformMessage::Fin => return Ok(()),
                     _ => unreachable!(),
                 }
@@ -810,7 +803,7 @@ impl Controller {
                                 Some(v) => println!("{}", v),
                                 None => return Err(anyhow!("server version is empty")),
                             }
-                        }
+                        },
                         PlatformMessage::Fin => return Ok(()),
                         _ => unreachable!(),
                     }
@@ -837,7 +830,7 @@ impl Controller {
                             Ok(v) => println!("{}", v),
                             Err(e) => eprintln!("{}", e),
                         }
-                    }
+                    },
                     PlatformMessage::NotFound => return Err(anyhow!("no data")),
                     PlatformMessage::Fin => return Ok(()),
                     _ => unreachable!(),
@@ -870,11 +863,11 @@ impl Controller {
                         PolicyMessage::Err(e) => {
                             println!("{}", e);
                             return Ok(());
-                        }
+                        },
                         _ => unreachable!(),
                     }
                 }
-            }
+            },
             PolicySubCmd::Show => {
                 client.send_to(Message {
                     module: Module::Policy,
@@ -890,18 +883,18 @@ impl Controller {
                         PolicyMessage::Title(t) => {
                             println!("{}", t);
                             continue;
-                        }
+                        },
                         PolicyMessage::Context(c) => println!("\t{}: {}", count, c),
                         PolicyMessage::Done => return Ok(()),
                         PolicyMessage::Err(e) => {
                             println!("{}", e);
                             return Ok(());
-                        }
+                        },
                         _ => unreachable!(),
                     }
                     count += 1;
                 }
-            }
+            },
             PolicySubCmd::Analyzing(args) => {
                 client.send_to(Message {
                     module: Module::Policy,
@@ -916,7 +909,7 @@ impl Controller {
                     _ => unreachable!(),
                 }
                 Ok(())
-            }
+            },
         }
     }
 
@@ -933,13 +926,13 @@ impl Controller {
                     module: Module::Ebpf,
                     msg: EbpfMessage::Cpdbg(arg.duration),
                 })?;
-            }
+            },
             EbpfSubCmd::Datadump(arg) => {
                 client.send_to(Message {
                     module: Module::Ebpf,
                     msg: EbpfMessage::DataDump((arg.pid, arg.name, arg.proto, arg.duration)),
                 })?;
-            }
+            },
         }
 
         loop {
@@ -949,12 +942,12 @@ impl Controller {
             match res {
                 EbpfMessage::Context((seq, c)) => {
                     println!("SEQ {}: {}", seq, String::from_utf8_lossy(&c))
-                }
+                },
                 EbpfMessage::Done => return Ok(()),
                 EbpfMessage::Error(e) => {
                     println!("{}", e);
                     return Ok(());
-                }
+                },
                 _ => unreachable!(),
             }
         }

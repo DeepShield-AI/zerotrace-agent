@@ -1,0 +1,5 @@
+error: missing #[bundle(id = "...")]
+  --> tests/ui/fail/missing_id.rs:11:8
+   |
+11 | struct BadBundle {
+   |        ^^^^^^^^^

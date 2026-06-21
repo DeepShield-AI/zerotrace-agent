@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net::SocketAddr;
-use std::net::UdpSocket;
-
-use bincode::config::Configuration;
-use bincode::{Decode, Encode};
-
-use crate::metric::network::{collect_netdev, NetDevStat};
+use crate::metric::network::{NetDevStat, collect_netdev};
+use bincode::{Decode, Encode, config::Configuration};
 use public::debug::send_to;
+use std::{
+    fmt,
+    net::{SocketAddr, UdpSocket},
+};
 
 #[derive(Debug, Encode, Decode, PartialEq)]
 pub enum NetworkMessage {
@@ -39,7 +37,7 @@ impl fmt::Display for NetworkMessage {
                     writeln!(f, "{}", stat)?;
                 }
                 Ok(())
-            }
+            },
             NetworkMessage::Err(e) => write!(f, "Error: {}", e),
             _ => Ok(()),
         }

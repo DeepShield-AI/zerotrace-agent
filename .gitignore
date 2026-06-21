@@ -6,27 +6,31 @@
 !src/integration/mod.rs
 src/proto/*.rs
 src/proto/integration/*.rs
-# src/plugin/wasm/wasm_plugin.rs
-src/flow_generator/protocol_logs/mq/pulsar.proto.rs
+src/legacy/flow_generator/protocol_logs/mq/pulsar.proto.rs
 
-src/ebpf/data
-src/ebpf/.data_done
-src/ebpf/libtrace.a
-src/ebpf/zerotrace-ebpfctl
-src/ebpf/kernel/*.elf.tmp
-src/ebpf/kernel/socket_trace.ll
-src/ebpf/tools/ebpftobuffer
+# eBPF build artifacts
+src/collectors/ebpf/legacy/data
+src/collectors/ebpf/legacy/.data_done
+src/collectors/ebpf/legacy/libtrace.a
+src/collectors/ebpf/legacy/zerotrace-ebpfctl
+src/collectors/ebpf/legacy/kernel/*.elf.tmp
+src/collectors/ebpf/legacy/kernel/socket_trace.ll
+src/collectors/ebpf/legacy/tools/ebpftobuffer
 
 *.o
 *.elf
 *.objdump
-src/ebpf/samples/rust/src/ebpf.rs
-src/ebpf/samples/rust/target/*
-src/ebpf/llvm-clang-11.0.0-2.el7.x86_64.rpm
-src/ebpf/tools/ebpftobuffer
+src/collectors/ebpf/legacy/samples/rust/src/ebpf.rs
+src/collectors/ebpf/legacy/samples/rust/target/*
+src/collectors/ebpf/legacy/llvm-clang-11.0.0-2.el7.x86_64.rpm
+src/collectors/ebpf/legacy/tools/ebpftobuffer
 
 .rpmbuild/
 actual.txt
 
 plugins/**/Cargo.lock
 logs/
+.claude/
+.vscode/
+.zed/
+ignored/

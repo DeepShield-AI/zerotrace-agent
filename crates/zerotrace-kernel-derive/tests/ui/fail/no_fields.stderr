@@ -1,0 +1,6 @@
+error: Bundle can only be derived for structs with named fields
+ --> tests/ui/fail/no_fields.rs:5:1
+  |
+5 | / #[bundle(id = "bad", name = "Bad")]
+6 | | struct BadBundle;  // no fields
+  | |_________________^

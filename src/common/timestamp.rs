@@ -17,12 +17,13 @@
 // This module provides a 8B timestamp struct for memory-sensitive structs
 // std::time::Duration is 16B
 
-use std::cmp::Ordering;
-use std::fmt;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
-use std::time::Duration;
-
 use serde::Serializer;
+use std::{
+    cmp::Ordering,
+    fmt,
+    ops::{Add, AddAssign, Sub, SubAssign},
+    time::Duration,
+};
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(u64);

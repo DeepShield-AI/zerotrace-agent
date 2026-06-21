@@ -14,24 +14,25 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::str::FromStr;
-use std::sync::Arc;
-
+use super::{
+    IPV4_MAX_MASK_LEN, IPV6_MAX_MASK_LEN, MIN_MASK_LEN,
+    endpoint::{EPC_ANY, EPC_ZEROTRACE},
+    enums::{CaptureNetworkType, IpProtocol},
+    error::Error,
+    matched_field::{MatchedFieldv4, MatchedFieldv6, MatchedFlag},
+    port_range::{PortRange, PortRangeList},
+};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use log::warn;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-
-use super::endpoint::{EPC_ANY, EPC_ZEROTRACE};
-use super::enums::{CaptureNetworkType, IpProtocol};
-use super::error::Error;
-use super::matched_field::{MatchedFieldv4, MatchedFieldv6, MatchedFlag};
-use super::port_range::{PortRange, PortRangeList};
-use super::{IPV4_MAX_MASK_LEN, IPV6_MAX_MASK_LEN, MIN_MASK_LEN};
 use npb_pcap_policy::{DirectionType, NpbAction, NpbTunnelType, PolicyData, TapSide};
-
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use public::proto::agent;
+use std::{
+    fmt,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    str::FromStr,
+    sync::Arc,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum GroupType {
@@ -90,7 +91,7 @@ impl TryFrom<&agent::Group> for IpGroupData {
                         "IpGroup ({}) split ip string failed",
                         ip_range
                     )));
-                }
+                },
             };
             let (start, end) = match (ip_peers.0.parse::<IpAddr>(), ip_peers.1.parse::<IpAddr>()) {
                 (Ok(s), Ok(e)) => (s, e),
@@ -99,7 +100,7 @@ impl TryFrom<&agent::Group> for IpGroupData {
                         "IpGroup ({}, {}) parse ip string failed",
                         ip_peers.0, ip_peers.1
                     )));
-                }
+                },
             };
             ips.append(&mut ip_range_convert_to_cidr(start, end));
         }
@@ -119,8 +120,8 @@ fn ipv4_range_convert(mut start: u32, end: u32) -> Vec<IpNet> {
                 // len继续减少将会使得start不是所在网段的第一个IP
                 return len;
             }
-            if start | !v4_mask_len_to_netmask(len) >= end
-                || start | !v4_mask_len_to_netmask(len - 1) > end
+            if start | !v4_mask_len_to_netmask(len) >= end ||
+                start | !v4_mask_len_to_netmask(len - 1) > end
             {
                 // len继续减少将会使得网段包含end之后的IP
                 return len;
@@ -162,8 +163,8 @@ fn ipv6_range_convert(mut start: u128, end: u128) -> Vec<IpNet> {
             if start & (1 << IPV6_MAX_MASK_LEN - len) != 0 {
                 return len;
             }
-            if start | !v6_mask_len_to_netmask(len) >= end
-                || start | !v6_mask_len_to_netmask(len - 1) > end
+            if start | !v6_mask_len_to_netmask(len) >= end ||
+                start | !v6_mask_len_to_netmask(len - 1) > end
             {
                 return len;
             }
@@ -304,7 +305,7 @@ impl From<&IpNet> for IpSegment {
             },
             _ => {
                 panic!("Cidr({:?}) network and netmask mismatched", cidr)
-            }
+            },
         }
     }
 }
@@ -377,8 +378,7 @@ impl Fieldv4 {
         max: usize,
         vector_bits: &Vec<usize>,
     ) -> Vec<u16> {
-        self.field
-            .get_all_table_index(mask_vector, &self.mask, min, max, vector_bits)
+        self.field.get_all_table_index(mask_vector, &self.mask, min, max, vector_bits)
     }
 }
 
@@ -423,8 +423,7 @@ impl Fieldv6 {
         max: usize,
         vector_bits: &Vec<usize>,
     ) -> Vec<u16> {
-        self.field
-            .get_all_table_index(mask_vector, &self.mask, min, max, vector_bits)
+        self.field.get_all_table_index(mask_vector, &self.mask, min, max, vector_bits)
     }
 }
 
@@ -701,12 +700,10 @@ impl Acl {
         for src_ip in src_ips {
             for dst_ip in dst_ips {
                 match (src_ip.is_ipv6(), dst_ip.is_ipv6()) {
-                    (true, true) => {
-                        self.generate_match_field6(src_ip, dst_ip, &src_ports, &dst_ports)
-                    }
-                    (false, false) => {
-                        self.generate_match_field(src_ip, dst_ip, &src_ports, &dst_ports)
-                    }
+                    (true, true) =>
+                        self.generate_match_field6(src_ip, dst_ip, &src_ports, &dst_ports),
+                    (false, false) =>
+                        self.generate_match_field(src_ip, dst_ip, &src_ports, &dst_ports),
                     _ => continue,
                 }
             }
@@ -748,9 +745,7 @@ impl TryFrom<agent::FlowAcl> for Acl {
                 NpbAction::new(
                     n.npb_acl_group_id(),
                     n.tunnel_id(),
-                    n.tunnel_ip()
-                        .parse::<IpAddr>()
-                        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+                    n.tunnel_ip().parse::<IpAddr>().unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
                     n.tunnel_ip_id.unwrap_or_default() as u16,
                     NpbTunnelType::new(n.tunnel_type.unwrap() as u8),
                     TapSide::new(n.packet_capture_side.unwrap() as u8),
@@ -763,16 +758,8 @@ impl TryFrom<agent::FlowAcl> for Acl {
         Ok(Acl {
             id: a.id.unwrap_or_default(),
             tap_type: tap_type.unwrap(),
-            src_groups: a
-                .src_group_ids
-                .iter()
-                .map(|x| (x & 0xffff) as u32)
-                .collect(),
-            dst_groups: a
-                .dst_group_ids
-                .iter()
-                .map(|x| (x & 0xffff) as u32)
-                .collect(),
+            src_groups: a.src_group_ids.iter().map(|x| (x & 0xffff) as u32).collect(),
+            dst_groups: a.dst_group_ids.iter().map(|x| (x & 0xffff) as u32).collect(),
             src_port_ranges: src_ports.unwrap().element().to_vec(),
             dst_port_ranges: dst_ports.unwrap().element().to_vec(),
             proto: (a.protocol.unwrap_or_default() & 0xffff) as u16,
@@ -785,11 +772,30 @@ impl TryFrom<agent::FlowAcl> for Acl {
 
 impl fmt::Display for Acl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Id:{} CaptureNetworkType:{} SrcGroups:{:?} DstGroups:{:?} SrcPortRange:[{}] DstPortRange:[{}] Proto:{} NpbActions:{}",
-            self.id, self.tap_type, self.src_groups, self.dst_groups,
-            self.src_port_ranges.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(", "),
-            self.dst_port_ranges.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(", "),
-            self.proto, self.npb_actions.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(","))
+        write!(
+            f,
+            "Id:{} CaptureNetworkType:{} SrcGroups:{:?} DstGroups:{:?} SrcPortRange:[{}] DstPortRange:[{}] Proto:{} NpbActions:{}",
+            self.id,
+            self.tap_type,
+            self.src_groups,
+            self.dst_groups,
+            self.src_port_ranges
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.dst_port_ranges
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.proto,
+            self.npb_actions
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
     }
 }
 

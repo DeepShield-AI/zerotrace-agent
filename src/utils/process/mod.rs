@@ -25,7 +25,6 @@ pub use linux::*;
 mod windows;
 #[cfg(target_os = "windows")]
 pub use self::windows::*;
-
 use sysinfo::{System, SystemExt};
 
 /// 返回当前系统的空闲内存数目，单位：%

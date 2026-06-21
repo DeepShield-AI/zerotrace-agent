@@ -1,7 +1,0 @@
-# FAQs
-
-## TODO
-
-## TODO
-
-## TODO

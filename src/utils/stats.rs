@@ -14,26 +14,25 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::io;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::sync::{
-    atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering},
-    Arc, Condvar, Mutex,
-};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-
+use crate::rpc::get_timestamp;
 use cadence::{Metric, MetricBuilder, MetricError, MetricResult, MetricSink, StatsdClient};
 use log::{debug, info, warn};
 use prost::Message;
-
-use crate::rpc::get_timestamp;
 pub use public::counter::*;
 use public::{
     proto::stats,
-    queue::{bounded, Receiver, Sender},
+    queue::{Receiver, Sender, bounded},
     sender::{SendMessageType, Sendable},
+};
+use std::{
+    fmt, io,
+    net::{SocketAddr, ToSocketAddrs, UdpSocket},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 const STATS_PREFIX: &'static str = "zerotrace_agent";
@@ -135,7 +134,11 @@ impl Sendable for ArcBatch {
     fn to_kv_string(&self, kv_string: &mut String) {
         use std::fmt::Write;
         let batch = &self.0;
-        let _ = write!(kv_string, "{{\"name\":\"{}_{}\"", STATS_PREFIX, batch.module);
+        let _ = write!(
+            kv_string,
+            "{{\"name\":\"{}_{}\"",
+            STATS_PREFIX, batch.module
+        );
         let _ = write!(kv_string, ",\"timestamp\":{}", batch.timestamp);
         // tags
         let mut has_host = false;
@@ -151,9 +154,15 @@ impl Sendable for ArcBatch {
         // metrics
         for (name, _counter_type, value) in &batch.points {
             match value {
-                CounterValue::Signed(v) => { let _ = write!(kv_string, ",\"{}\":{}", name, v); },
-                CounterValue::Unsigned(v) => { let _ = write!(kv_string, ",\"{}\":{}", name, v); },
-                CounterValue::Float(v) => { let _ = write!(kv_string, ",\"{}\":{:.6}", name, v); },
+                CounterValue::Signed(v) => {
+                    let _ = write!(kv_string, ",\"{}\":{}", name, v);
+                },
+                CounterValue::Unsigned(v) => {
+                    let _ = write!(kv_string, ",\"{}\":{}", name, v);
+                },
+                CounterValue::Float(v) => {
+                    let _ = write!(kv_string, ",\"{}\":{:.6}", name, v);
+                },
             }
         }
         kv_string.push_str("}\n");
@@ -230,8 +239,8 @@ impl Collector {
             TICK_CYCLE
         } else {
             Duration::from_secs(
-                (interval.as_secs() + TICK_CYCLE.as_secs() - 1) / TICK_CYCLE.as_secs()
-                    * TICK_CYCLE.as_secs(),
+                (interval.as_secs() + TICK_CYCLE.as_secs() - 1) / TICK_CYCLE.as_secs() *
+                    TICK_CYCLE.as_secs(),
             )
         };
         let s = Self {
@@ -269,9 +278,8 @@ impl Collector {
         };
         for tag in module.tags() {
             match tag {
-                StatsOption::Tag(k, v) if !source.tags.iter().any(|(key, _)| key == &k) => {
-                    source.tags.push((k, v))
-                }
+                StatsOption::Tag(k, v) if !source.tags.iter().any(|(key, _)| key == &k) =>
+                    source.tags.push((k, v)),
                 _ => warn!(
                     "ignored duplicated tag or option for module {}",
                     source.module
@@ -280,11 +288,10 @@ impl Collector {
         }
         for option in module.options() {
             match option {
-                StatsOption::Interval(interval) if interval.as_secs() >= min_interval => {
+                StatsOption::Interval(interval) if interval.as_secs() >= min_interval =>
                     source.interval = Duration::from_secs(
                         interval.as_secs() / TICK_CYCLE.as_secs() * TICK_CYCLE.as_secs(),
-                    )
-                }
+                    ),
                 _ => warn!(
                     "ignored tag or invalid interval for module {}",
                     source.module
@@ -331,9 +338,8 @@ impl Collector {
             tags.clear();
             for option in m.tags() {
                 match option {
-                    StatsOption::Tag(k, v) if !tags.iter().any(|(key, _)| key == &k) => {
-                        tags.push((k, v))
-                    }
+                    StatsOption::Tag(k, v) if !tags.iter().any(|(key, _)| key == &k) =>
+                        tags.push((k, v)),
                     _ => (),
                 }
             }
@@ -357,8 +363,7 @@ impl Collector {
     }
 
     pub fn set_min_interval(&self, interval: Duration) {
-        self.min_interval
-            .store(interval.as_secs(), Ordering::Relaxed);
+        self.min_interval.store(interval.as_secs(), Ordering::Relaxed);
     }
 
     fn new_statsd_client<A: ToSocketAddrs + std::fmt::Debug>(
@@ -521,18 +526,11 @@ pub struct AtomicTimeStats {
 
 impl AtomicTimeStats {
     pub fn update(&self, duration: Duration) {
-        self.sum_ns
-            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+        self.sum_ns.fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
         self.count.fetch_add(1, Ordering::Relaxed);
-        let _ = self
-            .max_ns
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
-                let nanos = duration.as_nanos() as u64;
-                if x < nanos {
-                    Some(nanos)
-                } else {
-                    None
-                }
-            });
+        let _ = self.max_ns.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
+            let nanos = duration.as_nanos() as u64;
+            if x < nanos { Some(nanos) } else { None }
+        });
     }
 }

@@ -1,0 +1,17 @@
+# Rust build artifacts
+target/
+.docker-cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitmodules
+
+# Misc
+.flox/
+**/*.md

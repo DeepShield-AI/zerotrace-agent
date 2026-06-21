@@ -1,7 +1,0 @@
-# Guides
-
-## TODO
-
-## TODO
-
-## TODO

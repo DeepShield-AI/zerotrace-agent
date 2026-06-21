@@ -18,17 +18,16 @@ pub mod config;
 pub mod handler;
 
 pub use config::{
-    AgentIdType, Config, ConfigError, DpdkSource, InferenceWhitelist, KubernetesPollerType,
-    OracleConfig, PcapStream, PrometheusExtraLabels, TrafficOverflowAction, UserConfig,
-    K8S_CA_CRT_PATH,
+    AgentIdType, Config, ConfigError, DpdkSource, InferenceWhitelist, K8S_CA_CRT_PATH,
+    KubernetesPollerType, OracleConfig, PcapStream, PrometheusExtraLabels, TrafficOverflowAction,
+    UserConfig,
 };
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub use config::{ApiResources, ProcessMatcher};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub use handler::FlowAccess;
-pub use handler::{DispatcherConfig, FlowConfig, ModuleConfig, NpbConfig};
-
 #[cfg(test)]
 pub use config::{HttpEndpoint, HttpEndpointMatchRule};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub use handler::FlowAccess;
 #[cfg(test)]
 pub use handler::HttpEndpointTrie;
+pub use handler::{DispatcherConfig, FlowConfig, ModuleConfig, NpbConfig};

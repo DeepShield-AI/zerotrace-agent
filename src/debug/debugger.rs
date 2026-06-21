@@ -14,38 +14,18 @@
  * limitations under the License.
  */
 
-use std::{
-    io::{self, ErrorKind},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
-    time::Duration,
-};
-
-use arc_swap::access::Access;
-use bincode::{
-    config::{self, Configuration},
-    decode_from_std_read, encode_to_vec, Decode, Encode,
-};
-use log::{error, info, warn};
-use parking_lot::RwLock;
-use tokio::runtime::Runtime;
-
 #[cfg(all(target_os = "linux", feature = "libtrace"))]
 use super::ebpf::{EbpfDebugger, EbpfMessage};
 #[cfg(target_os = "linux")]
 use super::platform::{PlatformDebugger, PlatformMessage};
 use super::{
+    BEACON_INTERVAL, BEACON_INTERVAL_MIN, Beacon, Message, Module, ZEROTRACE_AGENT_BEACON,
     cpu::{CpuDebugger, CpuMessage},
     disk::{DiskDebugger, DiskMessage},
     memory::{MemoryDebugger, MemoryMessage},
     network::{NetworkDebugger, NetworkMessage},
     policy::{PolicyDebugger, PolicyMessage},
     rpc::{RpcDebugger, RpcMessage},
-    Beacon, Message, Module, BEACON_INTERVAL, BEACON_INTERVAL_MIN, ZEROTRACE_AGENT_BEACON,
 };
 #[cfg(target_os = "linux")]
 use crate::platform::{ApiWatcher, GenericPoller};
@@ -56,18 +36,37 @@ use crate::{
     trident::AgentId,
     utils::command::get_hostname,
 };
+use arc_swap::access::Access;
+use bincode::{
+    Decode, Encode,
+    config::{self, Configuration},
+    decode_from_std_read, encode_to_vec,
+};
+use log::{error, info, warn};
+use parking_lot::RwLock;
 use public::{
     consts::DEFAULT_CONTROLLER_PORT,
-    debug::{send_to, Error, QueueDebugger, QueueMessage, Result, MAX_BUF_SIZE},
+    debug::{Error, MAX_BUF_SIZE, QueueDebugger, QueueMessage, Result, send_to},
 };
+use std::{
+    io::{self, ErrorKind},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+use tokio::runtime::Runtime;
 
 /// 各模块的调试器集合
 struct ModuleDebuggers {
     #[cfg(target_os = "linux")]
-    pub platform: PlatformDebugger, 
-    pub rpc: RpcDebugger,           
-    pub queue: Arc<QueueDebugger>,  
-    pub policy: PolicyDebugger,     
+    pub platform: PlatformDebugger,
+    pub rpc: RpcDebugger,
+    pub queue: Arc<QueueDebugger>,
+    pub policy: PolicyDebugger,
     #[cfg(all(target_os = "linux", feature = "libtrace"))]
     pub ebpf: EbpfDebugger,
     pub cpu: CpuDebugger,
@@ -78,26 +77,26 @@ struct ModuleDebuggers {
 
 /// 调试器主结构
 pub struct Debugger {
-    thread: Mutex<Option<JoinHandle<()>>>, 
-    running: Arc<AtomicBool>,              
-    debuggers: Arc<ModuleDebuggers>,       
-    config: DebugAccess,                   
-    override_os_hostname: Arc<Option<String>>, 
+    thread: Mutex<Option<JoinHandle<()>>>,
+    running: Arc<AtomicBool>,
+    debuggers: Arc<ModuleDebuggers>,
+    config: DebugAccess,
+    override_os_hostname: Arc<Option<String>>,
 }
 
 /// 构造调试器的上下文信息
 pub struct ConstructDebugCtx {
-    pub runtime: Arc<Runtime>,             
-    pub config: DebugAccess,               
+    pub runtime: Arc<Runtime>,
+    pub config: DebugAccess,
     #[cfg(target_os = "linux")]
-    pub api_watcher: Arc<ApiWatcher>,      
+    pub api_watcher: Arc<ApiWatcher>,
     #[cfg(target_os = "linux")]
-    pub poller: Arc<GenericPoller>,        
-    pub session: Arc<Session>,             
-    pub static_config: Arc<StaticConfig>,  
-    pub agent_id: Arc<RwLock<AgentId>>,    
-    pub status: Arc<RwLock<Status>>,       
-    pub policy_setter: PolicySetter,       
+    pub poller: Arc<GenericPoller>,
+    pub session: Arc<Session>,
+    pub static_config: Arc<StaticConfig>,
+    pub agent_id: Arc<RwLock<AgentId>>,
+    pub status: Arc<RwLock<Status>>,
+    pub policy_setter: PolicySetter,
 }
 
 impl Debugger {
@@ -126,7 +125,7 @@ impl Debugger {
                 // 根据配置确定绑定地址（IPv6 未指定地址）
                 let addr: SocketAddr =
                     (IpAddr::from(Ipv6Addr::UNSPECIFIED), conf.load().listen_port).into();
-                
+
                 // 尝试绑定 UDP 套接字
                 let sock = match UdpSocket::bind(addr) {
                     Ok(s) => Arc::new(s),
@@ -142,12 +141,12 @@ impl Debugger {
                                     ipv4_addr, e
                                 );
                                 return;
-                            }
+                            },
                         }
-                    }
+                    },
                 };
                 info!("debugger listening on: {:?}", sock.local_addr().unwrap());
-                
+
                 // 设置套接字的读写超时
                 if let Err(e) = sock.set_read_timeout(Some(Self::TIMEOUT)) {
                     warn!("debugger set read timeout error: {:?}", e);
@@ -171,7 +170,7 @@ impl Debugger {
                         let interval_counter_max =
                             BEACON_INTERVAL.as_secs() / BEACON_INTERVAL_MIN.as_secs();
                         let mut interval_counter = 0;
-                        
+
                         while running_clone.load(Ordering::Relaxed) {
                             thread::sleep(BEACON_INTERVAL_MIN);
                             interval_counter += 1;
@@ -187,7 +186,7 @@ impl Debugger {
                                     Err(e) => {
                                         warn!("get hostname failed: {}", e);
                                         None
-                                    }
+                                    },
                                 },
                             ) else {
                                 continue;
@@ -204,7 +203,7 @@ impl Debugger {
                                 Ok(v) => v,
                                 Err(_) => continue,
                             };
-                            
+
                             // 向所有配置的控制器发送 Beacon
                             for &ip in conf.load().controller_ips.iter() {
                                 if let Err(e) = sock_clone.send_to(
@@ -245,20 +244,20 @@ impl Debugger {
                                 agent_mode,
                             )
                             .unwrap_or_else(|e| warn!("handle client request error: {}", e));
-                        }
+                        },
                         Err(e) => {
                             match e.kind() {
-                                ErrorKind::WouldBlock => {}
+                                ErrorKind::WouldBlock => {},
                                 _ => {
                                     warn!(
                                         "receive udp packet error: kind=({:?}) detail={}",
                                         e.kind(),
                                         e
                                     );
-                                }
+                                },
                             }
                             continue;
-                        }
+                        },
                     }
                 }
                 let _ = beacon_thread.join();
@@ -290,7 +289,7 @@ impl Debugger {
                             addr_v4, e
                         );
                         return;
-                    }
+                    },
                 };
 
                 // 绑定 IPv6 Socket
@@ -304,14 +303,14 @@ impl Debugger {
                             addr_v6, e
                         );
                         return;
-                    }
+                    },
                 };
                 info!(
                     "debugger listening on: {:?} and {:?}",
                     sock_v4.local_addr().unwrap(),
                     sock_v6.local_addr().unwrap()
                 );
-                
+
                 // 设置 IPv4 Socket 超时
                 if let Err(e) = sock_v4.set_read_timeout(Some(Self::TIMEOUT)) {
                     warn!("debugger ipv4 set read timeout error: {:?}", e);
@@ -319,7 +318,7 @@ impl Debugger {
                 if let Err(e) = sock_v4.set_write_timeout(Some(Self::TIMEOUT)) {
                     warn!("debugger ipv4 set write timeout error: {:?}", e);
                 }
-                
+
                 // 设置 IPv6 Socket 超时
                 if let Err(e) = sock_v6.set_read_timeout(Some(Self::TIMEOUT)) {
                     warn!("debugger ipv6 set read timeout error: {:?}", e);
@@ -327,13 +326,13 @@ impl Debugger {
                 if let Err(e) = sock_v6.set_write_timeout(Some(Self::TIMEOUT)) {
                     warn!("debugger ipv6 set write timeout error: {:?}", e);
                 }
-                
+
                 let sock_v4_clone = sock_v4.clone();
                 let sock_v6_clone = sock_v6.clone();
                 let running_clone = running.clone();
                 let serialize_conf = config::standard();
                 let beacon_port = conf.load().controller_port;
-                
+
                 // 启动 Beacon 线程
                 let beacon_thread = thread::Builder::new()
                     .name("debugger-beacon".to_owned())
@@ -355,7 +354,7 @@ impl Debugger {
                                     Err(e) => {
                                         warn!("get hostname failed: {}", e);
                                         None
-                                    }
+                                    },
                                 },
                             ) else {
                                 continue;
@@ -370,7 +369,7 @@ impl Debugger {
                                 Ok(v) => v,
                                 Err(_) => continue,
                             };
-                            
+
                             // 根据控制器 IP 版本使用相应的 Socket 发送 Beacon
                             for &ip in conf.load().controller_ips.iter() {
                                 if has_ipv4 {
@@ -424,22 +423,22 @@ impl Debugger {
                                     serialize_conf,
                                 )
                                 .unwrap_or_else(|e| warn!("handle client request error: {}", e));
-                            }
+                            },
                             Err(e) => {
                                 match e.kind() {
-                                    ErrorKind::ConnectionReset => {} 
-                                    ErrorKind::WouldBlock => {}
-                                    ErrorKind::TimedOut => {}
+                                    ErrorKind::ConnectionReset => {},
+                                    ErrorKind::WouldBlock => {},
+                                    ErrorKind::TimedOut => {},
                                     _ => {
                                         warn!(
                                             "receive udp packet error: kind=({:?}) detail={}",
                                             e.kind(),
                                             e
                                         );
-                                    }
+                                    },
                                 }
                                 continue;
-                            }
+                            },
                         }
                     }
                     // 轮询 IPv6 Socket
@@ -461,22 +460,22 @@ impl Debugger {
                                     serialize_conf,
                                 )
                                 .unwrap_or_else(|e| warn!("handle client request error: {}", e));
-                            }
+                            },
                             Err(e) => {
                                 match e.kind() {
-                                    ErrorKind::ConnectionReset => {} 
-                                    ErrorKind::WouldBlock => {}
-                                    ErrorKind::TimedOut => {}
+                                    ErrorKind::ConnectionReset => {},
+                                    ErrorKind::WouldBlock => {},
+                                    ErrorKind::TimedOut => {},
                                     _ => {
                                         warn!(
                                             "receive udp packet error: kind=({:?}) detail={}",
                                             e.kind(),
                                             e
                                         );
-                                    }
+                                    },
                                 }
                                 continue;
-                            }
+                            },
                         }
                     }
                 }
@@ -512,7 +511,7 @@ impl Debugger {
                 let req: Message<PlatformMessage> =
                     decode_from_std_read(&mut payload, serialize_conf)?;
                 let debugger = &debuggers.platform;
-                
+
                 // 处理不同的 Platform 消息
                 let resp = match req.into_inner() {
                     PlatformMessage::Version(_) => debugger.api_version(),
@@ -523,12 +522,12 @@ impl Debugger {
                 };
                 // 发送响应
                 iter_send_to(conn.0, conn.1, resp.iter(), serialize_conf)?;
-            }
+            },
             Module::Rpc => {
                 // 解码 RpcMessage
                 let req: Message<RpcMessage> = decode_from_std_read(&mut payload, serialize_conf)?;
                 let debugger = &debuggers.rpc;
-                
+
                 // 分发到特定的 RPC 调试函数
                 let resp_result = match req.into_inner() {
                     RpcMessage::Acls(_) => debugger.flow_acls(),
@@ -548,78 +547,77 @@ impl Debugger {
                     Err(e) => vec![RpcMessage::Err(e.to_string())],
                 };
                 iter_send_to(conn.0, conn.1, resp.iter(), serialize_conf)?;
-            }
+            },
             Module::Queue => {
                 // 解码 QueueMessage
                 let req: Message<QueueMessage> =
                     decode_from_std_read(&mut payload, serialize_conf)?;
                 let debugger = &debuggers.queue;
-                
+
                 // 处理 Queue 命令
                 match req.into_inner() {
                     QueueMessage::Clear => {
                         let msg = debugger.turn_off_all_queue();
                         send_to(conn.0, conn.1, msg, serialize_conf)?;
-                    }
+                    },
                     QueueMessage::Off(v) => {
                         let msg = debugger.turn_off_queue(v);
                         send_to(conn.0, conn.1, msg, serialize_conf)?;
-                    }
+                    },
                     QueueMessage::Names(_) => {
                         let msgs = debugger.queue_names();
                         iter_send_to(conn.0, conn.1, msgs.iter(), serialize_conf)?;
-                    }
+                    },
                     QueueMessage::On((name, duration)) => {
                         let msg = debugger.turn_on_queue(name.as_str());
                         send_to(conn.0, conn.1, msg, serialize_conf)?;
                         debugger.send(name, conn.1, serialize_conf, duration);
-                    }
+                    },
                     _ => unreachable!(),
                 }
-            }
+            },
             Module::Policy => {
                 // 解码 PolicyMessage
                 let req: Message<PolicyMessage> =
                     decode_from_std_read(&mut payload, serialize_conf)?;
                 let debugger = &debuggers.policy;
-                
+
                 // 处理 Policy 命令
                 match req.into_inner() {
                     PolicyMessage::On => debugger.send(conn.0, conn.1, serialize_conf),
                     PolicyMessage::Off => {
                         debugger.turn_off();
-                    }
+                    },
                     PolicyMessage::Show => {
                         debugger.show(conn.0, conn.1, serialize_conf);
-                    }
+                    },
                     PolicyMessage::Analyzing(id) => {
                         debugger.analyzing(conn.0, conn.1, id, serialize_conf);
-                    }
+                    },
                     _ => unreachable!(),
                 }
-            }
+            },
             #[cfg(all(target_os = "linux", feature = "libtrace"))]
             Module::Ebpf => {
                 let ebpf = &debuggers.ebpf;
                 // 解码 EbpfMessage
                 let req: Message<EbpfMessage> = decode_from_std_read(&mut payload, serialize_conf)?;
                 let req = req.into_inner();
-                
+
                 // 处理 eBPF 命令
                 match req {
                     EbpfMessage::DataDump(_) => {
                         ebpf.datadump(conn.0, conn.1, serialize_conf, &req);
-                    }
+                    },
                     EbpfMessage::Cpdbg(_) => {
                         ebpf.cpdbg(conn.0, conn.1, serialize_conf, &req);
-                    }
+                    },
                     _ => unreachable!(),
                 }
-            }
+            },
             Module::Cpu => {
                 // 解码 CpuMessage
-                let req: Message<CpuMessage> =
-                    decode_from_std_read(&mut payload, serialize_conf)?;
+                let req: Message<CpuMessage> = decode_from_std_read(&mut payload, serialize_conf)?;
                 let debugger = &debuggers.cpu;
 
                 // 处理 Cpu 命令
@@ -627,7 +625,7 @@ impl Debugger {
                     CpuMessage::Show => debugger.show(conn.0, conn.1, serialize_conf),
                     _ => return Err(Error::InvalidMessage("Invalid CpuMessage".to_string())),
                 }
-            }
+            },
             Module::Memory => {
                 let req: Message<MemoryMessage> =
                     decode_from_std_read(&mut payload, serialize_conf)?;
@@ -637,17 +635,16 @@ impl Debugger {
                     MemoryMessage::Show => debugger.show(conn.0, conn.1, serialize_conf),
                     _ => return Err(Error::InvalidMessage("Invalid MemoryMessage".to_string())),
                 }
-            }
+            },
             Module::Disk => {
-                let req: Message<DiskMessage> =
-                    decode_from_std_read(&mut payload, serialize_conf)?;
+                let req: Message<DiskMessage> = decode_from_std_read(&mut payload, serialize_conf)?;
                 let debugger = &debuggers.disk;
 
                 match req.into_inner() {
                     DiskMessage::Show => debugger.show(conn.0, conn.1, serialize_conf),
                     _ => return Err(Error::InvalidMessage("Invalid DiskMessage".to_string())),
                 }
-            }
+            },
             Module::Network => {
                 let req: Message<NetworkMessage> =
                     decode_from_std_read(&mut payload, serialize_conf)?;
@@ -657,7 +654,7 @@ impl Debugger {
                     NetworkMessage::Show => debugger.show(conn.0, conn.1, serialize_conf),
                     _ => return Err(Error::InvalidMessage("Invalid NetworkMessage".to_string())),
                 }
-            }
+            },
             _ => warn!("invalid module or invalid request, skip it"),
         }
 
@@ -777,7 +774,7 @@ impl Client {
                 // 解码响应消息
                 let d = decode_from_std_read(&mut buf.as_slice(), self.conf)?;
                 Ok(d)
-            }
+            },
             Err(e) => Err(Error::IoError(e)),
         }
     }
