@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-use std::cmp;
-use std::iter::Iterator;
-use std::marker::PhantomData;
-use std::mem::{self, MaybeUninit};
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-    Condvar, Mutex,
-};
-use std::time::{Duration, Instant};
-
 use super::Error;
 use crate::counter as stats;
+use std::{
+    cmp,
+    iter::Iterator,
+    marker::PhantomData,
+    mem::{self, MaybeUninit},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Condvar, Mutex,
+    },
+    time::{Duration, Instant},
+};
 
 pub fn bounded<T>(size: usize) -> (Sender<T>, Receiver<T>, StatsHandle<T>) {
     RefCounter::new(OverwriteQueue::with_capacity(size))
@@ -126,26 +127,19 @@ impl<T> OverwriteQueue<T> {
             if free_space < count {
                 let to_overwrite = count - free_space;
                 for i in 0..to_overwrite {
-                    self.buffer
-                        .add((start + i) & (self.size - 1))
-                        .drop_in_place();
+                    self.buffer.add((start + i) & (self.size - 1)).drop_in_place();
                 }
                 self.start.store(
                     (start + to_overwrite) & (2 * self.size - 1),
                     Ordering::Release,
                 );
-                self.counter
-                    .overwritten
-                    .fetch_add(to_overwrite as u64, Ordering::Relaxed);
-                self.total_overwritten_count
-                    .fetch_add(to_overwrite as u64, Ordering::Relaxed);
+                self.counter.overwritten.fetch_add(to_overwrite as u64, Ordering::Relaxed);
+                self.total_overwritten_count.fetch_add(to_overwrite as u64, Ordering::Relaxed);
             }
         }
         let free_after_end = self.size - (raw_end & (self.size - 1));
         if free_after_end >= count {
-            self.buffer
-                .add(raw_end & (self.size - 1))
-                .copy_from_nonoverlapping(msgs, count);
+            self.buffer.add(raw_end & (self.size - 1)).copy_from_nonoverlapping(msgs, count);
         } else {
             self.buffer
                 .add(raw_end & (self.size - 1))
@@ -153,11 +147,8 @@ impl<T> OverwriteQueue<T> {
             self.buffer
                 .copy_from_nonoverlapping(msgs.add(free_after_end), count - free_after_end);
         }
-        self.end
-            .store((raw_end + count) & (2 * self.size - 1), Ordering::Release);
-        self.counter
-            .input
-            .fetch_add(count as u64, Ordering::Relaxed);
+        self.end.store((raw_end + count) & (2 * self.size - 1), Ordering::Release);
+        self.counter.input.fetch_add(count as u64, Ordering::Relaxed);
         self.notify.notify_one();
         Ok(())
     }
@@ -222,9 +213,7 @@ impl<T> OverwriteQueue<T> {
             (start + recv_count) & (2 * self.size - 1),
             Ordering::Release,
         );
-        self.counter
-            .output
-            .fetch_add(recv_count as u64, Ordering::Relaxed);
+        self.counter.output.fetch_add(recv_count as u64, Ordering::Relaxed);
         Ok(recv_count)
     }
 
@@ -377,11 +366,7 @@ impl<T> Receiver<T> {
     pub fn recv(&self, timeout: Option<Duration>) -> Result<T, Error<T>> {
         unsafe {
             let mut msg = MaybeUninit::<T>::uninit();
-            match self
-                .counter()
-                .queue
-                .raw_recv_timeout(timeout, msg.as_mut_ptr(), 1)
-            {
+            match self.counter().queue.raw_recv_timeout(timeout, msg.as_mut_ptr(), 1) {
                 Ok(n) if n == 1 => Ok(msg.assume_init()),
                 Err(e) => Err(e),
                 _ => unreachable!(),
@@ -393,11 +378,7 @@ impl<T> Receiver<T> {
         assert!(n > 0);
         unsafe {
             let mut msgs = Vec::with_capacity(n);
-            match self
-                .counter()
-                .queue
-                .raw_recv_timeout(timeout, msgs.as_mut_ptr(), n)
-            {
+            match self.counter().queue.raw_recv_timeout(timeout, msgs.as_mut_ptr(), n) {
                 Ok(count) => {
                     msgs.set_len(count);
                     Ok(msgs)
@@ -412,11 +393,7 @@ impl<T> Receiver<T> {
         msgs.clear();
         unsafe {
             let max_recv = msgs.capacity();
-            match self
-                .counter()
-                .queue
-                .raw_recv_timeout(timeout, msgs.as_mut_ptr(), max_recv)
-            {
+            match self.counter().queue.raw_recv_timeout(timeout, msgs.as_mut_ptr(), max_recv) {
                 Ok(count) => {
                     msgs.set_len(count);
                     Ok(())
@@ -427,10 +404,7 @@ impl<T> Receiver<T> {
     }
 
     pub fn total_overwritten_count(&self) -> u64 {
-        self.counter()
-            .queue
-            .total_overwritten_count
-            .load(Ordering::Relaxed)
+        self.counter().queue.total_overwritten_count.load(Ordering::Relaxed)
     }
 }
 
@@ -438,9 +412,7 @@ impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         self.counter().queue.close();
         // the last of senders, receiver or stats handle drops the counter
-        self.counter()
-            .receiver_dropped
-            .store(true, Ordering::Release);
+        self.counter().receiver_dropped.store(true, Ordering::Release);
         if self.counter().sender_dropped.load(Ordering::Acquire)
             && self.counter().stats_handle_dropped.load(Ordering::Acquire)
         {
@@ -475,9 +447,7 @@ impl<T> StatsHandle<T> {
 impl<T> Drop for StatsHandle<T> {
     fn drop(&mut self) {
         // the last of senders, receiver or stats handle drops the counter
-        self.counter()
-            .stats_handle_dropped
-            .store(true, Ordering::Release);
+        self.counter().stats_handle_dropped.store(true, Ordering::Release);
         if self.counter().sender_dropped.load(Ordering::Acquire)
             && self.counter().receiver_dropped.load(Ordering::Acquire)
         {
@@ -522,11 +492,8 @@ impl<T: Send> stats::OwnedCountable for StatsHandle<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt;
-    use std::sync::Arc;
-    use std::thread;
-
     use super::*;
+    use std::{fmt, sync::Arc, thread};
 
     #[derive(Debug)]
     struct CountedU64(u64, Arc<AtomicUsize>);
@@ -596,9 +563,7 @@ mod tests {
                             sender.send(j).unwrap();
                         }
                     } else {
-                        sender
-                            .send_all(&mut vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-                            .unwrap();
+                        sender.send_all(&mut vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).unwrap();
                     }
                 });
             }
@@ -725,8 +690,7 @@ mod tests {
                 phase.store(1, Ordering::Release);
 
                 let mut co = Vec::with_capacity(100);
-                r.recv_all(&mut co, Some(Duration::from_millis(100)))
-                    .unwrap();
+                r.recv_all(&mut co, Some(Duration::from_millis(100))).unwrap();
                 assert_eq!(co, vec![42, 43], "expected: [42, 43], result: {:?}", co);
 
                 let e: Error<CountedU64> = r.recv(Some(Duration::from_millis(10))).err().unwrap();

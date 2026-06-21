@@ -1,9 +1,6 @@
-use std::sync::Arc;
-use std::thread::JoinHandle;
-use tokio::runtime::Runtime;
-use tokio::sync::broadcast::Sender;
-
 use public::utils::net::IpMacPair;
+use std::{sync::Arc, thread::JoinHandle};
+use tokio::{runtime::Runtime, sync::broadcast::Sender};
 
 pub struct VectorComponent {}
 

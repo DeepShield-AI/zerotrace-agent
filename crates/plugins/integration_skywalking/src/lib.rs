@@ -42,10 +42,7 @@ pub async fn handle_skywalking_request(
     _: &str,
     _: DebugSender<SkyWalkingExtra>,
 ) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .body(Body::empty())
-        .unwrap()
+    Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap()
 }
 
 pub async fn handle_skywalking_streaming_request(
@@ -54,8 +51,5 @@ pub async fn handle_skywalking_streaming_request(
     _: &str,
     _: DebugSender<SkyWalkingExtra>,
 ) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .body(Body::empty())
-        .unwrap()
+    Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap()
 }

@@ -20,12 +20,9 @@
 //! process_vm_readv system call on Linux, which allows reading memory from
 //! another process without needing to open /proc/pid/mem files.
 
-use std::io;
-use std::mem;
-
-use libc::{c_void, iovec, pid_t, process_vm_readv};
-
 use crate::error::Result;
+use libc::{c_void, iovec, pid_t, process_vm_readv};
+use std::{io, mem};
 
 /// A reader for remote process memory using process_vm_readv.
 ///
@@ -227,7 +224,7 @@ impl RemoteMemory {
 
                 // Convert to UTF-8, replacing invalid sequences
                 Ok(String::from_utf8_lossy(&buffer).into_owned())
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -317,9 +314,7 @@ mod tests {
         let address = test_str.as_ptr() as u64;
 
         let remote_mem = RemoteMemory::new(std::process::id());
-        let read_str = remote_mem
-            .read_cstring(address, 256)
-            .expect("Failed to read string");
+        let read_str = remote_mem.read_cstring(address, 256).expect("Failed to read string");
 
         assert_eq!(read_str, "Hello, World!");
     }

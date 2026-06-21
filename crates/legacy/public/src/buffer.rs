@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use crate::counter::{Counter, CounterType, CounterValue, RefCountable};
 use std::{
     fmt,
     marker::PhantomData,
@@ -26,8 +27,6 @@ use std::{
     },
     time::Instant,
 };
-
-use crate::counter::{Counter, CounterType, CounterValue, RefCountable};
 
 struct Buffer<T: Sized> {
     size: usize,

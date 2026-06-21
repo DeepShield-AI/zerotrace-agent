@@ -15,8 +15,7 @@
  */
 pub use public_derive_internals::types::PrioField;
 use serde::Serialize;
-use std::borrow::Cow;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 #[derive(Clone, Debug)]
 pub enum PrioStrings {

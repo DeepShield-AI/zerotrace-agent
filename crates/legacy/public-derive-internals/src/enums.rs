@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(
     Serialize, Deserialize, Debug, Default, PartialEq, Copy, Clone, Eq, num_enum::TryFromPrimitive,

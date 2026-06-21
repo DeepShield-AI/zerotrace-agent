@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-use std::any::Any;
-use std::fmt;
-use std::io::{Result, Write};
-use std::time::Duration;
-
 use crate::consts::RECORD_HEADER_LEN;
+use std::{
+    any::Any,
+    fmt,
+    io::{Result, Write},
+    time::Duration,
+};
 
 pub const SECONDS_IN_MINUTE: u64 = 60;
 

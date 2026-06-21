@@ -14,15 +14,10 @@
  * limitations under the License.
  */
 
-use std::borrow::Borrow;
-use std::cmp::Ordering;
-use std::collections::VecDeque;
-use std::hash::Hash;
-use std::mem;
-use std::ops::RangeBounds;
-use std::ptr;
-
 use ahash::AHashMap;
+use std::{
+    borrow::Borrow, cmp::Ordering, collections::VecDeque, hash::Hash, mem, ops::RangeBounds, ptr,
+};
 
 pub struct ChronoMap<T, K, V>
 where
@@ -210,10 +205,7 @@ where
             if self.timeline.is_empty() || (*self.timeline[0]).time > time {
                 return;
             }
-            let max_index = match self
-                .timeline
-                .binary_search_by_key(&&time, |th| &(**th).time)
-            {
+            let max_index = match self.timeline.binary_search_by_key(&&time, |th| &(**th).time) {
                 Ok(index) => index,
                 Err(index) => index - 1, // self.timeline[0].time < time is checked, index will be larger than 1
             };

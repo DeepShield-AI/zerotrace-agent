@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
-use std::{collections::HashMap, str::FromStr};
-
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{parse::ParseStream, parse2, DeriveInput};
-
 use public_derive_internals::l7_protocol::NativeTag;
+use quote::{format_ident, quote};
+use std::{collections::HashMap, str::FromStr};
+use syn::{parse::ParseStream, parse2, DeriveInput};
 
 const ATTRIBUTE_NAME: &str = "l7_log";
 
@@ -47,11 +45,7 @@ fn expected_fields() -> HashMap<NativeTag, FieldOptions> {
         NativeTag::BizScenario,
         NativeTag::BizResponseCode,
     ];
-    HashMap::from_iter(
-        fields
-            .into_iter()
-            .map(|field| (field, FieldOptions::default())),
-    )
+    HashMap::from_iter(fields.into_iter().map(|field| (field, FieldOptions::default())))
 }
 
 pub fn expand_derive(input: &DeriveInput) -> syn::Result<TokenStream> {
@@ -61,8 +55,8 @@ pub fn expand_derive(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     let xid_0_opts = fields.get(&NativeTag::XRequestId0).unwrap();
     let xid_1_opts = fields.get(&NativeTag::XRequestId1).unwrap();
-    if (xid_0_opts.configured() || xid_0_opts.valid())
-        && (xid_1_opts.configured() || xid_1_opts.valid())
+    if (xid_0_opts.configured() || xid_0_opts.valid()) &&
+        (xid_1_opts.configured() || xid_1_opts.valid())
     {
         let xid_opts = fields.get_mut(&NativeTag::XRequestId).unwrap();
         // remove invalid x_request_id if it's not configured
@@ -83,24 +77,21 @@ pub fn expand_derive(input: &DeriveInput) -> syn::Result<TokenStream> {
     for (key, opts) in fields {
         if !opts.valid() {
             match (opts.getter.is_none(), opts.setter.is_none()) {
-                (true, true) => {
+                (true, true) =>
                     return Err(syn::Error::new_spanned(
                         input,
                         format!("Missing field: {key}"),
-                    ))
-                }
-                (true, _) => {
+                    )),
+                (true, _) =>
                     return Err(syn::Error::new_spanned(
                         input,
                         format!("Missing getter for field: {key}"),
-                    ))
-                }
-                (_, true) => {
+                    )),
+                (_, true) =>
                     return Err(syn::Error::new_spanned(
                         input,
                         format!("Missing setter for field: {key}"),
-                    ))
-                }
+                    )),
                 _ => unreachable!(),
             }
         };
@@ -224,13 +215,13 @@ fn parse_fields(
                 data.enum_token,
                 "Enum is not supported",
             ));
-        }
+        },
         syn::Data::Union(data) => {
             return Err(syn::Error::new_spanned(
                 data.union_token,
                 "Union is not supported",
             ));
-        }
+        },
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(_) => data,
             syn::Fields::Unnamed(_) => {
@@ -238,13 +229,13 @@ fn parse_fields(
                     &data.fields,
                     "Unnamed fields are not supported",
                 ));
-            }
+            },
             syn::Fields::Unit => {
                 return Err(syn::Error::new_spanned(
                     &data.fields,
                     "Unit struct is not supported",
                 ));
-            }
+            },
         },
     };
     for field in data.fields.iter() {

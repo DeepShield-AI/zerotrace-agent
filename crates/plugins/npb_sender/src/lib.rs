@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-use std::fmt::Debug;
-use std::io::{Error as IOError, ErrorKind, Result as IOResult};
-use std::net::IpAddr;
+use std::{
+    fmt::Debug,
+    io::{Error as IOError, ErrorKind, Result as IOResult},
+    net::IpAddr,
+};
 
 #[derive(Debug)]
 pub struct ZmqSender {

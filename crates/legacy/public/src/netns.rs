@@ -14,22 +14,13 @@
  * limitations under the License.
  */
 
-use std::{
-    borrow::Cow,
-    cell::OnceCell,
-    cmp::Ordering,
-    collections::HashMap,
-    ffi::OsString,
-    fmt::{self, Debug},
-    fs::{self, File},
-    hash::{Hash, Hasher},
-    io::{Cursor, Write},
-    mem,
-    net::IpAddr,
-    os::unix::{fs::MetadataExt, io::AsRawFd},
-    path::{Path, PathBuf},
+use crate::{
+    proto::agent as pb,
+    utils::net::{
+        self, addr_list, link_by_name, link_list, links_by_name_regex, route_list, rule_list, Addr,
+        Link, MacAddr, IF_TYPE_IPVLAN,
+    },
 };
-
 use ipnet::IpNet;
 use log::{debug, info, trace, warn};
 use neli::{
@@ -46,15 +37,22 @@ use neli::{
 use nix::sched::{setns, CloneFlags};
 use num_enum::IntoPrimitive;
 use regex::Regex;
-use thiserror::Error;
-
-use crate::{
-    proto::agent as pb,
-    utils::net::{
-        self, addr_list, link_by_name, link_list, links_by_name_regex, route_list, rule_list, Addr,
-        Link, MacAddr, IF_TYPE_IPVLAN,
-    },
+use std::{
+    borrow::Cow,
+    cell::OnceCell,
+    cmp::Ordering,
+    collections::HashMap,
+    ffi::OsString,
+    fmt::{self, Debug},
+    fs::{self, File},
+    hash::{Hash, Hasher},
+    io::{Cursor, Write},
+    mem,
+    net::IpAddr,
+    os::unix::{fs::MetadataExt, io::AsRawFd},
+    path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -540,10 +538,7 @@ pub fn interfaces_linked_with<S: AsRef<[NsFile]>>(
                     if_type: link.if_type,
                 };
                 debug!("found {:?}", info);
-                result
-                    .entry(info.tap_ns.clone())
-                    .or_insert(vec![])
-                    .push(info);
+                result.entry(info.tap_ns.clone()).or_insert(vec![]).push(info);
             }
             continue 'outer;
         }
@@ -576,9 +571,7 @@ pub fn find_ns_files_by_regex(re: &Regex) -> Vec<NsFile> {
 pub fn current_netns_path() -> PathBuf {
     // SAFTY: safe FFI call to get thread id
     let tid = unsafe { libc::syscall(libc::SYS_gettid) as u32 };
-    [PROC_PATH, "self", "task", &tid.to_string(), "ns", "net"]
-        .iter()
-        .collect()
+    [PROC_PATH, "self", "task", &tid.to_string(), "ns", "net"].iter().collect()
 }
 
 thread_local! {
@@ -751,11 +744,7 @@ pub fn get_proc_cache() -> Result<HashMap<u64, Vec<u32>>> {
                 continue;
             },
         }
-        let pid = proc
-            .file_name()
-            .into_string()
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok());
+        let pid = proc.file_name().into_string().ok().and_then(|s| s.parse::<u32>().ok());
         if pid.is_none() {
             continue;
         }
@@ -797,10 +786,7 @@ impl WrappedSocket {
         );
         self.0.send(hdr)?;
 
-        for m in self
-            .0
-            .iter::<NlTypeWrapper, Genlmsghdr<CtrlCmd, CtrlAttr>>(false)
-        {
+        for m in self.0.iter::<NlTypeWrapper, Genlmsghdr<CtrlCmd, CtrlAttr>>(false) {
             let m = m?;
             if let NlTypeWrapper::Rtm(Rtm::Newnsid) = m.nl_type {
                 for attr in m.get_payload()?.get_attr_handle().iter() {

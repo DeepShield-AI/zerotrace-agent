@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-use std::fmt::Display;
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 pub struct HandshakeHeader {}
 

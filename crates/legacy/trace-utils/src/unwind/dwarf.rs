@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-use std::collections::{hash_map::Entry, HashMap};
-use std::fmt;
-use std::path::Path;
-
+use crate::{
+    error::{Error, Result},
+    maps::get_memory_mappings,
+};
 use gimli::{
     BaseAddresses, CallFrameInstruction, CieOrFde, CommonInformationEntry, EhFrame, NativeEndian,
     Reader, ReaderOffset, Register, UnwindSection,
 };
 use log::{debug, trace};
 use object::{Object, ObjectSection};
-
-use crate::{
-    error::{Error, Result},
-    maps::get_memory_mappings,
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    fmt,
+    path::Path,
 };
 
 const EH_FRAME_NAME: &'static str = ".eh_frame";
@@ -223,43 +223,43 @@ impl UnwindEntry {
             // row instructions
             CallFrameInstruction::SetLoc { address } => {
                 self.pc = *address;
-            }
+            },
             CallFrameInstruction::AdvanceLoc { delta } => {
                 self.pc += *delta as u64 * cie.code_alignment_factor();
-            }
+            },
             // cfa instructions
             CallFrameInstruction::DefCfa { register, offset } => {
                 self.set_cfa_reg(register);
                 self.cfa_offset = (offset >> 3) as i16;
-            }
+            },
             CallFrameInstruction::DefCfaSf {
                 register,
                 factored_offset,
             } => {
                 self.set_cfa_reg(register);
                 self.cfa_offset = ((factored_offset * cie.data_alignment_factor()) >> 3) as i16;
-            }
+            },
             CallFrameInstruction::DefCfaRegister { register } => self.set_cfa_reg(register),
             CallFrameInstruction::DefCfaOffset { offset } => self.cfa_offset = (offset >> 3) as i16,
             CallFrameInstruction::DefCfaOffsetSf { factored_offset } => {
                 self.cfa_offset =
                     ((*factored_offset as i64 * cie.data_alignment_factor()) >> 3) as i16;
-            }
+            },
             CallFrameInstruction::DefCfaExpression { expression } => {
                 // TBD
                 let _ = expression;
                 self.cfa_type = CfaType::Expression;
                 self.cfa_offset = 0;
-            }
+            },
             // FP register instructions (RBP on x86_64, X29 on ARM64)
             CallFrameInstruction::Undefined { register } if register.0 == REG_ID_RBP => {
                 self.rbp_type = RegType::Undefined;
                 self.rbp_offset = 0;
-            }
+            },
             CallFrameInstruction::SameValue { register } if register.0 == REG_ID_RBP => {
                 self.rbp_type = RegType::SameValue;
                 self.rbp_offset = 0;
-            }
+            },
             CallFrameInstruction::Offset {
                 register,
                 factored_offset,
@@ -267,7 +267,7 @@ impl UnwindEntry {
                 self.rbp_type = RegType::Offset;
                 self.rbp_offset =
                     ((*factored_offset as i64 * cie.data_alignment_factor()) >> 3) as i16;
-            }
+            },
             CallFrameInstruction::OffsetExtendedSf {
                 register,
                 factored_offset,
@@ -275,26 +275,26 @@ impl UnwindEntry {
                 self.rbp_type = RegType::Offset;
                 self.rbp_offset =
                     ((*factored_offset as i64 * cie.data_alignment_factor()) >> 3) as i16;
-            }
+            },
             // unsupported FP register instructions
             CallFrameInstruction::ValOffset { register, .. } if register.0 == REG_ID_RBP => {
                 self.rbp_type = RegType::Unsupported;
                 self.rbp_offset = 0;
-            }
+            },
             CallFrameInstruction::ValOffsetSf { register, .. } if register.0 == REG_ID_RBP => {
                 self.rbp_type = RegType::Unsupported;
                 self.rbp_offset = 0;
-            }
+            },
             CallFrameInstruction::Register { dest_register, .. }
                 if dest_register.0 == REG_ID_RBP =>
             {
                 self.rbp_type = RegType::Unsupported;
                 self.rbp_offset = 0;
-            }
+            },
             CallFrameInstruction::Expression { register, .. } if register.0 == REG_ID_RBP => {
                 self.rbp_type = RegType::Unsupported;
                 self.rbp_offset = 0;
-            }
+            },
             // ARM64 LR (Link Register / X30) tracking for return address
             // When LR has SameValue rule, return address is in LR register
             // When LR has Offset rule, RA is saved on stack at CFA + offset
@@ -302,7 +302,7 @@ impl UnwindEntry {
             CallFrameInstruction::SameValue { register } if register.0 == REG_ID_LR => {
                 self.ra_type = RaType::LrRegister;
                 self.ra_offset = 0;
-            }
+            },
             #[cfg(target_arch = "aarch64")]
             CallFrameInstruction::Offset {
                 register,
@@ -311,7 +311,7 @@ impl UnwindEntry {
                 self.ra_type = RaType::CfaOffset;
                 self.ra_offset =
                     ((*factored_offset as i64 * cie.data_alignment_factor()) >> 3) as i16;
-            }
+            },
             #[cfg(target_arch = "aarch64")]
             CallFrameInstruction::OffsetExtendedSf {
                 register,
@@ -320,13 +320,13 @@ impl UnwindEntry {
                 self.ra_type = RaType::CfaOffset;
                 self.ra_offset =
                     ((*factored_offset as i64 * cie.data_alignment_factor()) >> 3) as i16;
-            }
+            },
             #[cfg(target_arch = "aarch64")]
             CallFrameInstruction::Undefined { register } if register.0 == REG_ID_LR => {
                 // LR undefined usually means this is a stop frame (entry point)
                 self.ra_type = RaType::Unsupported;
                 self.ra_offset = 0;
-            }
+            },
             _ => (),
         }
     }
@@ -374,18 +374,17 @@ impl StateMachine {
                 if register.0 == REG_ID_LR {
                     (self.entry.ra_type, self.entry.ra_offset) = self.initial_ra;
                 }
-            }
+            },
             CallFrameInstruction::RememberState => {
                 self.reg_stack.push(self.entry);
-            }
-            CallFrameInstruction::RestoreState => {
+            },
+            CallFrameInstruction::RestoreState =>
                 if let Some(stack_state) = self.reg_stack.pop() {
                     self.entry = UnwindEntry {
                         pc: self.entry.pc,
                         ..stack_state
                     };
-                }
-            }
+                },
             _ => self.entry.update(cie, ins),
         }
     }
@@ -460,7 +459,7 @@ pub fn read_unwind_entries(data: &[u8]) -> Result<Vec<UnwindEntry>> {
                         // the fde crossed multiple holes, is this possible?
                         unreachable!();
                     }
-                }
+                },
                 Err(index) if index >= holes.len() => holes.push(make_default_entry(fde_end)),
                 Err(index) => {
                     // we have holes[index - 1].pc < fde_start and holes[index].pc > fde_start here
@@ -473,15 +472,15 @@ pub fn read_unwind_entries(data: &[u8]) -> Result<Vec<UnwindEntry>> {
                         match (&holes[index..]).binary_search_by_key(&fde_end, |entry| entry.pc) {
                             Ok(offset) => {
                                 holes.drain(index..index + offset);
-                            }
+                            },
                             Err(offset) => {
                                 // we have offset >= 1 here because next_hole.pc < fde_end
                                 holes.drain(index..index + offset - 1);
                                 holes[index].pc = fde_end;
-                            }
+                            },
                         }
                     }
-                }
+                },
             }
 
             // copy here because CIE state is for all FDEs
@@ -510,18 +509,18 @@ pub fn read_unwind_entries(data: &[u8]) -> Result<Vec<UnwindEntry>> {
                     Ok(Some(ins)) => {
                         if matches!(
                             ins,
-                            CallFrameInstruction::AdvanceLoc { .. }
-                                | CallFrameInstruction::SetLoc { .. }
+                            CallFrameInstruction::AdvanceLoc { .. } |
+                                CallFrameInstruction::SetLoc { .. }
                         ) {
                             unwind_entries.push(sm.entry);
                         }
                         sm.update(fde.cie(), &ins);
-                    }
+                    },
                     #[cfg(target_arch = "aarch64")]
                     Err(_e) => {
                         fde_ok = false;
                         break;
-                    }
+                    },
                     #[cfg(not(target_arch = "aarch64"))]
                     Err(e) => return Err(e.into()),
                 }
@@ -548,10 +547,8 @@ pub fn read_unwind_entries(data: &[u8]) -> Result<Vec<UnwindEntry>> {
 
         if max_executable_addr > last_dwarf_pc {
             // Add synthetic entry at max_executable_addr using last available rules
-            if let Some(last_entry) = unwind_entries
-                .iter()
-                .rev()
-                .find(|e| e.cfa_type != CfaType::NoEntry)
+            if let Some(last_entry) =
+                unwind_entries.iter().rev().find(|e| e.cfa_type != CfaType::NoEntry)
             {
                 let mut extended_entry = *last_entry;
                 extended_entry.pc = max_executable_addr;
@@ -570,14 +567,14 @@ pub fn frame_pointer_heuristic_check(pid: u32) -> bool {
         Err(e) => {
             debug!("failed loading maps for process#{pid}: {e}");
             return false;
-        }
+        },
     };
     for m in mappings {
         let path = Path::new(&m.path);
         if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.starts_with("libc.")
-                || name.starts_with("libc-")
-                || name.starts_with("libstdc++.")
+            if name.starts_with("libc.") ||
+                name.starts_with("libc-") ||
+                name.starts_with("libstdc++.")
             {
                 trace!("process#{pid} may not have frame pointer enabled");
                 return false;

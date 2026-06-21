@@ -15,12 +15,12 @@
  */
 
 //! Enterprise Edition Feature: policy
-use std::fmt;
-use std::net::{IpAddr, Ipv4Addr};
-
 use bitflags::bitflags;
-
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use std::{
+    fmt,
+    net::{IpAddr, Ipv4Addr},
+};
 
 pub const NOT_SUPPORT: bool = true;
 
@@ -150,9 +150,7 @@ impl NpbAction {
 
     pub fn add_acl_gid(&mut self, acl_gids: &[u16], tunnel_ip_ids: &[u16]) {
         acl_gids.into_iter().for_each(|x| self.acl_gids.push(*x));
-        tunnel_ip_ids
-            .into_iter()
-            .for_each(|x| self.tunnel_ip_ids.push(*x));
+        tunnel_ip_ids.into_iter().for_each(|x| self.tunnel_ip_ids.push(*x));
     }
 
     pub fn acl_gids(&self) -> &[u16] {
@@ -209,9 +207,9 @@ impl PolicyData {
     }
 
     pub fn contain_npb(&self) -> bool {
-        self.acl_id > 0
-            && self.action_flags.contains(ActionFlags::NPB)
-            && !self.action_flags.contains(ActionFlags::NPB_DROP)
+        self.acl_id > 0 &&
+            self.action_flags.contains(ActionFlags::NPB) &&
+            !self.action_flags.contains(ActionFlags::NPB_DROP)
     }
 
     pub fn contain_pcap(&self) -> bool {

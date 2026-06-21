@@ -15,9 +15,8 @@
  */
 
 //! Enterprise Edition Feature: packet-sequence
-use std::time::Duration;
-
 use public::sender::{SendMessageType, Sendable};
+use std::time::Duration;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct PacketData {}

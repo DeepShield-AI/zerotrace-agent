@@ -16,16 +16,18 @@
 
 //! Enterprise Edition Feature: RawPcap Assembler
 
-use std::sync::atomic::AtomicI64;
-use std::sync::Arc;
-use std::thread::JoinHandle;
-use std::time::Duration;
-
-use public::counter::{Counter, RefCountable};
-use public::packet::MiniPacket;
-use public::proto::agent::PcapBatch;
-use public::queue::{DebugSender, Receiver};
-use public::sender::{SendMessageType, Sendable};
+use public::{
+    counter::{Counter, RefCountable},
+    packet::MiniPacket,
+    proto::agent::PcapBatch,
+    queue::{DebugSender, Receiver},
+    sender::{SendMessageType, Sendable},
+};
+use std::{
+    sync::{atomic::AtomicI64, Arc},
+    thread::JoinHandle,
+    time::Duration,
+};
 
 pub struct PcapAssembler {
     pub counter: Arc<AssemblerCounter>,

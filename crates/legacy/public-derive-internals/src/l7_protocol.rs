@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-use std::borrow::{Borrow, Cow};
-
-use serde::{Deserialize, Serialize};
-
 use crate::{enums::L7ResponseStatus, types::PrioField};
+use serde::{Deserialize, Serialize};
+use std::borrow::{Borrow, Cow};
 
 pub trait L7LogAttribute {
     fn add_attribute(&mut self, _name: Cow<'_, str>, _value: Cow<'_, str>) {}

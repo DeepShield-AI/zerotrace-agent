@@ -22,19 +22,17 @@
 //! - Computing base addresses for relocated binaries
 //! - Finding .text section program headers
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
+use crate::error::Result;
 use log::{debug, trace};
 use object::{
     elf,
     read::elf::{FileHeader, ProgramHeader, SectionHeader},
     Object, ObjectSymbol,
 };
-
-use crate::error::Result;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// A memory-mapped ELF file with lazy loading and symbol lookup capabilities.
 ///
@@ -123,9 +121,8 @@ impl MappedFile {
         let endian = elf.endian()?;
         let sec_headers = elf.section_headers(endian, data)?;
         let sec_strs = elf.section_strings(endian, data, sec_headers)?;
-        let Some(th) = sec_headers
-            .iter()
-            .find(|h| h.name(endian, sec_strs) == Ok(".text".as_bytes()))
+        let Some(th) =
+            sec_headers.iter().find(|h| h.name(endian, sec_strs) == Ok(".text".as_bytes()))
         else {
             debug!("Cannot find .text section in {}", path.as_ref().display());
             return Ok(None);
@@ -191,15 +188,10 @@ impl MappedFile {
             .collect();
         syms.sort_by_key(|s| s.address());
 
-        let pos = syms
-            .iter()
-            .position(|s| s.name().map(|n| n == name).unwrap_or(false));
+        let pos = syms.iter().position(|s| s.name().map(|n| n == name).unwrap_or(false));
         let Some(idx) = pos else { return Ok(None) };
         let start = syms[idx].address() + ba;
-        let end = syms
-            .get(idx + 1)
-            .map(|s| s.address() + ba)
-            .unwrap_or(start + 0x2000); // conservative fallback if size is unknown
+        let end = syms.get(idx + 1).map(|s| s.address() + ba).unwrap_or(start + 0x2000); // conservative fallback if size is unknown
         Ok(Some((start, end)))
     }
 
@@ -210,9 +202,7 @@ impl MappedFile {
 
     /// Check if the file name contains a substring.
     pub fn file_name_contains(&self, pattern: &str) -> bool {
-        self.file_name()
-            .map(|s| s.contains(pattern))
-            .unwrap_or(false)
+        self.file_name().map(|s| s.contains(pattern)).unwrap_or(false)
     }
 }
 

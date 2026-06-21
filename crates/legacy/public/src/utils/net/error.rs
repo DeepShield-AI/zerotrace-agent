@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-use std::fmt::Debug;
-
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use neli::err::{NlError, SerError};
+use std::fmt::Debug;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

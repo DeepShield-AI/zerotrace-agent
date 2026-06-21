@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+use super::{Error as SendError, Result, DEBUG_QUEUE_IDLE_TIMEOUT, MAX_BUF_SIZE};
+use crate::queue::{Error, Receiver};
+use bincode::{config::Configuration, encode_to_vec, Decode, Encode};
+use log::warn;
 use std::{
     collections::HashMap,
     io::{self, ErrorKind},
@@ -27,12 +31,6 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-
-use bincode::{config::Configuration, encode_to_vec, Decode, Encode};
-use log::warn;
-
-use super::{Error as SendError, Result, DEBUG_QUEUE_IDLE_TIMEOUT, MAX_BUF_SIZE};
-use crate::queue::{Error, Receiver};
 
 const QUEUE_RELEASE_TIMEOUT: Duration = Duration::from_micros(1);
 const QUEUE_RECV_TIMEOUT: Duration = Duration::from_secs(1);

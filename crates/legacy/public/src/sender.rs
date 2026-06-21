@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fmt::Debug;
-
 use num_enum::IntoPrimitive;
+use std::{fmt, fmt::Debug};
 
 /// A abstraction for sending data and serialize data
 pub trait Sendable: Debug + Send + 'static {

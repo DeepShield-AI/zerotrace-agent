@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::fmt;
-
 use serde::Serialize;
+use std::fmt;
 
 pub struct PrioField<T> {
     prio: u8,

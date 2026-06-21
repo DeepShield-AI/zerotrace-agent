@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
-
 use npb_pcap_policy::{NpbTunnelType, PolicyData};
 use public::{
     counter::{CounterType, CounterValue, OwnedCountable},
     leaky_bucket::LeakyBucket,
     proto::agent::VlanMode,
     queue::DebugSender,
+};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Weak,
 };
 
 pub const NOT_SUPPORT: bool = true;
@@ -85,10 +86,10 @@ impl OwnedCountable for StatsNpbHandlerCounter {
                         CounterValue::Unsigned(tx_bytes),
                     ),
                 ]
-            }
+            },
             None => {
                 vec![]
-            }
+            },
         }
     }
 }

@@ -16,14 +16,8 @@
 
 //! Enterprise Edition Feature: windows-dispatcher
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use public::counter;
-use public::debug::QueueDebugger;
-use public::error::Result;
-use public::packet;
-use public::queue::Receiver;
+use public::{counter, debug::QueueDebugger, error::Result, packet, queue::Receiver};
+use std::{sync::Arc, time::Duration};
 
 #[derive(Default)]
 pub struct LibpcapCounter;

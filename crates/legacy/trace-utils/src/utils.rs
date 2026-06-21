@@ -14,15 +14,6 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::VecDeque,
-    ffi::{CStr, CString},
-    fs::File,
-    io,
-    os::unix::{fs::MetadataExt, io::AsRawFd},
-    sync::{Mutex, OnceLock},
-};
-
 use libc::{c_int, c_longlong, c_void};
 use log::debug;
 use nix::{
@@ -31,6 +22,14 @@ use nix::{
     unistd::{execve, fork, ForkResult},
 };
 use procfs::process::all_processes;
+use std::{
+    collections::VecDeque,
+    ffi::{CStr, CString},
+    fs::File,
+    io,
+    os::unix::{fs::MetadataExt, io::AsRawFd},
+    sync::{Mutex, OnceLock},
+};
 
 #[derive(Default)]
 pub struct IdGenerator {
@@ -53,7 +52,7 @@ impl IdGenerator {
 }
 
 pub const BPF_ANY: c_longlong = 0;
-extern "C" {
+unsafe extern "C" {
     pub fn bpf_update_elem(
         fd: c_int,
         key: *const c_void,
@@ -185,7 +184,7 @@ pub fn protect_cpu_affinity() -> io::Result<()> {
                         format!("unexpected wait status: {:?}", other),
                     )),
                 }
-            }
+            },
             // 子进程中
             Ok(ForkResult::Child) => {
                 if need_setns {
@@ -205,7 +204,7 @@ pub fn protect_cpu_affinity() -> io::Result<()> {
                             Err(e) => {
                                 eprintln!("failed to open {}: {}", path, e);
                                 libc::_exit(1);
-                            }
+                            },
                         };
 
                         if let Err(e) = setns(&file, nix::sched::CloneFlags::empty()) {
@@ -231,7 +230,7 @@ pub fn protect_cpu_affinity() -> io::Result<()> {
                 // 如果numad执行失败，在这里子进程退出
                 #[allow(unreachable_code)]
                 libc::_exit(127);
-            }
+            },
             Err(e) => Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!("fork failed: {}", e),
@@ -270,7 +269,7 @@ impl From<LogLevel> for log::Level {
 // msg/function_name/file_path should be null terminated utf8 strings or will be ignored
 // function_name and file_path can be nil
 // _function_name is ignored at the moment because file_name + line_number should be enough for debugging
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_log_wrapper(
     level: LogLevel,
     error_number: libc::c_int,
@@ -288,7 +287,7 @@ pub unsafe extern "C" fn rust_log_wrapper(
         Err(e) => {
             debug!("msg is not null terminated utf8 string: {e}");
             return;
-        }
+        },
     };
 
     let err_msg = if error_number == 0 {
@@ -299,7 +298,7 @@ pub unsafe extern "C" fn rust_log_wrapper(
             Err(e) => {
                 debug!("failed to convert strerror to string: {e}");
                 None
-            }
+            },
         }
     };
 
@@ -311,7 +310,7 @@ pub unsafe extern "C" fn rust_log_wrapper(
             Err(e) => {
                 debug!("file_path is not null terminated utf8 string: {e}");
                 None
-            }
+            },
         }
     };
 
@@ -322,16 +321,11 @@ pub unsafe extern "C" fn rust_log_wrapper(
     };
 
     let mut rb = log::Record::builder();
-    rb.target("libtrace")
-        .level(level.into())
-        .file(file_path)
-        .line(line_number);
+    rb.target("libtrace").level(level.into()).file(file_path).line(line_number);
     // `format_args!` must be put into `args()` to avoid borrow checker issues as of rust 1.83
     match err_msg {
-        Some(err_msg) => log::logger().log(
-            &rb.args(format_args!("{msg}: {err_msg} (errno {error_number})"))
-                .build(),
-        ),
+        Some(err_msg) => log::logger()
+            .log(&rb.args(format_args!("{msg}: {err_msg} (errno {error_number})")).build()),
         None => log::logger().log(&rb.args(format_args!("{msg}")).build()),
     }
 }

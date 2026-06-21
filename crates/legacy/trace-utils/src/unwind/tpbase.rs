@@ -23,12 +23,12 @@
 //! On x86_64, the thread pointer base is stored in task_struct.thread.fsbase
 //! On arm64, it's stored in task_struct.thread.uw.tp_value
 
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-
-use log::{debug, trace, warn};
-
 use crate::error::{Error, Result};
+use log::{debug, trace, warn};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+};
 
 // Constants for TPBASE offset validation
 /// Minimum reasonable TPBASE offset (task_struct.thread.fsbase should be after basic fields)
@@ -285,7 +285,7 @@ fn lookup_kernel_symbol(name: &str) -> Result<u64> {
                     ));
                 }
                 return Ok(addr);
-            }
+            },
             _ => (),
         }
     }
@@ -315,11 +315,11 @@ pub fn extract_tpbase_offset() -> Result<u64> {
                     addr
                 );
                 addr
-            }
+            },
             Err(e) => {
                 trace!("Symbol {} not found: {}", analyzer.function_name, e);
                 continue;
-            }
+            },
         };
 
         // Read function code (256 bytes should be enough for analysis)
@@ -331,7 +331,7 @@ pub fn extract_tpbase_offset() -> Result<u64> {
                     analyzer.function_name, e
                 );
                 continue;
-            }
+            },
         };
 
         let Some(offset) = (analyzer.analyze)(&code) else {
@@ -375,10 +375,10 @@ fn extract_tpbase_offset_from_btf() -> Result<u64> {
                     offset, offset
                 );
                 return Ok(offset);
-            }
+            },
             Err(e) => {
                 debug!("BTF parsing failed: {}", e);
-            }
+            },
         }
 
         // Fallback to hardcoded defaults based on common kernel configurations
@@ -396,10 +396,10 @@ fn extract_tpbase_offset_from_btf() -> Result<u64> {
                     offset, offset
                 );
                 return Ok(offset);
-            }
+            },
             Err(e) => {
                 debug!("BTF parsing failed: {}", e);
-            }
+            },
         }
 
         // Fallback to hardcoded defaults based on common kernel configurations
@@ -417,8 +417,7 @@ fn extract_tpbase_offset_from_btf() -> Result<u64> {
 /// Parse BTF information from /sys/kernel/btf/vmlinux to get TPBASE offset
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn parse_btf_for_tpbase() -> Result<u64> {
-    use std::fs::File;
-    use std::io::Read;
+    use std::{fs::File, io::Read};
 
     // Read BTF data from sysfs
     let btf_path = "/sys/kernel/btf/vmlinux";
@@ -474,8 +473,8 @@ fn parse_btf_task_struct_fsbase(btf_data: &[u8]) -> Result<u64> {
     let type_section_start = hdr_len + type_off;
     let str_section_start = hdr_len + str_off;
 
-    if type_section_start + type_len > btf_data.len()
-        || str_section_start + str_len > btf_data.len()
+    if type_section_start + type_len > btf_data.len() ||
+        str_section_start + str_len > btf_data.len()
     {
         return Err(Error::Msg("BTF sections out of bounds".to_string()));
     }
@@ -653,21 +652,15 @@ fn find_btf_member_info(
                 }
 
                 let mem_name_off = u32::from_le_bytes(
-                    type_section[member_offset..member_offset + 4]
-                        .try_into()
-                        .unwrap(),
+                    type_section[member_offset..member_offset + 4].try_into().unwrap(),
                 ) as usize;
 
                 let mem_type = u32::from_le_bytes(
-                    type_section[member_offset + 4..member_offset + 8]
-                        .try_into()
-                        .unwrap(),
+                    type_section[member_offset + 4..member_offset + 8].try_into().unwrap(),
                 );
 
                 let mem_offset_bits = u32::from_le_bytes(
-                    type_section[member_offset + 8..member_offset + 12]
-                        .try_into()
-                        .unwrap(),
+                    type_section[member_offset + 8..member_offset + 12].try_into().unwrap(),
                 );
 
                 if mem_name_off < str_section.len() {
@@ -769,8 +762,8 @@ fn get_default_tpbase_offset() -> Result<u64> {
 }
 
 /// C-callable function to read TPBASE offset
-#[no_mangle]
-pub extern "C" fn read_tpbase_offset() -> i64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn read_tpbase_offset() -> i64 {
     match extract_tpbase_offset() {
         Ok(offset) => offset as i64,
         Err(e) => {
@@ -792,7 +785,7 @@ pub extern "C" fn read_tpbase_offset() -> i64 {
             {
                 -1
             }
-        }
+        },
     }
 }
 

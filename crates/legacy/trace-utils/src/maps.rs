@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fs::File;
-use std::io::{self, BufRead};
-use std::path::PathBuf;
-
 use log::trace;
+use std::{
+    fmt,
+    fs::File,
+    io::{self, BufRead},
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone)]
 pub struct MemoryArea {
@@ -61,10 +62,7 @@ pub fn get_memory_mappings(pid: u32) -> io::Result<Vec<MemoryArea>> {
         let Some(path) = path else {
             continue;
         };
-        let mut addrs = addrs
-            .unwrap()
-            .splitn(2, "-")
-            .map(|addr| u64::from_str_radix(addr, 16));
+        let mut addrs = addrs.unwrap().splitn(2, "-").map(|addr| u64::from_str_radix(addr, 16));
         let Some(Ok(m_start)) = addrs.next() else {
             continue;
         };
@@ -82,7 +80,7 @@ pub fn get_memory_mappings(pid: u32) -> io::Result<Vec<MemoryArea>> {
                 }
                 area.m_start = area.m_start.min(m_start);
                 area.m_end = area.m_end.max(m_end);
-            }
+            },
             _ => {
                 if last_executable {
                     let la = last_area.take().unwrap();
@@ -122,7 +120,7 @@ pub fn get_memory_mappings(pid: u32) -> io::Result<Vec<MemoryArea>> {
                     path: path.to_owned(),
                 });
                 last_executable = perms.contains('x');
-            }
+            },
         }
     }
     // push the last area if it is executable

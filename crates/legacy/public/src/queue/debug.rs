@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+use super::{bounded, Error, Receiver, Sender, StatsHandle};
+use crate::debug::{QueueDebugger, QUEUE_LEN};
+use log::debug;
 use std::{
     fmt::Debug,
     sync::{
@@ -21,12 +24,6 @@ use std::{
         Arc,
     },
 };
-
-use log::debug;
-
-use super::{bounded, Error, Receiver, Sender, StatsHandle};
-
-use crate::debug::{QueueDebugger, QUEUE_LEN};
 
 pub struct DebugSender<T> {
     debug: (Sender<String>, Arc<AtomicBool>),

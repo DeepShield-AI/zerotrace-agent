@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
+use super::{Addr, Error, Link, LinkFlags, MacAddr, NeighborEntry, Result, Route};
+use crate::{enums::IfType, utils::WIN_ERROR_CODE_STR};
+use log::{debug, trace, warn};
+use pcap;
+use regex::Regex;
 use std::{
     ffi::CStr,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     ptr,
 };
-
-use log::{debug, trace, warn};
-use pcap;
-use regex::Regex;
 use windows::Win32::{
     Foundation::{CHAR, ERROR_BUFFER_OVERFLOW, NO_ERROR},
     NetworkManagement::IpHelper::{
@@ -36,10 +37,6 @@ use windows::Win32::{
         SOCKADDR_IN6_0, SOCKADDR_INET,
     },
 };
-
-use super::{Addr, Link, LinkFlags, MacAddr, NeighborEntry, Route};
-use super::{Error, Result};
-use crate::{enums::IfType, utils::WIN_ERROR_CODE_STR};
 
 /*
 * TODO
@@ -206,10 +203,7 @@ fn get_interface_by_index_from_pcap(if_index: u32) -> Result<Link> {
 
 pub fn get_interface_ips(if_index: u32) -> Result<Vec<Addr>> {
     let (_, addresses) = get_adapters_addresses()?;
-    Ok(addresses
-        .into_iter()
-        .filter(|address| address.if_index == if_index)
-        .collect())
+    Ok(addresses.into_iter().filter(|address| address.if_index == if_index).collect())
 }
 
 pub fn addr_list() -> Result<Vec<Addr>> {
@@ -417,9 +411,7 @@ pub fn get_adapters_addresses() -> Result<(Vec<Link>, Vec<Addr>)> {
     const RECOMMENDED_BUF_SIZE: u32 = 15000;
     let mut size = RECOMMENDED_BUF_SIZE;
     let mut adapter_address: Vec<u8> = vec![0u8; size as usize];
-    let mut adapter_ptr = adapter_address
-        .as_mut_ptr()
-        .cast::<IP_ADAPTER_ADDRESSES_LH>();
+    let mut adapter_ptr = adapter_address.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
 
     unsafe {
         // 获取所有网卡信息
@@ -457,9 +449,7 @@ pub fn get_adapters_addresses() -> Result<(Vec<Link>, Vec<Addr>)> {
 
             // buffer小了, 增大buffer
             adapter_address = vec![0u8; size as usize];
-            adapter_ptr = adapter_address
-                .as_mut_ptr()
-                .cast::<IP_ADAPTER_ADDRESSES_LH>();
+            adapter_ptr = adapter_address.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
         }
 
         let (mut links, mut addresses) = (vec![], vec![]);
@@ -591,10 +581,7 @@ pub fn get_adapters_addresses() -> Result<(Vec<Link>, Vec<Addr>)> {
 unsafe fn parse_sockaddr(sockaddr: *const SOCKADDR) -> Option<IpAddr> {
     sockaddr.as_ref().and_then(|addr| {
         if addr.sa_family == AF_INET as u16 {
-            let sockaddr_in = (addr as *const SOCKADDR)
-                .cast::<SOCKADDR_IN>()
-                .as_ref()
-                .unwrap();
+            let sockaddr_in = (addr as *const SOCKADDR).cast::<SOCKADDR_IN>().as_ref().unwrap();
             let addr_num = sockaddr_in.sin_addr.S_un.S_addr;
             if addr_num == 0 {
                 None
@@ -602,10 +589,7 @@ unsafe fn parse_sockaddr(sockaddr: *const SOCKADDR) -> Option<IpAddr> {
                 Some(IpAddr::V4(Ipv4Addr::from(u32::from_be(addr_num))))
             }
         } else if addr.sa_family == AF_INET6 as u16 {
-            let sockaddr_in6 = (addr as *const SOCKADDR)
-                .cast::<SOCKADDR_IN6>()
-                .as_ref()
-                .unwrap();
+            let sockaddr_in6 = (addr as *const SOCKADDR).cast::<SOCKADDR_IN6>().as_ref().unwrap();
             let addr_word = sockaddr_in6.sin6_addr.u.Word;
             if addr_word.iter().all(|&w| w == 0) {
                 None
@@ -620,9 +604,7 @@ unsafe fn parse_sockaddr(sockaddr: *const SOCKADDR) -> Option<IpAddr> {
 
 unsafe fn count_len<T: Copy + PartialEq>(p: *const T, terminator: T) -> Option<usize> {
     const MAX_LEN: usize = 1 << 30;
-    (0..MAX_LEN)
-        .into_iter()
-        .find(|&len| *p.add(len) == terminator)
+    (0..MAX_LEN).into_iter().find(|&len| *p.add(len) == terminator)
 }
 
 pub fn ipv6_enabled() -> bool {

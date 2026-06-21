@@ -15,7 +15,6 @@
  */
 
 use btf_rs::{Btf, Type};
-
 use log::warn;
 
 pub fn read_offset_of_stack_in_task_struct() -> Option<u32> {
@@ -30,7 +29,7 @@ fn read_offset(struct_name: &str, field_name: &str) -> Option<u32> {
         Err(e) => {
             warn!("Failed to read {BTF_PATH} for BTF info: {e}");
             return None;
-        }
+        },
     };
     let Ok(ts) = btf.resolve_types_by_name(struct_name) else {
         warn!("Failed to find {struct_name} in {BTF_PATH}");
@@ -38,16 +37,15 @@ fn read_offset(struct_name: &str, field_name: &str) -> Option<u32> {
     };
     for t in ts {
         match t {
-            Type::Struct(s) => {
+            Type::Struct(s) =>
                 for m in s.members.iter() {
                     match btf.resolve_name(m) {
                         Ok(name) if name == field_name => {
                             return Some(m.bit_offset() >> 3);
-                        }
+                        },
                         _ => (),
                     }
-                }
-            }
+                },
             _ => (),
         }
     }

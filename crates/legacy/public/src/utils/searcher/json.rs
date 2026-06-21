@@ -157,8 +157,7 @@ fn extract_primitive_value_from_bytes(input: &[u8]) -> Result<String, SearchErro
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
-    use super::*;
+    use super::{super::*, *};
 
     pub fn extract_string_value_from_str(input: &str) -> Result<String, SearchError> {
         extract_string_value_from_bytes(input.as_bytes())
@@ -474,9 +473,7 @@ mod tests {
             search_key_case_sensitive(payload.as_bytes(), "status").unwrap(),
             "success"
         );
-        assert!(search_key_case_sensitive(payload.as_bytes(), "data")
-            .unwrap()
-            .contains("users"));
+        assert!(search_key_case_sensitive(payload.as_bytes(), "data").unwrap().contains("users"));
         assert_eq!(
             search_key_case_sensitive(payload.as_bytes(), "timestamp").unwrap(),
             "2025-01-15T10:30:00Z"

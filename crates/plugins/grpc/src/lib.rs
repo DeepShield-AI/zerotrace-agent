@@ -14,27 +14,22 @@
  * limitations under the License.
  */
 
-use std::io;
-use std::net::ToSocketAddrs;
-
+use public::consts::{GRPC_DEFAULT_TIMEOUT, GRPC_SESSION_TIMEOUT};
+use std::{io, net::ToSocketAddrs};
 use tonic::transport::{Channel, Endpoint};
 
-use public::consts::{GRPC_DEFAULT_TIMEOUT, GRPC_SESSION_TIMEOUT};
-
 pub async fn dial(remote: &str, remote_port: u16, _: &str) -> Result<Channel, String> {
-    let socket_address = match (remote, remote_port)
-        .to_socket_addrs()
-        .and_then(|mut iter| {
-            iter.next()
-                .ok_or(io::Error::new(io::ErrorKind::InvalidData, "result is empty").into())
-        }) {
+    let socket_address = match (remote, remote_port).to_socket_addrs().and_then(|mut iter| {
+        iter.next()
+            .ok_or(io::Error::new(io::ErrorKind::InvalidData, "result is empty").into())
+    }) {
         Ok(addr) => addr,
         Err(e) => {
             return Err(format!(
                 "resolve socket address remote({}) port({}) failed: {}",
                 remote, remote_port, e
             ));
-        }
+        },
     };
 
     let endpoint = match Endpoint::from_shared(format!("http://{}", socket_address)) {
@@ -44,7 +39,7 @@ pub async fn dial(remote: &str, remote_port: u16, _: &str) -> Result<Channel, St
                 "create endpoint http://{} failed {}",
                 socket_address, e
             ));
-        }
+        },
     };
 
     match endpoint
@@ -59,6 +54,6 @@ pub async fn dial(remote: &str, remote_port: u16, _: &str) -> Result<Channel, St
                 "Dial server({} {}) failed: {}",
                 remote, remote_port, e
             ));
-        }
+        },
     }
 }

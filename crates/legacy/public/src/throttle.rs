@@ -14,13 +14,10 @@
  * limitations under the License.
  */
 
-use std::fmt::Debug;
-
+use crate::{queue::DebugSender, LeakyBucket};
 use log::warn;
 use rand::prelude::{Rng, SeedableRng, SmallRng};
-
-use crate::queue::DebugSender;
-use crate::LeakyBucket;
+use std::fmt::Debug;
 
 const BUFFER_SIZE: usize = 1024;
 pub struct Throttle<T: Debug> {

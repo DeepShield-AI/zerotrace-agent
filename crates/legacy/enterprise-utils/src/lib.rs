@@ -221,10 +221,9 @@ pub mod l7 {
 
     pub mod sql {
         pub mod oracle {
-            use std::fmt;
-
             use public::l7_protocol::LogMessageType;
             use serde::Serialize;
+            use std::fmt;
 
             pub struct Request {
                 pub sql: String,
@@ -329,8 +328,10 @@ pub mod l7 {
 
     pub mod mq {
         pub mod web_sphere_mq {
-            use public::enums::PacketDirection;
-            use public::l7_protocol::{L7LogBase, LogMessageType};
+            use public::{
+                enums::PacketDirection,
+                l7_protocol::{L7LogBase, LogMessageType},
+            };
 
             #[derive(Default)]
             pub struct WebSphereMqParser {
@@ -352,9 +353,7 @@ pub mod l7 {
 
     pub mod rpc {
         pub mod iso8583 {
-            use public::bitmap::Bitmap;
-
-            use public::l7_protocol::LogMessageType;
+            use public::{bitmap::Bitmap, l7_protocol::LogMessageType};
 
             pub struct Iso8583ParseConfig {
                 pub extract_fields: Bitmap,

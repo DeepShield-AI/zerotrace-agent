@@ -1,12 +1,12 @@
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub mod remote_exec {
-    use std::fmt::{self, Write};
-    use std::process::Output;
-
-    use futures::future::BoxFuture;
-    use thiserror::Error;
-
     use crate::proto::agent as pb;
+    use futures::future::BoxFuture;
+    use std::{
+        fmt::{self, Write},
+        process::Output,
+    };
+    use thiserror::Error;
 
     pub const DEFAULT_PARAM_REGEX: &'static str = "^[A-Za-z0-9-_]+$";
 
@@ -321,12 +321,8 @@ pub mod remote_exec {
             assert!(no_required_cmd.check_params(&empty_params).is_ok());
             assert!(no_required_cmd.check_params(&valid_regex_params).is_ok());
             assert!(no_required_cmd.check_params(&invalid_regex_params).is_ok());
-            assert!(default_regex_cmd
-                .check_params(&valid_default_regex_params)
-                .is_ok());
-            assert!(default_regex_cmd
-                .check_params(&invalid_default_regex_params)
-                .is_err());
+            assert!(default_regex_cmd.check_params(&valid_default_regex_params).is_ok());
+            assert!(default_regex_cmd.check_params(&invalid_default_regex_params).is_err());
         }
     }
 }

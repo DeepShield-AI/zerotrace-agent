@@ -14,15 +14,11 @@
  * limitations under the License.
  */
 
-use std::{
-    ffi::{CStr, CString},
-    fs,
-    mem::MaybeUninit,
-    net::{IpAddr, Ipv6Addr, SocketAddrV6},
-    path::{Path, PathBuf},
-    time::Duration,
+use super::{
+    arp::lookup as arp_lookup, parse_ip_slice, Addr, Error, Link, LinkFlags, LinkStats, MacAddr,
+    NeighborEntry, Result, Route, Rule,
 };
-
+use crate::bytes::{read_u16_le, read_u32_le, read_u64_le};
 use ipnet::IpNet;
 use log::warn;
 use neli::{
@@ -43,12 +39,14 @@ use pnet::{
 };
 use regex::Regex;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-
-use super::parse_ip_slice;
-use super::{arp::lookup as arp_lookup, Error, Result};
-use super::{Addr, Link, LinkFlags, LinkStats, MacAddr, NeighborEntry, Route, Rule};
-
-use crate::bytes::{read_u16_le, read_u32_le, read_u64_le};
+use std::{
+    ffi::{CStr, CString},
+    fs,
+    mem::MaybeUninit,
+    net::{IpAddr, Ipv6Addr, SocketAddrV6},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 pub const IF_TYPE_IPVLAN: &'static str = "ipvlan";
 
@@ -75,18 +73,16 @@ pub fn neighbor_lookup(mut dest_addr: IpAddr) -> Result<NeighborEntry> {
         dest_addr = gw;
     }
 
-    let selected_interface = match datalink::interfaces()
-        .into_iter()
-        .find(|i| i.index == route.oif_index)
-    {
-        Some(interface) => interface,
-        None => {
-            return Err(Error::NeighborLookup(format!(
-                "could not find selected interface (if_index={})",
-                route.oif_index
-            )));
-        },
-    };
+    let selected_interface =
+        match datalink::interfaces().into_iter().find(|i| i.index == route.oif_index) {
+            Some(interface) => interface,
+            None => {
+                return Err(Error::NeighborLookup(format!(
+                    "could not find selected interface (if_index={})",
+                    route.oif_index
+                )));
+            },
+        };
 
     let target_mac = match (dest_addr, src_addr) {
         (IpAddr::V4(dest_addr), IpAddr::V4(src_addr)) => {
@@ -198,9 +194,7 @@ fn ndp_lookup(selected_interface: &NetworkInterface, dest_addr: Ipv6Addr) -> Res
                 .into_iter()
                 .find(|option| option.option_type == NdpOptionTypes::TargetLLAddr)
                 .and_then(|option| {
-                    <&[u8; 6]>::try_from(option.data.as_slice())
-                        .ok()
-                        .map(|m| MacAddr(*m))
+                    <&[u8; 6]>::try_from(option.data.as_slice()).ok().map(|m| MacAddr(*m))
                 })
         })
         .ok_or(Error::NeighborLookup(String::from(
@@ -579,9 +573,7 @@ pub fn route_get(dest: &IpAddr) -> Result<Vec<Route>> {
             rtm_scope: RtScope::Universe,
             rtm_type: Rtn::Unspec,
             rtm_flags: RtmFFlags::empty(),
-            rtattrs: vec![Rtattr::new(None, Rta::Dst, buf)?]
-                .into_iter()
-                .collect(),
+            rtattrs: vec![Rtattr::new(None, Rta::Dst, buf)?].into_iter().collect(),
         }
     };
     route_send_req(Nlmsghdr::new(

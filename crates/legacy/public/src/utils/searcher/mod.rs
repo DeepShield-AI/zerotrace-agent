@@ -27,9 +27,7 @@ pub enum SearchError {
 }
 
 fn find_bytes_case_sensitive(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+    haystack.windows(needle.len()).position(|window| window == needle)
 }
 
 fn find_bytes_ignore_case(haystack: &[u8], needle: &[u8]) -> Option<usize> {

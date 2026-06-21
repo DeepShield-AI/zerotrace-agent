@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
-
-use log::warn;
-use nix::errno::Errno;
-use nix::libc::ioctl;
-use nix::sys::socket::{socket, AddressFamily, SockFlag, SockType};
-
 use super::error::{Error, Result};
+use log::warn;
+use nix::{
+    errno::Errno,
+    libc::ioctl,
+    sys::socket::{socket, AddressFamily, SockFlag, SockType},
+};
+use std::collections::HashSet;
 
 // ioctl ethtool request
 #[cfg(target_env = "gnu")]
@@ -118,10 +118,7 @@ pub fn get_link_features(if_name: &str) -> Result<Vec<(String, usize)>> {
             IFNAMSIZ
         )));
     }
-    req_name
-        .get_mut(..if_name.len())
-        .unwrap()
-        .copy_from_slice(if_name.as_bytes());
+    req_name.get_mut(..if_name.len()).unwrap().copy_from_slice(if_name.as_bytes());
 
     let mut sset_info = SsetInfo {
         cmd: ETHTOOL_GSSET_INFO,
@@ -156,10 +153,8 @@ pub fn get_link_features(if_name: &str) -> Result<Vec<(String, usize)>> {
     let names = (0..length as usize)
         .into_iter()
         .filter_map(|i| {
-            let name_bytes = gstrings
-                .data
-                .get(i * ETH_GSTRING_LEN..(i + 1) * ETH_GSTRING_LEN)
-                .unwrap();
+            let name_bytes =
+                gstrings.data.get(i * ETH_GSTRING_LEN..(i + 1) * ETH_GSTRING_LEN).unwrap();
 
             name_bytes
                 .iter()
@@ -203,10 +198,7 @@ pub fn get_link_enabled_features(if_name: &str) -> Result<HashSet<String>> {
             IFNAMSIZ
         )));
     }
-    req_name
-        .get_mut(..if_name.len())
-        .unwrap()
-        .copy_from_slice(if_name.as_bytes());
+    req_name.get_mut(..if_name.len()).unwrap().copy_from_slice(if_name.as_bytes());
 
     let mut features = Gfeatures {
         cmd: ETHTOOL_GFEATURES,

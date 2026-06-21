@@ -239,8 +239,7 @@ fn inside_open_tag(payload: &[u8], mut idx: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
-    use super::*;
+    use super::{super::*, *};
 
     fn search_tag(
         payload: &[u8],

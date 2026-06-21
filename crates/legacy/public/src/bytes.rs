@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::io::{self, Write};
-
 use flate2::write::ZlibEncoder;
+use std::io::{self, Write};
 
 pub fn read_i16_be(bs: &[u8]) -> i16 {
     assert!(bs.len() >= 2);

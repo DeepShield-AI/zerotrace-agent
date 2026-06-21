@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
+use bitflags::bitflags;
+use ipnet::IpNet;
+use serde::Serialize;
 use std::{
     array::TryFromSliceError,
     fmt,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
-
-use bitflags::bitflags;
-use ipnet::IpNet;
-use serde::Serialize;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod arp;

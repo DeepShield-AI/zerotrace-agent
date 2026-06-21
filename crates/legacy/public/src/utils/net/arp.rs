@@ -14,12 +14,7 @@
  * limitations under the License.
  */
 
-use std::{
-    mem::{self, MaybeUninit},
-    net::Ipv4Addr,
-    time::{Duration, Instant},
-};
-
+use super::{Error, MacAddr, Result};
 use libc::{sockaddr_storage, socklen_t};
 use nix::libc::{c_int, c_void, sockaddr_ll, AF_PACKET, ARPHRD_ETHER, ETH_P_ARP};
 use pnet::{
@@ -31,8 +26,11 @@ use pnet::{
     },
 };
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-
-use super::{Error, MacAddr, Result};
+use std::{
+    mem::{self, MaybeUninit},
+    net::Ipv4Addr,
+    time::{Duration, Instant},
+};
 
 const RECV_TIMEOUT: Duration = Duration::from_secs(1);
 const ETHERNET_STD_PACKET_SIZE: usize = 42;

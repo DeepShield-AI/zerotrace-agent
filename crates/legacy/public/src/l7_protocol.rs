@@ -13,18 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::borrow::Cow;
-
-use std::sync::Arc;
-
+use super::{enums::PacketDirection, types::PrioStrings};
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
-use serde::{Serialize, Serializer};
-
-use super::enums::PacketDirection;
-use super::types::PrioStrings;
-
 use public_derive::L7Log;
 use public_derive_internals::enums::L7ResponseStatus;
+use serde::{Serialize, Serializer};
+use std::{borrow::Cow, sync::Arc};
 
 pub const DEFAULT_DNS_PORT: u16 = 53;
 pub const DEFAULT_TLS_PORT: u16 = 443;

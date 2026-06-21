@@ -58,11 +58,9 @@ pub fn parse_range_list_to_bitmap(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
-    use crate::bitmap::Bitmap;
-
     use super::parse_u16_range_list_to_bitmap;
+    use crate::bitmap::Bitmap;
+    use std::collections::HashMap;
 
     fn assert_u16(b: &Bitmap, ports: &[u16]) {
         let mut h = HashMap::new();

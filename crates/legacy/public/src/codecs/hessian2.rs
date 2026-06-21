@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::{collections::HashMap, fmt::Display};
-
 use consts::*;
+use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug)]
 pub enum HessianValue {

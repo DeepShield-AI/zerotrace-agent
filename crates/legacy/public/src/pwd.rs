@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::{fs, path::Path};
-
 use log::error;
+use std::{fs, path::Path};
 
 // Vec<uid, username>
 pub struct PasswordInfo(Vec<(u32, String)>);

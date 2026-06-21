@@ -14,22 +14,18 @@
  * limitations under the License.
  */
 
-use std::error::Error;
-use std::process::Command;
+use std::{error::Error, process::Command};
 
 fn generate_protobuf() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure()
-        .build_server(false)
-        .out_dir("src/proto")
-        .compile(
-            &[
-                "../../../proto/metric.proto",
-                "../../../proto/flow_log.proto",
-                "../../../proto/stats.proto",
-                "../../../proto/k8s_event.proto",
-            ],
-            &["../../../proto"],
-        )?;
+    tonic_build::configure().build_server(false).out_dir("src/proto").compile(
+        &[
+            "../../../proto/metric.proto",
+            "../../../proto/flow_log.proto",
+            "../../../proto/stats.proto",
+            "../../../proto/k8s_event.proto",
+        ],
+        &["../../../proto"],
+    )?;
     tonic_build::configure()
         .build_server(true)
         .out_dir("src/proto")

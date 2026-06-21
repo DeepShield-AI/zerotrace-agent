@@ -18,16 +18,12 @@ pub mod dwarf;
 pub mod elf_utils;
 pub mod tpbase;
 
-use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
-use std::collections::{hash_map::Entry, HashMap, HashSet};
-use std::fs;
-use std::hash::Hasher;
-use std::mem;
-use std::path::PathBuf;
-use std::ptr::NonNull;
-use std::slice;
-
+use crate::{
+    maps::{get_memory_mappings, MemoryArea},
+    utils::{bpf_delete_elem, bpf_update_elem, get_errno, IdGenerator, BPF_ANY},
+};
 use ahash::AHasher;
+use dwarf::UnwindEntry;
 use libc::c_void;
 use log::{debug, trace, warn};
 use object::{
@@ -35,12 +31,15 @@ use object::{
     read::elf::{FileHeader, ProgramHeader},
     Endianness,
 };
-
-use dwarf::UnwindEntry;
-
-use crate::{
-    maps::{get_memory_mappings, MemoryArea},
-    utils::{bpf_delete_elem, bpf_update_elem, get_errno, IdGenerator, BPF_ANY},
+use std::{
+    alloc::{alloc, dealloc, handle_alloc_error, Layout},
+    collections::{hash_map::Entry, HashMap, HashSet},
+    fs,
+    hash::Hasher,
+    mem,
+    path::PathBuf,
+    ptr::NonNull,
+    slice,
 };
 
 /// Calculate the bias (ASLR offset) for a memory mapping.
@@ -118,7 +117,7 @@ impl UnwindTable {
             Err(e) => {
                 debug!("failed loading maps for process#{pid}: {e}");
                 return;
-            }
+            },
         };
         trace!("load dwarf entries for process#{pid}");
 
@@ -150,8 +149,8 @@ impl UnwindTable {
                     Ok(mut file) => {
                         use std::io::{Read, Seek, SeekFrom};
                         let mut buf = vec![0u8; size];
-                        if file.seek(SeekFrom::Start(m.m_start)).is_ok()
-                            && file.read_exact(&mut buf).is_ok()
+                        if file.seek(SeekFrom::Start(m.m_start)).is_ok() &&
+                            file.read_exact(&mut buf).is_ok()
                         {
                             trace!(
                                 "loaded vdso from process memory at {:#x}, size={}",
@@ -163,11 +162,11 @@ impl UnwindTable {
                             debug!("failed to read vdso from process#{pid} memory");
                             continue;
                         }
-                    }
+                    },
                     Err(e) => {
                         debug!("failed to open /proc/{}/mem: {}", pid, e);
                         continue;
-                    }
+                    },
                 }
             } else {
                 match fs::read(&path) {
@@ -175,7 +174,7 @@ impl UnwindTable {
                     Err(e) => {
                         debug!("load file {} failed: {e}", path.display());
                         continue;
-                    }
+                    },
                 }
             };
 
@@ -220,7 +219,7 @@ impl UnwindTable {
                             path.display()
                         );
                         continue;
-                    }
+                    },
                 },
                 Err(e) => {
                     debug!(
@@ -228,7 +227,7 @@ impl UnwindTable {
                         path.display()
                     );
                     continue;
-                }
+                },
             };
             trace!("object {} is_pic={is_pic}", path.display());
 
@@ -237,7 +236,7 @@ impl UnwindTable {
                 Ok(ue) if ue.is_empty() => {
                     debug!("process#{pid} in {} has no unwind entries", path.display());
                     continue;
-                }
+                },
                 Ok(ue) => ue,
                 Err(e) => {
                     debug!(
@@ -245,7 +244,7 @@ impl UnwindTable {
                         path.display()
                     );
                     continue;
-                }
+                },
             };
             let max_pc = entries.iter().last().map(|e| e.pc).unwrap_or_default();
 
@@ -281,7 +280,7 @@ impl UnwindTable {
                     let boxed_shard = shard.take().unwrap();
                     let s = boxed_shard.as_ref();
                     self.update_unwind_entry_shard(s.id, s);
-                }
+                },
                 _ => (),
             }
             if shard.is_none() {
@@ -389,7 +388,7 @@ impl UnwindTable {
                     // check shard reference count
                     for shard in obj.shards.iter() {
                         match self.shard_rc.entry(shard.id) {
-                            Entry::Occupied(mut v) => {
+                            Entry::Occupied(mut v) =>
                                 if *v.get() <= 1 {
                                     trace!("remove shard#{}", shard.id);
                                     v.remove();
@@ -397,17 +396,16 @@ impl UnwindTable {
                                 } else {
                                     *v.get_mut() -= 1;
                                     trace!("reduce shard#{} ref count to {}", shard.id, *v.get());
-                                }
-                            }
+                                },
                             _ => {
                                 // unlikely to happen
                                 trace!("remove shard#{}", shard.id);
                                 shards_to_remove.push(shard.id);
-                            }
+                            },
                         }
                     }
                     false
-                }
+                },
             }
         });
         if found_process {
@@ -432,11 +430,8 @@ impl UnwindTable {
             self.id_gen.release(*id);
         }
 
-        let processes: HashSet<u32> = self
-            .object_cache
-            .drain()
-            .flat_map(|(_, obj)| obj.pids.into_iter())
-            .collect();
+        let processes: HashSet<u32> =
+            self.object_cache.drain().flat_map(|(_, obj)| obj.pids.into_iter()).collect();
         for pid in processes.iter() {
             self.delete_process_shard_list(*pid);
         }
@@ -586,11 +581,11 @@ impl UnwindTable {
                 match errno {
                     libc::E2BIG => {
                         warn!("update shard#{shard_id} failed: try increasing dwarf_shard_map_size")
-                    }
+                    },
                     libc::ENOMEM => warn!("update shard#{shard_id} failed: cannot allocate memory"),
                     _ => {
                         warn!("update shard#{shard_id} failed: bpf_update_elem() returned {errno}")
-                    }
+                    },
                 }
             }
         }

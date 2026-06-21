@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-use std::{sync::Weak, time::Duration};
-
 use cadence::{
     ext::{MetricValue, ToCounterValue, ToGaugeValue},
     MetricResult,
 };
+use std::{sync::Weak, time::Duration};
 
 #[derive(Clone, Copy, Debug)]
 pub enum CounterType {

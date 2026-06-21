@@ -14,14 +14,17 @@
  * limitations under the License.
  */
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
-use std::sync::Arc;
-use std::time::Duration;
-
-use public::packet::Downcast;
 use public::{
     counter,
     l7_protocol::{L7Protocol, L7ProtocolChecker},
+    packet::Downcast,
+};
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
+        Arc,
+    },
+    time::Duration,
 };
 
 pub trait CacheItem: Downcast {

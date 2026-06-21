@@ -133,9 +133,7 @@ impl Bitmap {
 
 #[cfg(test)]
 mod test {
-    use super::Error;
-
-    use super::Bitmap;
+    use super::{Bitmap, Error};
 
     #[test]
     fn test_bitmap() {

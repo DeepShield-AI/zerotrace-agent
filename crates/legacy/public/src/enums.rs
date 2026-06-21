@@ -16,11 +16,10 @@
 
 //! Referfence `gopacket/layers/enums.go`
 
-use std::fmt;
-
 use bitflags::bitflags;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::Serialize;
+use std::fmt;
 
 /// EthernetType is an enumeration of ethernet type values, and acts as a decoder
 /// for any type it supports.
@@ -411,9 +410,8 @@ pub use public_derive_internals::enums::L7ResponseStatus;
 
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
-
     use super::*;
+    use std::mem::size_of;
 
     #[test]
     fn assert_ethernet_type() {
