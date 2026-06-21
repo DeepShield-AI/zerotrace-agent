@@ -14,20 +14,16 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net::Ipv4Addr;
-
+use super::{
+    consts::*,
+    enums::{EthernetType, IpProtocol},
+};
+use crate::utils::bytes;
 use log::warn;
 use num_enum::TryFromPrimitive;
-
-use super::consts::*;
-use super::enums::{EthernetType, IpProtocol};
-
-use crate::utils::bytes;
-use serde::Serialize;
-
 use public::proto::agent::DecapType;
-
+use serde::Serialize;
+use std::{fmt, net::Ipv4Addr};
 use tunnel::{decapsulate_erspan, decapsulate_gpe_vxlan, decapsulate_teb, decapsulate_tencent_gre};
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, PartialOrd, TryFromPrimitive)]
@@ -270,14 +266,14 @@ impl TunnelInfo {
                 if tunnel_types.has(TunnelType::Vxlan) =>
             {
                 return self.decapsulate_vxlan(packet, l2_len);
-            }
+            },
             LE_GPE_VXLAN_PROTO_UDP_DPORT if tunnel_types.has(TunnelType::VxlanNsh) => {
                 return self.decapsulate_gpe_vxlan(packet, l2_len);
-            }
+            },
             LE_GENEVE_PROTO_UDP_DPORT if tunnel_types.has(TunnelType::Geneve) => {
                 return self.decapsulate_geneve(packet, l2_len);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         // NOTE:
@@ -440,24 +436,19 @@ impl TunnelInfo {
             // ERSPAN
             LE_ERSPAN_PROTO_TYPE_II | LE_ERSPAN_PROTO_TYPE_III
                 if tunnel_types.has(TunnelType::Erspan) =>
-            {
-                self.decapsulate_erspan(packet, l2_len, flags, gre_protocol_type, ip_header_size)
-            }
+                self.decapsulate_erspan(packet, l2_len, flags, gre_protocol_type, ip_header_size),
 
             LE_IPV4_PROTO_TYPE_I | LE_IPV6_PROTO_TYPE_I
                 if tunnel_types.has(TunnelType::TencentGre) =>
-            {
                 self.decapsulate_tencent_gre(
                     packet,
                     l2_len,
                     flags,
                     gre_protocol_type,
                     ip_header_size,
-                )
-            }
-            LE_TRANSPARENT_ETHERNET_BRIDGEING if tunnel_types.has(TunnelType::Teb) => {
-                self.decapsulate_teb(packet, l2_len, flags, ip_header_size)
-            }
+                ),
+            LE_TRANSPARENT_ETHERNET_BRIDGEING if tunnel_types.has(TunnelType::Teb) =>
+                self.decapsulate_teb(packet, l2_len, flags, ip_header_size),
             _ => 0,
         }
     }
@@ -499,27 +490,24 @@ impl TunnelInfo {
 
         // 通过ERSPAN_III_HEADER_SIZE(12 bytes)+ERSPAN_III_SUBHEADER_SIZE(8 bytes)判断，保证不会数组越界
         let l3_packet = &packet[l2_len..];
-        if l3_packet.len()
-            < IPV4_HEADER_SIZE
-                + GRE_HEADER_SIZE_DECAP
-                + ERSPAN_III_HEADER_SIZE
-                + ERSPAN_III_SUBHEADER_SIZE
+        if l3_packet.len() <
+            IPV4_HEADER_SIZE +
+                GRE_HEADER_SIZE_DECAP +
+                ERSPAN_III_HEADER_SIZE +
+                ERSPAN_III_SUBHEADER_SIZE
         {
             return 0;
         }
 
-        let protocol: IpProtocol = l3_packet[FIELD_OFFSET_PROTO - ETH_HEADER_SIZE]
-            .try_into()
-            .unwrap_or_default();
+        let protocol: IpProtocol =
+            l3_packet[FIELD_OFFSET_PROTO - ETH_HEADER_SIZE].try_into().unwrap_or_default();
         match protocol {
             IpProtocol::UDP => self.decapsulate_udp(packet, l2_len, tunnel_types),
             IpProtocol::GRE => self.decapsulate_gre(packet, l2_len, tunnel_types),
-            IpProtocol::IPV4 if tunnel_types.has(TunnelType::Ipip) => {
-                self.decapsulate_ipip(packet, l2_len, false, false)
-            }
-            IpProtocol::IPV6 if tunnel_types.has(TunnelType::Ipip) => {
-                self.decapsulate_ipip(packet, l2_len, false, true)
-            }
+            IpProtocol::IPV4 if tunnel_types.has(TunnelType::Ipip) =>
+                self.decapsulate_ipip(packet, l2_len, false, false),
+            IpProtocol::IPV6 if tunnel_types.has(TunnelType::Ipip) =>
+                self.decapsulate_ipip(packet, l2_len, false, true),
             _ => 0,
         }
     }
@@ -620,12 +608,12 @@ impl TunnelInfo {
             LE_VXLAN_PROTO_UDP_DPORT | LE_VXLAN_PROTO_UDP_DPORT2 | LE_VXLAN_PROTO_UDP_DPORT3
                 if tunnel_types.has(TunnelType::Vxlan) =>
             {
-                return self.decapsulate_v6_vxlan(packet, l2_len)
-            }
+                return self.decapsulate_v6_vxlan(packet, l2_len);
+            },
             LE_GENEVE_PROTO_UDP_DPORT if tunnel_types.has(TunnelType::Geneve) => {
-                return self.decapsulate_v6_geneve(packet, l2_len)
-            }
-            _ => {}
+                return self.decapsulate_v6_geneve(packet, l2_len);
+            },
+            _ => {},
         }
 
         // NOTE:
@@ -654,11 +642,11 @@ impl TunnelInfo {
 
         let l3_packet = &packet[l2_len..];
         // 通过ERSPAN_III_HEADER_SIZE(12 bytes)+ERSPAN_III_SUBHEADER_SIZE(8 bytes)判断，保证不会数组越界
-        if l3_packet.len()
-            < IPV6_HEADER_SIZE
-                + GRE_HEADER_SIZE_DECAP
-                + ERSPAN_III_HEADER_SIZE
-                + ERSPAN_III_SUBHEADER_SIZE
+        if l3_packet.len() <
+            IPV6_HEADER_SIZE +
+                GRE_HEADER_SIZE_DECAP +
+                ERSPAN_III_HEADER_SIZE +
+                ERSPAN_III_SUBHEADER_SIZE
         {
             return 0;
         }
@@ -666,12 +654,10 @@ impl TunnelInfo {
         let protocol: IpProtocol = l3_packet[IP6_PROTO_OFFSET].try_into().unwrap_or_default();
         match protocol {
             IpProtocol::UDP => self.decapsulate_v6_udp(packet, l2_len, tunnel_types),
-            IpProtocol::IPV4 if tunnel_types.has(TunnelType::Ipip) => {
-                self.decapsulate_ipip(packet, l2_len, true, false)
-            }
-            IpProtocol::IPV6 if tunnel_types.has(TunnelType::Ipip) => {
-                self.decapsulate_ipip(packet, l2_len, true, true)
-            }
+            IpProtocol::IPV4 if tunnel_types.has(TunnelType::Ipip) =>
+                self.decapsulate_ipip(packet, l2_len, true, false),
+            IpProtocol::IPV6 if tunnel_types.has(TunnelType::Ipip) =>
+                self.decapsulate_ipip(packet, l2_len, true, true),
             _ => 0,
         }
     }
@@ -745,12 +731,9 @@ impl fmt::Display for TunnelInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
-    use std::path::Path;
-
     use super::*;
-
     use crate::utils::test_utils::Capture;
+    use std::{net::Ipv4Addr, path::Path};
 
     pub const PCAP_PATH_PREFIX: &str = "./resources/test/common";
 

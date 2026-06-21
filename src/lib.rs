@@ -16,35 +16,40 @@
 
 #![allow(dead_code)]
 
-mod collector;
+// ── New architecture (ZeroTrace) ─────────────────────────────────────
+pub mod bundles;
+pub mod collectors;
+pub mod extensions;
+pub mod processors;
+pub mod reporters;
+
+// ── Shared modules (used by both old and new code) ───────────────────
 pub mod common;
 pub mod config;
 pub mod debug;
-pub mod dispatcher;
-#[cfg(all(unix, feature = "libtrace"))]
-pub mod ebpf;
-#[cfg(all(unix, feature = "libtrace"))]
-mod ebpf_dispatcher;
 mod error;
 pub mod exception;
-pub mod flow_generator;
-mod handler;
-mod integration_collector;
-mod metric;
-mod monitor;
-mod platform;
-pub mod plugin;
-mod policy;
-pub mod reporters;
-pub mod rpc;
-mod sender;
-pub mod trident;
 pub mod utils;
 
+// ── Legacy DeepFlow modules (to be removed by M4) ────────────────────
+pub mod legacy;
+
+// Re-exports: keep old crate:: paths working during migration.
+// Remove these when deleting src/legacy/ at M4.
+// Re-export legacy ebpf at the old crate::ebpf path
+#[cfg(all(unix, feature = "libtrace"))]
+pub use crate::collectors::ebpf::legacy as ebpf;
+#[cfg(all(unix, feature = "libtrace"))]
+pub use crate::legacy::ebpf_dispatcher;
+pub use crate::legacy::{
+    collector, dispatcher, flow_generator, handler, integration_collector, metric, monitor,
+    platform, plugin, policy, rpc, sender, trident,
+};
 // for benchmarks
 #[doc(hidden)]
 pub use {
     common::{
+        Timestamp as _Timestamp,
         endpoint::{
             EndpointData as _EndpointData, EndpointInfo as _EndpointInfo,
             FeatureFlags as _FeatureFlags,
@@ -60,27 +65,26 @@ pub use {
             Acl as _Acl, Cidr as _Cidr, Container as _Container, IpGroupData as _IpGroupData,
         },
         port_range::PortRange as _PortRange,
-        Timestamp as _Timestamp,
     },
-    flow_generator::flow_map::{
-        Config as _FlowMapConfig, _new_flow_map_and_receiver, _new_meta_packet,
-        _reverse_meta_packet,
+    legacy::flow_generator::HttpLog,
+    legacy::flow_generator::flow_map::{
+        _new_flow_map_and_receiver, _new_meta_packet, _reverse_meta_packet,
+        Config as _FlowMapConfig,
     },
-    flow_generator::perf::{
-        tcp::{
-            TcpPerf as _TcpPerf, _benchmark_report, _benchmark_session_peer_seq_no_assert,
-            _meta_flow_perf_update,
-        },
+    legacy::flow_generator::perf::{
         FlowPerfCounter as _FlowPerfCounter, L7FlowPerf as _L7FlowPerf,
+        tcp::{
+            _benchmark_report, _benchmark_session_peer_seq_no_assert, _meta_flow_perf_update,
+            TcpPerf as _TcpPerf,
+        },
     },
-    flow_generator::HttpLog,
+    legacy::policy::fast_path::EndpointTableType as _EndpointTableType,
+    legacy::policy::first_path::FirstPath as _FirstPath,
+    legacy::policy::labeler::Labeler as _Labeler,
     npb_pcap_policy::{
         DirectionType as _DirectionType, NpbAction as _NpbAction, NpbTunnelType as _NpbTunnelType,
         TapSide as _TapSide,
     },
-    policy::fast_path::EndpointTableType as _EndpointTableType,
-    policy::first_path::FirstPath as _FirstPath,
-    policy::labeler::Labeler as _Labeler,
 };
 
 #[allow(unused)]
@@ -158,7 +162,7 @@ mod tests {
     fn struct_sizes() {
         #[rustfmt::skip]
         print_size_of![
-            ("", crate::flow_generator::flow_node::FlowNode),
+            ("", crate::legacy::flow_generator::flow_node::FlowNode),
             ("    ", crate::common::TaggedFlow),
             ("        ", crate::common::flow::Flow),
             ("            ", crate::common::flow::FlowKey),
@@ -166,26 +170,26 @@ mod tests {
             ("            ", crate::common::flow::TunnelField),
             ("         -> ", crate::common::flow::FlowPerfStats),
             ("        ", crate::common::tag::Tag),
-            ("    ", crate::flow_generator::flow_state::FlowState),
-            (" -> ", crate::flow_generator::perf::FlowLog),
-            ("        ", crate::flow_generator::perf::L4FlowPerfTable),
-            ("         +> ", crate::flow_generator::perf::tcp::TcpPerf),
-            ("         |      ", crate::flow_generator::perf::tcp::PerfControl),
-            ("         |       2x ", crate::flow_generator::perf::tcp::SessionPeer),
-            ("         |      ", crate::flow_generator::perf::tcp::PerfData),
-            ("         -- ", crate::flow_generator::perf::udp::UdpPerf),
-            ("         +> ", crate::flow_generator::protocol_logs::sql::PostgresqlLog),
-            ("         +> ", crate::flow_generator::protocol_logs::rpc::SofaRpcLog),
+            ("    ", crate::legacy::flow_generator::flow_state::FlowState),
+            (" -> ", crate::legacy::flow_generator::perf::FlowLog),
+            ("        ", crate::legacy::flow_generator::perf::L4FlowPerfTable),
+            ("         +> ", crate::legacy::flow_generator::perf::tcp::TcpPerf),
+            ("         |      ", crate::legacy::flow_generator::perf::tcp::PerfControl),
+            ("         |       2x ", crate::legacy::flow_generator::perf::tcp::SessionPeer),
+            ("         |      ", crate::legacy::flow_generator::perf::tcp::PerfData),
+            ("         -- ", crate::legacy::flow_generator::perf::udp::UdpPerf),
+            ("         +> ", crate::legacy::flow_generator::protocol_logs::sql::PostgresqlLog),
+            ("         +> ", crate::legacy::flow_generator::protocol_logs::rpc::SofaRpcLog),
             ("     -> ", crate::common::l7_protocol_log::L7ProtocolParser),
-            ("         +- ", crate::flow_generator::protocol_logs::http::HttpLog),
-            ("         +- ", crate::flow_generator::protocol_logs::dns::DnsLog),
-            ("         +- ", crate::flow_generator::protocol_logs::rpc::SofaRpcLog),
-            ("         +- ", crate::flow_generator::protocol_logs::sql::MysqlLog),
-            ("         +- ", crate::flow_generator::protocol_logs::mq::KafkaLog),
-            ("         +- ", crate::flow_generator::protocol_logs::sql::RedisLog),
-            ("         +- ", crate::flow_generator::protocol_logs::sql::PostgresqlLog),
-            ("         +- ", crate::flow_generator::protocol_logs::rpc::DubboLog),
-            ("         +- ", crate::flow_generator::protocol_logs::mq::MqttLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::http::HttpLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::dns::DnsLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::rpc::SofaRpcLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::sql::MysqlLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::mq::KafkaLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::sql::RedisLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::sql::PostgresqlLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::rpc::DubboLog),
+            ("         +- ", crate::legacy::flow_generator::protocol_logs::mq::MqttLog),
             (" 2x ", npb_pcap_policy::PolicyData),
             (" 2x ", crate::common::endpoint::EndpointData),
             (" -> ", packet_sequence_block::PacketSequenceBlock)

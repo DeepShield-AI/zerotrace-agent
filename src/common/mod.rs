@@ -37,29 +37,25 @@ pub mod tap_port;
 pub mod tap_types;
 pub mod timestamp;
 
+use crate::common::policy::Acl;
 pub use consts::*;
 pub use feature::FeatureFlags;
 pub use meta_packet::MetaPacket;
+use num_enum::IntoPrimitive;
 pub use platform_data::PlatformData;
+use policy::{Cidr, Container, IpGroupData, PeerConnection};
 pub use public::enums;
-pub use tagged_flow::TaggedFlow;
-pub use tap_port::TapPort;
-pub use tap_types::CaptureNetworkTyper;
-pub use timestamp::{timestamp_to_micros, Timestamp};
-
+use public::proto::agent::AgentType;
 use std::{
     fmt,
     hash::{Hash, Hasher},
     net::Ipv4Addr,
     sync::Arc,
 };
-
-use num_enum::IntoPrimitive;
-
-use crate::common::policy::Acl;
-use public::proto::agent::AgentType;
-
-use policy::{Cidr, Container, IpGroupData, PeerConnection};
+pub use tagged_flow::TaggedFlow;
+pub use tap_port::TapPort;
+pub use tap_types::CaptureNetworkTyper;
+pub use timestamp::{Timestamp, timestamp_to_micros};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct XflowKey {

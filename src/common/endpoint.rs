@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-use bitflags::bitflags;
-use std::{net::IpAddr, net::Ipv4Addr, sync::Arc};
-
 use super::platform_data::PlatformData;
+use bitflags::bitflags;
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+};
 
 pub const EPC_UNKNOWN: i32 = 0;
 pub const EPC_ANY: i32 = -1;

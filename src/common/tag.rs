@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::sync::Arc;
-
 use npb_pcap_policy::PolicyData;
+use std::sync::Arc;
 
 #[derive(Debug, Default, Clone)]
 pub struct Tag {

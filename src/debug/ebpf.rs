@@ -14,20 +14,19 @@
  * limitations under the License.
  */
 
-use std::ffi::CString;
-use std::net::{SocketAddr, UdpSocket};
-use std::slice;
-use std::time::{Duration, Instant};
-
-use bincode::config::Configuration;
-use bincode::{Decode, Encode};
+use crate::ebpf::{cpdbg_set_config, datadump_set_config};
+use bincode::{Decode, Encode, config::Configuration};
 use libc::{c_char, c_int};
 use log::warn;
-
-use crate::ebpf::{cpdbg_set_config, datadump_set_config};
 use public::{
     debug::send_to,
-    queue::{bounded, Receiver, Sender},
+    queue::{Receiver, Sender, bounded},
+};
+use std::{
+    ffi::CString,
+    net::{SocketAddr, UdpSocket},
+    slice,
+    time::{Duration, Instant},
 };
 
 /// eBPF 模块调试消息
@@ -77,7 +76,7 @@ impl EbpfDebugger {
     pub fn new() -> Self {
         // 创建一个有界通道用于传输 eBPF 数据
         let (sender, receiver, _) = bounded(1024);
-        
+
         // 初始化全局发送端（不安全操作）
         #[allow(static_mut_refs)]
         unsafe {
@@ -102,12 +101,12 @@ impl EbpfDebugger {
         };
         let now = Instant::now();
         let duration = Duration::from_secs(*timeout as u64);
-        
+
         // 配置 C 端 eBPF 剖析器
         unsafe {
             cpdbg_set_config(*timeout as c_int, Self::ebpf_debug);
         }
-        
+
         let mut seq = 1;
         // 循环接收并发送数据直到超时
         while now.elapsed() < duration {
@@ -146,7 +145,7 @@ impl EbpfDebugger {
         let now = Instant::now();
         let duration = Duration::from_secs(*timeout as u64);
         let empty_cstr = CString::new("").unwrap();
-        
+
         // 配置 C 端 eBPF 数据抓取
         unsafe {
             datadump_set_config(
@@ -159,7 +158,7 @@ impl EbpfDebugger {
                 Self::ebpf_debug,
             );
         }
-        
+
         let mut seq = 1;
         // 循环接收并发送数据直到超时
         while now.elapsed() < duration {

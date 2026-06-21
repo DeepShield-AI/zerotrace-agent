@@ -14,30 +14,26 @@
  * limitations under the License.
  */
 
-use std::env;
-use std::io;
-use std::process;
-use std::sync::{
-    atomic::{AtomicI64, AtomicU32, AtomicU64, AtomicU8, Ordering},
-    Arc, Mutex, Weak,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use arc_swap::access::Access;
-use flexi_logger::{writers::LogWriter, DeferredNow, Level, Record};
-
-use public::{
-    queue,
-    sender::{SendMessageType, Sendable},
-    LeakyBucket,
-};
-
 use super::stats::{self, QueueStats};
 use crate::{
     config::handler::{LogAccess, LogConfig, SenderAccess},
     exception::ExceptionHandler,
     sender::uniform_sender::{Connection, UniformSenderThread},
     trident::SenderEncoder,
+};
+use arc_swap::access::Access;
+use flexi_logger::{DeferredNow, Level, Record, writers::LogWriter};
+use public::{
+    LeakyBucket, queue,
+    sender::{SendMessageType, Sendable},
+};
+use std::{
+    env, io, process,
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicI64, AtomicU8, AtomicU32, AtomicU64, Ordering},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 macro_rules! write_message {
@@ -198,8 +194,7 @@ impl LogWriter for RemoteLogWriter {
         let now = if diff > 0 {
             now.checked_add(Duration::from_nanos(diff as u64)).unwrap()
         } else {
-            now.checked_sub(Duration::from_nanos(diff.abs() as u64))
-                .unwrap()
+            now.checked_sub(Duration::from_nanos(diff.abs() as u64)).unwrap()
         };
 
         if self.over_threshold(&config, &now) {
@@ -302,9 +297,7 @@ impl LogWriterAdapter {
 
 impl LogWriter for LogWriterAdapter {
     fn write(&self, now: &mut DeferredNow, record: &Record<'_>) -> io::Result<()> {
-        self.0
-            .iter()
-            .fold(Ok(()), |r, w| r.or(w.write(now, record)))
+        self.0.iter().fold(Ok(()), |r, w| r.or(w.write(now, record)))
     }
 
     fn flush(&self) -> io::Result<()> {

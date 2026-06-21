@@ -14,23 +14,6 @@
  * limitations under the License.
  */
 
-use std::any::Any;
-use std::fmt;
-use std::net::{IpAddr, Ipv4Addr};
-use std::ops::Deref;
-use std::sync::Arc;
-use std::time::Duration;
-#[cfg(all(unix, feature = "libtrace"))]
-use std::{error::Error, net::Ipv6Addr, ptr};
-
-use bitflags::bitflags;
-use pcap::Linktype;
-use pnet::packet::{
-    icmp::{IcmpType, IcmpTypes},
-    icmpv6::{Icmpv6Type, Icmpv6Types},
-    tcp::{TcpOptionNumber, TcpOptionNumbers},
-};
-
 use super::{
     consts::*,
     decapsulate::TunnelInfo,
@@ -41,8 +24,11 @@ use super::{
     lookup_key::LookupKey,
     tap_port::TapPort,
 };
-
-use crate::error;
+use crate::{
+    common::Timestamp,
+    error,
+    utils::bytes::{read_u16_be, read_u32_be},
+};
 #[cfg(all(unix, feature = "libtrace"))]
 use crate::{
     common::ebpf::{GO_HTTP2_UPROBE, GO_HTTP2_UPROBE_DATA},
@@ -52,21 +38,34 @@ use crate::{
         SOCK_DIR_SND,
     },
 };
-use crate::{
-    common::Timestamp,
-    utils::bytes::{read_u16_be, read_u32_be},
-};
+use bitflags::bitflags;
 use npb_handler::NpbMode;
 use npb_pcap_policy::PolicyData;
 use packet_segmentation_reassembly::Segment;
+use pcap::Linktype;
+use pnet::packet::{
+    icmp::{IcmpType, IcmpTypes},
+    icmpv6::{Icmpv6Type, Icmpv6Types},
+    tcp::{TcpOptionNumber, TcpOptionNumbers},
+};
 use public::{
     buffer::BatchedBuffer,
     packet::Downcast,
     proto::flow_log::FlagBits,
-    utils::net::{is_unicast_link_local, MacAddr},
+    utils::net::{MacAddr, is_unicast_link_local},
 };
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use reorder::CacheItem;
+use std::{
+    any::Any,
+    fmt,
+    net::{IpAddr, Ipv4Addr},
+    ops::Deref,
+    sync::Arc,
+    time::Duration,
+};
+#[cfg(all(unix, feature = "libtrace"))]
+use std::{error::Error, net::Ipv6Addr, ptr};
 
 #[derive(Clone, Debug)]
 pub enum RawPacket<'a> {
@@ -96,7 +95,7 @@ impl<'a> RawPacket<'a> {
         match self {
             Self::Borrowed(b) => *self = Self::OwnedVec(b.to_vec()),
             Self::Owned(o) => *self = Self::OwnedVec(o.to_vec()),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -364,8 +363,8 @@ impl<'a> MetaPacket<'a> {
 
     #[inline]
     pub fn tcp_options_size(&self) -> usize {
-        if (self.header_type != HeaderType::Ipv4Tcp && self.header_type != HeaderType::Ipv6Tcp)
-            && self.l4_opt_size == 0
+        if (self.header_type != HeaderType::Ipv4Tcp && self.header_type != HeaderType::Ipv6Tcp) &&
+            self.l4_opt_size == 0
         {
             return 0;
         }
@@ -405,7 +404,7 @@ impl<'a> MetaPacket<'a> {
                         *<&[u8; 2]>::try_from(&packet[tcp_opt_mss_offset..tcp_opt_mss_offset + 2])
                             .unwrap(),
                     );
-                }
+                },
                 TcpOptionNumbers::WSCALE => {
                     if offset + TCP_OPT_WIN_SCALE_LEN > payload_offset {
                         return;
@@ -414,12 +413,12 @@ impl<'a> MetaPacket<'a> {
                     self.tcp_options_flag |= TCP_OPT_FLAG_WIN_SCALE;
                     offset += TCP_OPT_WIN_SCALE_LEN;
                     tcp_data.win_scale = packet[tcp_opt_win_scale_offset];
-                }
+                },
                 TcpOptionNumbers::SACK_PERMITTED => {
                     self.tcp_options_flag |= TCP_OPT_FLAG_SACK_PERMIT;
                     offset += 2;
                     tcp_data.sack_permitted = true;
-                }
+                },
                 TcpOptionNumbers::SACK => {
                     if offset + assume_length > payload_offset {
                         return;
@@ -436,7 +435,7 @@ impl<'a> MetaPacket<'a> {
                         &packet[tcp_opt_sack_offset..tcp_opt_sack_offset + sack_size],
                     );
                     tcp_data.sack.replace(sack);
-                }
+                },
                 TcpOptionNumber(TCP_OPT_ADDRESS_HUAWEI) | TcpOptionNumber(TCP_OPT_ADDRESS_IPVS) => {
                     if assume_length == TCP_TOA_LEN {
                         self.lookup_key.src_nat_source = TapPort::NAT_SOURCE_TOA;
@@ -448,7 +447,7 @@ impl<'a> MetaPacket<'a> {
                         self.tap_port.set_nat_source(TapPort::NAT_SOURCE_TOA);
                     }
                     offset += assume_length;
-                }
+                },
                 _ => offset += assume_length,
             }
         }
@@ -476,10 +475,10 @@ impl<'a> MetaPacket<'a> {
                         break;
                     }
                     continue;
-                }
-                IpProtocol::IPV6_DESTINATION
-                | IpProtocol::IPV6_HOP_BY_HOP
-                | IpProtocol::IPV6_ROUTING => {
+                },
+                IpProtocol::IPV6_DESTINATION |
+                IpProtocol::IPV6_HOP_BY_HOP |
+                IpProtocol::IPV6_ROUTING => {
                     size_checker -= 8;
                     if size_checker < 0 {
                         break;
@@ -493,7 +492,7 @@ impl<'a> MetaPacket<'a> {
                         break;
                     }
                     continue;
-                }
+                },
                 IpProtocol::IPV6_FRAGMENT => {
                     size_checker -= 8;
                     if size_checker < 0 {
@@ -504,15 +503,15 @@ impl<'a> MetaPacket<'a> {
                     next_header = packet[option_offset];
                     option_offset += 8;
                     continue;
-                }
+                },
                 IpProtocol::ICMPV6 => {
                     return (next_header, option_offset - original_offset);
-                }
+                },
                 IpProtocol::ESP => {
                     self.offset_ipv6_last_option = option_offset as u16;
                     option_offset += size_checker as usize;
                     return (next_header, option_offset - original_offset);
-                }
+                },
                 _ => (),
             }
             // header types unknown or not matched
@@ -570,9 +569,9 @@ impl<'a> MetaPacket<'a> {
             return Some(&self.raw_from_ebpf[self.raw_from_ebpf_offset..]);
         }
 
-        let packet_header_size = self.header_type.min_packet_size()
-            + self.l2_l3_opt_size as usize
-            + self.l4_opt_size as usize;
+        let packet_header_size = self.header_type.min_packet_size() +
+            self.l2_l3_opt_size as usize +
+            self.l4_opt_size as usize;
         if let Some(raw) = self.raw.as_ref() {
             if raw.len() > packet_header_size {
                 return Some(&raw[packet_header_size..]);
@@ -586,8 +585,8 @@ impl<'a> MetaPacket<'a> {
         if self.lookup_key.proto == IpProtocol::TCP || self.lookup_key.proto == IpProtocol::UDP {
             return self.get_l4_payload();
         }
-        if self.lookup_key.eth_type == EthernetType::IPV4
-            || self.lookup_key.eth_type == EthernetType::IPV6
+        if self.lookup_key.eth_type == EthernetType::IPV4 ||
+            self.lookup_key.eth_type == EthernetType::IPV6
         {
             return self.get_l3_payload();
         }
@@ -699,7 +698,7 @@ impl<'a> MetaPacket<'a> {
                 self.nd_reply_or_arp_request =
                     read_u16_be(&packet[vlan_tag_size + ARP_OP_OFFSET..]) == arp::OP_REQUEST;
                 return Ok(());
-            }
+            },
             EthernetType::IPV6 => {
                 is_ipv6 = true;
                 offset_port_0 = FIELD_OFFSET_IPV6_SPORT;
@@ -730,10 +729,10 @@ impl<'a> MetaPacket<'a> {
                 ip_protocol = IpProtocol::from(r.0);
                 let options_length = r.1;
                 self.l2_l3_opt_size += options_length as u16;
-                self.packet_len = payload as u32
-                    + HeaderType::Ipv6.min_packet_size() as u32
-                    + vlan_tag_size as u32
-                    + IPV6_HEADER_ADJUST as u32;
+                self.packet_len = payload as u32 +
+                    HeaderType::Ipv6.min_packet_size() as u32 +
+                    vlan_tag_size as u32 +
+                    IPV6_HEADER_ADJUST as u32;
                 self.lookup_key.proto = ip_protocol;
 
                 size_checker -= options_length as isize;
@@ -742,7 +741,7 @@ impl<'a> MetaPacket<'a> {
                     return Ok(());
                 }
                 self.l3_payload_len = size_checker as u16;
-            }
+            },
             EthernetType::IPV4 => {
                 size_checker -= HeaderType::Ipv4.min_header_size() as isize;
                 if size_checker < 0 {
@@ -802,7 +801,7 @@ impl<'a> MetaPacket<'a> {
                     self.l4_payload_len = self.l3_payload_len;
                     return Ok(());
                 }
-            }
+            },
             _ => return Ok(()),
         }
 
@@ -823,24 +822,24 @@ impl<'a> MetaPacket<'a> {
                 match IcmpType::new(
                     packet[FIELD_OFFSET_ICMP_TYPE_CODE + self.l2_l3_opt_size as usize],
                 ) {
-                    IcmpTypes::DestinationUnreachable
-                    | IcmpTypes::SourceQuench
-                    | IcmpTypes::RedirectMessage
-                    | IcmpTypes::ParameterProblem => {
+                    IcmpTypes::DestinationUnreachable |
+                    IcmpTypes::SourceQuench |
+                    IcmpTypes::RedirectMessage |
+                    IcmpTypes::ParameterProblem => {
                         self.l4_opt_size = FIELD_LEN_ICMP_REST as u32;
                         size_checker -= self.l4_opt_size as isize;
                         if size_checker < 0 {
                             self.l4_opt_size = 0;
                             return Ok(());
                         }
-                    }
+                    },
                     IcmpTypes::EchoRequest => {
                         icmp_data.echo_id_seq = read_u32_be(&packet[icmp_type_index + 4..]);
-                    }
+                    },
                     IcmpTypes::EchoReply => {
                         icmp_data.echo_id_seq = read_u32_be(&packet[icmp_type_index + 4..]);
                         self.lookup_key.direction = PacketDirection::ServerToClient;
-                    }
+                    },
                     _ => (),
                 }
                 self.protocol_data = ProtocolData::IcmpData(icmp_data);
@@ -848,21 +847,19 @@ impl<'a> MetaPacket<'a> {
                     (self.packet_len as usize - (packet.len() - size_checker as usize)) as u16;
                 self.header_type = HeaderType::Ipv4Icmp;
                 return Ok(());
-            }
+            },
             IpProtocol::UDP => {
                 match eth_type {
-                    EthernetType::IPV4 => {
+                    EthernetType::IPV4 =>
                         self.packet_len = self.packet_len.max(
-                            HeaderType::Ipv4Udp.min_packet_size() as u32
-                                + self.l2_l3_opt_size as u32,
-                        )
-                    }
-                    EthernetType::IPV6 => {
+                            HeaderType::Ipv4Udp.min_packet_size() as u32 +
+                                self.l2_l3_opt_size as u32,
+                        ),
+                    EthernetType::IPV6 =>
                         self.packet_len = self.packet_len.max(
-                            HeaderType::Ipv6Udp.min_packet_size() as u32
-                                + self.l2_l3_opt_size as u32,
-                        )
-                    }
+                            HeaderType::Ipv6Udp.min_packet_size() as u32 +
+                                self.l2_l3_opt_size as u32,
+                        ),
                     _ => unreachable!(),
                 }
                 let header_type = if self.header_type == HeaderType::Ipv6 {
@@ -878,7 +875,7 @@ impl<'a> MetaPacket<'a> {
                     (self.packet_len as usize - (packet.len() - size_checker as usize)) as u16;
                 self.payload_len = self.l4_payload_len as u16;
                 self.header_type = header_type;
-            }
+            },
             IpProtocol::TCP => {
                 let (data_off, seq_off, ack_off, win_off, flag_off) = if is_ipv6 {
                     (
@@ -899,18 +896,16 @@ impl<'a> MetaPacket<'a> {
                 };
 
                 match eth_type {
-                    EthernetType::IPV4 => {
+                    EthernetType::IPV4 =>
                         self.packet_len = self.packet_len.max(
-                            HeaderType::Ipv4Tcp.min_packet_size() as u32
-                                + self.l2_l3_opt_size as u32,
-                        )
-                    }
-                    EthernetType::IPV6 => {
+                            HeaderType::Ipv4Tcp.min_packet_size() as u32 +
+                                self.l2_l3_opt_size as u32,
+                        ),
+                    EthernetType::IPV6 =>
                         self.packet_len = self.packet_len.max(
-                            HeaderType::Ipv6Tcp.min_packet_size() as u32
-                                + self.l2_l3_opt_size as u32,
-                        )
-                    }
+                            HeaderType::Ipv6Tcp.min_packet_size() as u32 +
+                                self.l2_l3_opt_size as u32,
+                        ),
                     _ => unreachable!(),
                 }
                 let header_type = if self.header_type == HeaderType::Ipv6 {
@@ -954,7 +949,7 @@ impl<'a> MetaPacket<'a> {
                 if data_offset > 5 {
                     self.update_tcp_opt(packet);
                 }
-            }
+            },
             IpProtocol::ICMPV6 => {
                 size_checker -= HeaderType::Ipv6Icmp.min_header_size() as isize;
                 if size_checker < 0 {
@@ -966,15 +961,15 @@ impl<'a> MetaPacket<'a> {
                 match Icmpv6Type::new(packet[icmpv6_type_index]) {
                     Icmpv6Types::NeighborAdvert => {
                         self.nd_reply_or_arp_request = true;
-                    }
+                    },
                     Icmpv6Types::EchoRequest => {
                         icmp_data.echo_id_seq = read_u32_be(&packet[icmpv6_type_index + 4..]);
-                    }
+                    },
                     Icmpv6Types::EchoReply => {
                         icmp_data.echo_id_seq = read_u32_be(&packet[icmpv6_type_index + 4..]);
                         self.lookup_key.direction = PacketDirection::ServerToClient;
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
                 // 忽略link-local address并只考虑ND reply, i.e. neighbour advertisement
                 if let IpAddr::V6(ip) = self.lookup_key.src_ip {
@@ -986,12 +981,12 @@ impl<'a> MetaPacket<'a> {
                 self.protocol_data = ProtocolData::IcmpData(icmp_data);
                 self.header_type = HeaderType::Ipv6Icmp;
                 return Ok(());
-            }
+            },
             _ => {
                 self.payload_len =
                     (self.packet_len - (packet.len() - size_checker as usize) as u32) as u16;
                 return Ok(());
-            }
+            },
         }
         if self.header_type >= HeaderType::Ipv4 {
             self.lookup_key.src_port =
@@ -1038,12 +1033,12 @@ impl<'a> MetaPacket<'a> {
             return self.packet_len as usize - 54;
         }
 
-        let packet_header_size = if self.lookup_key.proto == IpProtocol::UDP
-            && self.lookup_key.proto == IpProtocol::TCP
+        let packet_header_size = if self.lookup_key.proto == IpProtocol::UDP &&
+            self.lookup_key.proto == IpProtocol::TCP
         {
-            self.header_type.min_packet_size()
-                + self.l2_l3_opt_size as usize
-                + self.l4_opt_size as usize
+            self.header_type.min_packet_size() +
+                self.l2_l3_opt_size as usize +
+                self.l4_opt_size as usize
         } else if self.lookup_key.eth_type == EthernetType::IPV4 {
             HeaderType::Ipv4.min_packet_size() + self.l2_l3_opt_size as usize
         } else if self.lookup_key.eth_type == EthernetType::IPV6 {
@@ -1180,14 +1175,14 @@ impl<'a> MetaPacket<'a> {
 
         // 目前只有 go uprobe http2 的方向判断能确保准确
         if data.source == GO_HTTP2_UPROBE || data.source == GO_HTTP2_UPROBE_DATA {
-            if data.l7_protocol_hint == SOCK_DATA_HTTP2
-                || data.l7_protocol_hint == SOCK_DATA_TLS_HTTP2
+            if data.l7_protocol_hint == SOCK_DATA_HTTP2 ||
+                data.l7_protocol_hint == SOCK_DATA_TLS_HTTP2
             {
                 packet.lookup_key.direction = Self::parse_direction(data.msg_type);
                 match data.msg_type {
                     MSG_REQUEST_END => packet.is_request_end = true,
                     MSG_RESPONSE_END => packet.is_response_end = true,
-                    _ => {}
+                    _ => {},
                 }
             }
         }
@@ -1198,12 +1193,10 @@ impl<'a> MetaPacket<'a> {
     #[inline]
     fn parse_direction(msg_type: u8) -> PacketDirection {
         match msg_type {
-            crate::ebpf::MSG_REQUEST | crate::ebpf::MSG_REQUEST_END => {
-                PacketDirection::ClientToServer
-            }
-            crate::ebpf::MSG_RESPONSE | crate::ebpf::MSG_RESPONSE_END => {
-                PacketDirection::ServerToClient
-            }
+            crate::ebpf::MSG_REQUEST | crate::ebpf::MSG_REQUEST_END =>
+                PacketDirection::ClientToServer,
+            crate::ebpf::MSG_RESPONSE | crate::ebpf::MSG_RESPONSE_END =>
+                PacketDirection::ServerToClient,
             _ => panic!("ebpf direction({}) unknown.", msg_type),
         }
     }
@@ -1243,8 +1236,8 @@ impl<'a> MetaPacket<'a> {
         );
 
         #[cfg(all(unix, feature = "libtrace"))]
-        if self.signal_source == SignalSource::EBPF
-            && (self.process_kname[..12]).eq(b"redis-server")
+        if self.signal_source == SignalSource::EBPF &&
+            (self.process_kname[..12]).eq(b"redis-server")
         {
             if self.lookup_key.l2_end_1 && self.lookup_key.src_port != REDIS_PORT {
                 // if server side recv, dst addr is server addr
@@ -1301,14 +1294,14 @@ impl<'a> MetaPacket<'a> {
                 {
                     self.lookup_key.src_nat_ip = client_real_ip;
                     self.lookup_key.src_nat_source = TapPort::NAT_SOURCE_VIP;
-                }
+                },
                 PacketDirection::ServerToClient
                     if TapPort::NAT_SOURCE_VIP > self.lookup_key.dst_nat_source =>
                 {
                     self.lookup_key.dst_nat_ip = client_real_ip;
                     self.lookup_key.dst_nat_source = TapPort::NAT_SOURCE_VIP;
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 
@@ -1319,14 +1312,14 @@ impl<'a> MetaPacket<'a> {
                 {
                     self.lookup_key.dst_nat_ip = server_real_ip;
                     self.lookup_key.dst_nat_source = TapPort::NAT_SOURCE_VIP;
-                }
+                },
                 PacketDirection::ServerToClient
                     if TapPort::NAT_SOURCE_VIP > self.lookup_key.src_nat_source =>
                 {
                     self.lookup_key.src_nat_ip = server_real_ip;
                     self.lookup_key.src_nat_source = TapPort::NAT_SOURCE_VIP;
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }
@@ -1516,7 +1509,7 @@ impl<'a> TryFrom<PcapData<'a>> for MetaPacket<'a> {
                 let mut meta = MetaPacket::empty();
                 meta.update(packet.data, true, true, packet.timestamp, 0)?;
                 return Ok(meta);
-            }
+            },
             _ => (),
         }
 
@@ -1531,13 +1524,13 @@ impl<'a> TryFrom<PcapData<'a>> for MetaPacket<'a> {
                 let mut data = (&packet.data[6..]).to_vec();
                 data[12..14].copy_from_slice(&packet.data[0..2]);
                 data
-            }
+            },
             _ => {
                 return Err(error::Error::ParsePacketFailed(format!(
                     "unsupported link type: {:?}",
                     packet.link_type
-                )))
-            }
+                )));
+            },
         };
 
         let mut meta = MetaPacket::empty();
@@ -1550,18 +1543,18 @@ impl<'a> TryFrom<PcapData<'a>> for MetaPacket<'a> {
         match dst_ip {
             IpAddr::V4(ip) => {
                 data[0..4].copy_from_slice(&ip.octets());
-            }
+            },
             IpAddr::V6(ip) => {
                 data[0..6].copy_from_slice(&ip.octets()[0..6]);
-            }
+            },
         }
         match src_ip {
             IpAddr::V4(ip) => {
                 data[6..10].copy_from_slice(&ip.octets());
-            }
+            },
             IpAddr::V6(ip) => {
                 data[6..12].copy_from_slice(&ip.octets()[0..6]);
-            }
+            },
         }
 
         let mut meta = MetaPacket::empty();

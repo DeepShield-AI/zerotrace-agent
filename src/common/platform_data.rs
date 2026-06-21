@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-use std::net::{IpAddr, Ipv4Addr};
-
-use super::{endpoint::EPC_ZEROTRACE, error::Error, IPV4_MAX_MASK_LEN, IPV6_MAX_MASK_LEN};
-
+use super::{IPV4_MAX_MASK_LEN, IPV6_MAX_MASK_LEN, endpoint::EPC_ZEROTRACE, error::Error};
 use public::proto::agent;
+use std::net::{IpAddr, Ipv4Addr};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IpSubnet {

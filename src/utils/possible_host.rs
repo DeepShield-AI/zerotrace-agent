@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-use std::net::{IpAddr, Ipv6Addr};
-
 use log::error;
 use lru::LruCache;
+use std::net::{IpAddr, Ipv6Addr};
 
 pub struct PossibleHost {
     cache: LruCache<u64, bool>,
@@ -46,21 +45,22 @@ impl PossibleHost {
 
     fn gen_key(host: &IpAddr, epc_id: i32) -> u64 {
         match host {
-            IpAddr::V4(ip4) => {
-                u32::from_le_bytes(ip4.octets()) as u64 | ((epc_id & 0xffff) as u64) << 32
-            }
-            IpAddr::V6(ip6) => {
-                1u64 << 48 | ((epc_id & 0xffff) as u64) << 32 | Self::get_ip6_hash(ip6) as u64
-            }
+            IpAddr::V4(ip4) =>
+                u32::from_le_bytes(ip4.octets()) as u64 | ((epc_id & 0xffff) as u64) << 32,
+            IpAddr::V6(ip6) =>
+                1u64 << 48 | ((epc_id & 0xffff) as u64) << 32 | Self::get_ip6_hash(ip6) as u64,
         }
     }
 
     pub fn add(&mut self, now: u64, host: &IpAddr, epc_id: i32) {
-        if usize::from(self.cache.cap()) <= self.cache.len()
-            && now > self.last_log_time + Self::LOG_INTERVLAN
+        if usize::from(self.cache.cap()) <= self.cache.len() &&
+            now > self.last_log_time + Self::LOG_INTERVLAN
         {
             self.last_log_time = now;
-            error!("The capacity({}) of the possible-host table will be exceeded. please adjust the configuration", self.cache.cap())
+            error!(
+                "The capacity({}) of the possible-host table will be exceeded. please adjust the configuration",
+                self.cache.cap()
+            )
         }
         self.cache.put(Self::gen_key(host, epc_id), true);
     }

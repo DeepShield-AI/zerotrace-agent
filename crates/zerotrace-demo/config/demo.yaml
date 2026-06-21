@@ -1,0 +1,53 @@
+# ZeroTrace Demo — YAML 驱动配置
+#
+# 本文件演示三层配置分离：
+#
+#   L3  bundles:     — 加载哪些 Bundle（运维决策）
+#                     Bundle 内部依赖用 TypeId（编译期安全），不在这里声明
+#   L4  pipelines:   — 管线拓扑（运维决策）
+#                     哪些 Source 接哪些 Processor 接哪些 Reporter
+#   参数             — 每个组件的参数（超时、容量、开关等）
+
+version: 1
+
+# ── L3：Bundle 选择（运维决策） ──────────────────────────────────────
+# 每个 bundle 内部的组件依赖用 TypeId 保证（编译安全），
+# 加载顺序由 BundleSet::load_all() 自动拓扑排序。
+bundles:
+  - demo_core          # 必选：配置 + 基础组件
+  - demo_pipeline      # 可选：管线模板声明
+
+# ── L4：管线拓扑（运维决策） ────────────────────────────────────────
+# 决定 Source → Processor → Reporter 的连接方式和参数。
+pipeline:
+  name: "demo-pipeline"
+  channel_capacity: 1024
+  backpressure: "block"        # block | drop_oldest | drop_newest
+
+# ── Source（采集器）参数 ─────────────────────────────────────────────
+source:
+  type: "periodic_demo"
+  interval_ms: 500             # 采集间隔
+  batch_size: 5                # 每批信号数
+  metric_names:                # 采集的指标名（轮转）
+    - "cpu.utilization"
+    - "memory.usage_bytes"
+    - "disk.io_ops"
+
+# ── Processor 链参数 ─────────────────────────────────────────────────
+# 按数组顺序串行执行。每个 processor 的 type 决定用哪个实现。
+processors:
+  - type: "enrich"
+    key: "environment"
+    value: "demo"
+  - type: "enrich"
+    key: "collector.name"
+    value: "zerotrace-demo"
+  - type: "threshold_filter"
+    min_value: 0.0
+
+# ── Reporter（上报器）参数 ───────────────────────────────────────────
+reporter:
+  type: "console"
+  format: "summary"            # summary | json
+  log_interval_batches: 5      # 每 N 批输出一次聚合行

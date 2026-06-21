@@ -14,33 +14,30 @@
  * limitations under the License.
  */
 
+use super::{get_k8s_namespace, running_in_container, running_in_k8s};
+use crate::{
+    common::{CONTAINER_NAME, DAEMONSET_NAME, PROCESS_NAME, PROCESS_NAME_SECONDARY},
+    error::{Error, Result},
+    exception::ExceptionHandler,
+};
+use bollard::{Docker, container::UpdateContainerOptions};
+use chrono::DateTime;
+use k8s_openapi::{api::apps::v1::DaemonSet, apimachinery::pkg::api::resource::Quantity};
+use kube::{
+    Client, Config,
+    api::{Api, Patch, PatchParams},
+};
+use log::{debug, error, info, warn};
+use nix::sys::utsname::uname;
+use nom::AsBytes;
+use procfs::net::{TcpNetEntry, UdpNetEntry};
+use public::utils::net::get_link_enabled_features;
 use std::{
     fs,
     io::{self, Read},
     iter::Iterator,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
-};
-
-use bollard::{container::UpdateContainerOptions, Docker};
-use chrono::DateTime;
-use k8s_openapi::{api::apps::v1::DaemonSet, apimachinery::pkg::api::resource::Quantity};
-use kube::{
-    api::{Api, Patch, PatchParams},
-    Client, Config,
-};
-use log::{debug, error, info, warn};
-use nix::sys::utsname::uname;
-use nom::AsBytes;
-use procfs::net::{TcpNetEntry, UdpNetEntry};
-
-use public::utils::net::get_link_enabled_features;
-
-use super::{get_k8s_namespace, running_in_container, running_in_k8s};
-use crate::{
-    common::{CONTAINER_NAME, DAEMONSET_NAME, PROCESS_NAME, PROCESS_NAME_SECONDARY},
-    error::{Error, Result},
-    exception::ExceptionHandler,
 };
 
 const CORE_FILE_CONFIG: &str = "/proc/sys/kernel/core_pattern";
@@ -80,7 +77,7 @@ pub fn tap_interface_check(tap_interfaces: &[String]) {
             Err(e) => {
                 warn!("{}, please check rx-vlan-offload manually", e);
                 continue;
-            }
+            },
         };
         if features.contains("rx-vlan-hw-parse") {
             warn!(
@@ -154,7 +151,7 @@ impl CoreFileProcessor<'_> {
                     core_path.as_ref().display()
                 );
                 return;
-            }
+            },
         };
 
         let mut core_files = vec![];
@@ -195,8 +192,8 @@ impl CoreFileProcessor<'_> {
 
             let elf_data = &mut elf_data[..n];
             let context = String::from_utf8_lossy(&elf_data);
-            if context.find(PROCESS_NAME).is_none()
-                && context.find(PROCESS_NAME_SECONDARY).is_none()
+            if context.find(PROCESS_NAME).is_none() &&
+                context.find(PROCESS_NAME_SECONDARY).is_none()
             {
                 continue;
             }
@@ -235,7 +232,7 @@ impl CoreFileProcessor<'_> {
                     core_path.as_ref().display()
                 );
                 return;
-            }
+            },
         };
 
         let mut core_files = vec![];
@@ -305,14 +302,14 @@ impl CoreFileProcessor<'_> {
 
                 info!("Check core-files in dir: {}", core_path);
                 self.check_core_file_dir(core_path);
-            }
+            },
             // centos
             CoreFileProcessor::Process("abrt-hook-ccpp") => {
                 const CONFIG_DIR: &str = "/etc/abrt/abrt.conf";
                 const CORE_DIR: &str = "/var/spool/abrt";
 
                 match fs::read_to_string(CONFIG_DIR) {
-                    Ok(context) => {
+                    Ok(context) =>
                         for line in context.lines() {
                             if line.trim().starts_with("#") {
                                 continue;
@@ -327,25 +324,24 @@ impl CoreFileProcessor<'_> {
                                     return;
                                 }
                             }
-                        }
-                    }
+                        },
                     Err(e) => {
                         info!("The core file config {} read failed: {:?}.", CONFIG_DIR, e,);
-                    }
+                    },
                 }
 
                 info!("Check core-files in dir: {}", CORE_DIR);
                 self.check_abrt_dir(CORE_DIR);
                 info!("Check core-files in dir: {}", DEFAILT_CORE_DIR);
                 self.check_core_file_dir(DEFAILT_CORE_DIR);
-            }
+            },
             // ubuntu
             CoreFileProcessor::Process("apport") => {
                 const CONFIG_DIR: &str = "/etc/apport/apport.conf";
                 const CORE_DIR: &str = "/var/lib/apport/coredump/";
 
                 match fs::read_to_string(CONFIG_DIR) {
-                    Ok(context) => {
+                    Ok(context) =>
                         for line in context.lines() {
                             if line.trim().starts_with("#") {
                                 continue;
@@ -360,24 +356,23 @@ impl CoreFileProcessor<'_> {
                                     break;
                                 }
                             }
-                        }
-                    }
+                        },
                     Err(e) => {
                         info!("The core file config {} read failed: {:?}.", CONFIG_DIR, e,);
-                    }
+                    },
                 }
 
                 info!("Check core-files in dir: {}", CORE_DIR);
                 self.check_core_file_dir(CORE_DIR);
                 info!("Check core-files in dir: {}", DEFAILT_CORE_DIR);
                 self.check_core_file_dir(DEFAILT_CORE_DIR);
-            }
+            },
             CoreFileProcessor::Process(name) => {
                 info!(
                     "The core file check does not support the pipe command {}, skipping the check.",
                     name
                 );
-            }
+            },
         }
     }
 }
@@ -388,7 +383,7 @@ fn read_core_file_config() -> Option<String> {
         Err(e) => {
             warn!("Core file read {} error: {e}", CORE_FILE_CONFIG);
             return None;
-        }
+        },
     };
 
     let core_path = match String::from_utf8(core_path) {
@@ -396,7 +391,7 @@ fn read_core_file_config() -> Option<String> {
         Err(e) => {
             warn!("Core file parse {} error: {e}", CORE_FILE_CONFIG);
             return None;
-        }
+        },
     };
 
     Some(core_path)
@@ -607,8 +602,8 @@ pub struct SocketInfo {
 
 fn tcp_filter(inodes: &[u64]) -> impl Fn(&TcpNetEntry) -> bool + '_ {
     |entry| {
-        entry.state == procfs::net::TcpState::Established
-            && inodes.binary_search(&entry.inode).is_ok()
+        entry.state == procfs::net::TcpState::Established &&
+            inodes.binary_search(&entry.inode).is_ok()
     }
 }
 
@@ -681,51 +676,39 @@ impl SocketInfo {
         for fd in proc.fd()? {
             match fd?.target {
                 procfs::process::FDTarget::Socket(inode) => socket_inodes.push(inode),
-                _ => {}
+                _ => {},
             }
         }
         socket_inodes.sort_unstable();
 
         Ok(Self {
             tcp: match procfs::net::tcp() {
-                Ok(entries) => entries
-                    .into_iter()
-                    .filter(tcp_filter(&socket_inodes))
-                    .collect(),
+                Ok(entries) => entries.into_iter().filter(tcp_filter(&socket_inodes)).collect(),
                 Err(e) => {
                     debug!("get tcp socket failed: {}", e);
                     vec![]
-                }
+                },
             },
             tcp6: match procfs::net::tcp6() {
-                Ok(entries) => entries
-                    .into_iter()
-                    .filter(tcp_filter(&socket_inodes))
-                    .collect(),
+                Ok(entries) => entries.into_iter().filter(tcp_filter(&socket_inodes)).collect(),
                 Err(e) => {
                     debug!("get tcp6 socket failed: {}", e);
                     vec![]
-                }
+                },
             },
             udp: match procfs::net::udp() {
-                Ok(entries) => entries
-                    .into_iter()
-                    .filter(udp_filter(&socket_inodes))
-                    .collect(),
+                Ok(entries) => entries.into_iter().filter(udp_filter(&socket_inodes)).collect(),
                 Err(e) => {
                     debug!("get udp socket failed: {}", e);
                     vec![]
-                }
+                },
             },
             udp6: match procfs::net::udp6() {
-                Ok(entries) => entries
-                    .into_iter()
-                    .filter(udp_filter(&socket_inodes))
-                    .collect(),
+                Ok(entries) => entries.into_iter().filter(udp_filter(&socket_inodes)).collect(),
                 Err(e) => {
                     debug!("get udp6 socket failed: {}", e);
                     vec![]
-                }
+                },
             },
         })
     }

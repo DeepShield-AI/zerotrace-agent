@@ -14,6 +14,34 @@
  * limitations under the License.
  */
 
+use super::process::{
+    FileAndSizeSum, get_current_sys_memory_percentage, get_file_and_size_sum, get_memory_rss,
+    get_thread_num,
+};
+#[cfg(target_os = "linux")]
+use crate::utils::environment::SocketInfo;
+use crate::{
+    common::{
+        CGROUP_PROCS_PATH, CGROUP_TASKS_PATH, CGROUP_V2_PROCS_PATH, CGROUP_V2_THREADS_PATH,
+        NORMAL_EXIT_WITH_RESTART,
+    },
+    config::handler::EnvironmentAccess,
+    exception::ExceptionHandler,
+    rpc::get_timestamp,
+    trident::AgentState,
+    utils::{
+        cgroups::is_kernel_available_for_cgroups,
+        environment::{get_disk_usage, running_in_container},
+    },
+};
+use arc_swap::access::Access;
+use bytesize::ByteSize;
+use chrono::prelude::*;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+use libc::malloc_trim;
+use log::{debug, error, info, warn};
+use num_enum::TryFromPrimitive;
+use public::proto::agent::{Exception, PacketCaptureType, SysMemoryMetric, SystemLoadMetric};
 #[cfg(target_os = "linux")]
 use std::time::Instant;
 use std::{
@@ -22,42 +50,15 @@ use std::{
     path::Path,
     string::String,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
         Arc, Condvar, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
     },
-    thread::{self, sleep, JoinHandle},
+    thread::{self, JoinHandle, sleep},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-use arc_swap::access::Access;
-use bytesize::ByteSize;
-use chrono::prelude::*;
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-use libc::malloc_trim;
-use log::{debug, error, info, warn};
-use num_enum::TryFromPrimitive;
 use strum_macros::Display;
-use sysinfo::{get_current_pid, Pid, ProcessExt, ProcessRefreshKind, System, SystemExt};
-use time::{format_description, OffsetDateTime};
-
-use super::process::{
-    get_current_sys_memory_percentage, get_file_and_size_sum, get_memory_rss, get_thread_num,
-    FileAndSizeSum,
-};
-use crate::common::{
-    CGROUP_PROCS_PATH, CGROUP_TASKS_PATH, CGROUP_V2_PROCS_PATH, CGROUP_V2_THREADS_PATH,
-    NORMAL_EXIT_WITH_RESTART,
-};
-use crate::config::handler::EnvironmentAccess;
-use crate::exception::ExceptionHandler;
-use crate::rpc::get_timestamp;
-use crate::trident::AgentState;
-use crate::utils::environment::get_disk_usage;
-#[cfg(target_os = "linux")]
-use crate::utils::environment::SocketInfo;
-use crate::utils::{cgroups::is_kernel_available_for_cgroups, environment::running_in_container};
-
-use public::proto::agent::{Exception, PacketCaptureType, SysMemoryMetric, SystemLoadMetric};
+use sysinfo::{Pid, ProcessExt, ProcessRefreshKind, System, SystemExt, get_current_pid};
+use time::{OffsetDateTime, format_description};
 
 struct SystemLoadGuard {
     system: Arc<Mutex<System>>,
@@ -86,12 +87,11 @@ impl SystemLoadGuard {
         system_load_circuit_breaker_recover: f32,
         system_load_circuit_breaker_metric: SystemLoadMetric,
     ) {
-        if system_load_circuit_breaker_threshold == 0.0
-            || system_load_circuit_breaker_recover == 0.0
+        if system_load_circuit_breaker_threshold == 0.0 ||
+            system_load_circuit_breaker_recover == 0.0
         {
             self.last_exceeded = Duration::ZERO;
-            self.exception_handler
-                .clear(Exception::SystemLoadCircuitBreaker);
+            self.exception_handler.clear(Exception::SystemLoadCircuitBreaker);
             return;
         }
         if system_load_circuit_breaker_metric != self.last_exceeded_metric {
@@ -108,10 +108,7 @@ impl SystemLoadGuard {
             SystemLoadMetric::Load15 => system.load_average().fifteen,
         } as f32;
 
-        if self
-            .exception_handler
-            .has(Exception::SystemLoadCircuitBreaker)
-        {
+        if self.exception_handler.has(Exception::SystemLoadCircuitBreaker) {
             let has_exceeded = system_load / cpu_count >= system_load_circuit_breaker_recover;
             if has_exceeded {
                 self.last_exceeded = get_timestamp(0);
@@ -122,8 +119,7 @@ impl SystemLoadGuard {
                         "Current load {:?} is below the recover threshold({:?}), set the agent to enabled.",
                         system_load_circuit_breaker_metric, system_load_circuit_breaker_recover
                     );
-                    self.exception_handler
-                        .clear(Exception::SystemLoadCircuitBreaker);
+                    self.exception_handler.clear(Exception::SystemLoadCircuitBreaker);
                 }
             }
         } else {
@@ -134,8 +130,7 @@ impl SystemLoadGuard {
                     system_load_circuit_breaker_metric, system_load_circuit_breaker_threshold
                 );
                 self.last_exceeded = get_timestamp(0);
-                self.exception_handler
-                    .set(Exception::SystemLoadCircuitBreaker);
+                self.exception_handler.set(Exception::SystemLoadCircuitBreaker);
             }
         }
     }
@@ -220,10 +215,7 @@ impl Feed {
     }
 
     fn add(&self, title: FeedTitle) {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let timestamp_and_title = (timestamp & 0xffffffff) | ((title as u32 as u64) << 32);
 
         self.timestamp_and_title.store(timestamp_and_title, Relaxed);
@@ -298,38 +290,26 @@ impl Guard {
     }
 
     fn release_log_files(file_and_size_sum: FileAndSizeSum, log_file_size: u64) {
-        let today = Utc::now()
-            .date_naive()
-            .and_hms_milli_opt(0, 0, 0, 0)
-            .unwrap();
-        let zero_o_clock = Local
-            .from_local_datetime(&today)
-            .unwrap()
-            .timestamp_millis() as u128; // 当天零点时间
+        let today = Utc::now().date_naive().and_hms_milli_opt(0, 0, 0, 0).unwrap();
+        let zero_o_clock = Local.from_local_datetime(&today).unwrap().timestamp_millis() as u128; // 当天零点时间
         let mut file_sizes_sum = file_and_size_sum.file_sizes_sum.clone();
         // 从旧到新删除日志文件直到低于限制值
         for file_info in file_and_size_sum.file_infos.iter() {
             if file_sizes_sum < log_file_size {
                 break;
             }
-            let file_mt = file_info
-                .file_modified_time
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis(); // 文件修改时间
+            let file_mt =
+                file_info.file_modified_time.duration_since(UNIX_EPOCH).unwrap().as_millis(); // 文件修改时间
             if file_mt >= zero_o_clock {
                 // 当天的文件清空
-                match File::create(Path::new(file_info.file_path.as_str()))
-                    .unwrap()
-                    .set_len(0)
-                {
+                match File::create(Path::new(file_info.file_path.as_str())).unwrap().set_len(0) {
                     Ok(_) => {
                         file_sizes_sum -= file_info.file_size;
                         warn!("truncate log file: {}", file_info.file_path.as_str());
-                    }
+                    },
                     Err(e) => {
                         error!("truncate log file failed: {}", e);
-                    }
+                    },
                 }
             } else {
                 // 非当天的文件删除
@@ -337,10 +317,10 @@ impl Guard {
                     Ok(_) => {
                         file_sizes_sum -= file_info.file_size;
                         warn!("remove log file: {}", file_info.file_path.as_str());
-                    }
+                    },
                     Err(e) => {
                         error!("remove log file failed: {}", e);
-                    }
+                    },
                 }
             }
         }
@@ -359,14 +339,14 @@ impl Guard {
                         return false;
                     }
                     return true;
-                }
+                },
                 Err(e) => {
                     warn!(
                         "check cgroups file failed, cannot open file: {}, {}",
                         path, e
                     );
                     return false;
-                }
+                },
             }
         }
         let (proc_path, task_path) = if is_cgroup_v2 {
@@ -376,8 +356,8 @@ impl Guard {
         };
         let cgroup_proc_path = cgroup_mount_path.as_ref().join(proc_path).to_owned();
         let cgroup_task_path = cgroup_mount_path.as_ref().join(task_path).to_owned();
-        check_file(cgroup_proc_path.to_str().unwrap())
-            && check_file(cgroup_task_path.to_str().unwrap())
+        check_file(cgroup_proc_path.to_str().unwrap()) &&
+            check_file(cgroup_task_path.to_str().unwrap())
     }
 
     fn check_cpu(system: Arc<Mutex<System>>, pid: Pid, cpu_limit: u32) -> bool {
@@ -388,7 +368,7 @@ impl Guard {
             None => {
                 warn!("get the process' cpu_usage failed");
                 return false;
-            }
+            },
         };
         (cpu_limit / 10) as f32 > cpu_usage // The cpu_usage is in percentage, and the unit of cpu_limit is milli-cores. Divide cpu_limit by 10 to align the units
     }
@@ -404,7 +384,10 @@ impl Guard {
             get_current_sys_memory_percentage();
         debug!(
             "current_sys_memory_percentage: [ free: {}, available: {} ], sys_memory_metric: {:?} sys_memory_limit: {}",
-            current_sys_free_memory_percentage, current_sys_available_memory_percentage, sys_memory_metric, sys_memory_limit
+            current_sys_free_memory_percentage,
+            current_sys_available_memory_percentage,
+            sys_memory_metric,
+            sys_memory_limit
         );
         let current_memory_percentage = if sys_memory_metric == SysMemoryMetric::Free {
             current_sys_free_memory_percentage as f64
@@ -461,22 +444,22 @@ impl Guard {
             match get_disk_usage(&directory) {
                 Ok((total, free)) => {
                     let free_percentage = free as f64 * 100.0 / total as f64;
-                    if free_percentage < percentage_trigger_threshold as f64
-                        || free < absolute_trigger_threshold
+                    if free_percentage < percentage_trigger_threshold as f64 ||
+                        free < absolute_trigger_threshold
                     {
                         exception_handler.set(Exception::FreeDiskCircuitBreaker);
                         return;
                     }
 
-                    if free_percentage > percentage_trigger_threshold as f64 * 1.1
-                        && free as f64 > absolute_trigger_threshold as f64 * 1.1
+                    if free_percentage > percentage_trigger_threshold as f64 * 1.1 &&
+                        free as f64 > absolute_trigger_threshold as f64 * 1.1
                     {
                         exception_handler.clear(Exception::FreeDiskCircuitBreaker);
                     }
-                }
+                },
                 Err(e) => {
                     warn!("{}", e);
-                }
+                },
             }
         }
     }

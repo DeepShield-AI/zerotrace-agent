@@ -21,7 +21,6 @@ mod error;
 
 pub use config::ForwarderConfig;
 pub use error::{ForwarderError, Result};
-
 use std::time::Duration;
 
 /// HTTP forwarder to the ZeroTrace server. Cheap to clone (wraps a `reqwest::Client`

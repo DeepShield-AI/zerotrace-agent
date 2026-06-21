@@ -1,3 +1,4 @@
+use crate::{Forwarder, ForwarderError, Result};
 use prost::Message;
 use public::proto::agent::{
     GenesisSyncRequest, GenesisSyncResponse, GpidSyncRequest, GpidSyncResponse,
@@ -5,8 +6,6 @@ use public::proto::agent::{
     KubernetesClusterIdResponse, NtpRequest, NtpResponse, RemoteExecRequest, RemoteExecResponse,
     SyncRequest, SyncResponse,
 };
-
-use crate::{Forwarder, ForwarderError, Result};
 
 impl Forwarder {
     /// Config sync — POST a `SyncRequest`, receive a `SyncResponse`. Replaces the gRPC

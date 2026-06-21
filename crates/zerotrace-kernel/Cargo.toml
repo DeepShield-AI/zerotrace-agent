@@ -1,0 +1,26 @@
+[package]
+name = "zerotrace-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+zerotrace-core = { path = "../zerotrace-core" }
+zerotrace-kernel-derive = { path = "../zerotrace-kernel-derive" }
+async-trait = "0.1"
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+zerotrace-runtime = { path = "../zerotrace-runtime" }
+tempfile = "3"
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "kernel_bench"
+harness = false

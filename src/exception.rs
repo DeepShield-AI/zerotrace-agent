@@ -14,29 +14,28 @@
  * limitations under the License.
  */
 
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
-
 use public::proto::agent::Exception;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct ExceptionHandler(Arc<AtomicU64>);
 
 impl ExceptionHandler {
-    const AUTO_CLEAR_BITS: u64 = Exception::NpbNoGwArp as u64
-        | Exception::AnalyzerNoGwArp as u64
-        | Exception::NpbBpsThresholdExceeded as u64
-        | Exception::RxPpsThresholdExceeded as u64
-        | Exception::ProcessThresholdExceeded as u64
-        | Exception::ThreadThresholdExceeded as u64
-        | Exception::LogFileExceeded as u64
-        | Exception::ControllerSocketError as u64
-        | Exception::AnalyzerSocketError as u64
-        | Exception::IntegrationSocketError as u64
-        | Exception::NpbSocketError as u64
-        | Exception::DataBpsThresholdExceeded as u64;
+    const AUTO_CLEAR_BITS: u64 = Exception::NpbNoGwArp as u64 |
+        Exception::AnalyzerNoGwArp as u64 |
+        Exception::NpbBpsThresholdExceeded as u64 |
+        Exception::RxPpsThresholdExceeded as u64 |
+        Exception::ProcessThresholdExceeded as u64 |
+        Exception::ThreadThresholdExceeded as u64 |
+        Exception::LogFileExceeded as u64 |
+        Exception::ControllerSocketError as u64 |
+        Exception::AnalyzerSocketError as u64 |
+        Exception::IntegrationSocketError as u64 |
+        Exception::NpbSocketError as u64 |
+        Exception::DataBpsThresholdExceeded as u64;
 
     pub fn set(&self, e: Exception) {
         self.0.fetch_or(e as u64, Ordering::SeqCst);

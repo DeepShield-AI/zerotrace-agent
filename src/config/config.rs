@@ -14,47 +14,48 @@
  * limitations under the License.
  */
 
-use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::io;
-use std::net::{IpAddr, ToSocketAddrs};
-use std::path::Path;
-use std::time::Duration;
-
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::platform::{OsAppTag, ProcessData};
+use crate::{
+    common::{
+        DEFAULT_LOG_FILE,
+        l7_protocol_log::{L7ProtocolBitmap, L7ProtocolParser},
+    },
+    dispatcher::recv_engine::DEFAULT_BLOCK_SIZE,
+    flow_generator::{DnsLog, MemcachedLog},
+    metric::document::TapSide,
+    rpc::Session,
+    trident::RunningMode,
+};
+#[cfg(feature = "enterprise")]
+use enterprise_utils::l7::custom_policy::config::CustomProtocolConfig;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use envmnt::{ExpandOptions, ExpansionType};
 use log::{debug, error, info};
 use md5::{Digest, Md5};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use procfs::process::Process;
-use regex::Regex;
-use serde::{
-    de::{self, Unexpected},
-    Deserialize, Deserializer,
-};
-use thiserror::Error;
-use tokio::runtime::Runtime;
-
-use crate::common::l7_protocol_log::{L7ProtocolBitmap, L7ProtocolParser};
-use crate::dispatcher::recv_engine::DEFAULT_BLOCK_SIZE;
-use crate::flow_generator::{DnsLog, MemcachedLog};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use crate::platform::{OsAppTag, ProcessData};
-use crate::{
-    common::DEFAULT_LOG_FILE, metric::document::TapSide, rpc::Session, trident::RunningMode,
-};
-
 use public::{
     bitmap::Bitmap,
     l7_protocol::{L7Protocol, L7ProtocolChecker},
     proto::agent,
     utils::bitmap::parse_u16_range_list_to_bitmap,
 };
-
-#[cfg(feature = "enterprise")]
-use enterprise_utils::l7::custom_policy::config::CustomProtocolConfig;
+use regex::Regex;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, Unexpected},
+};
+use std::{
+    cmp::{max, min},
+    collections::HashMap,
+    env, fs, io,
+    net::{IpAddr, ToSocketAddrs},
+    path::Path,
+    time::Duration,
+};
+use thiserror::Error;
+use tokio::runtime::Runtime;
 
 pub const K8S_CA_CRT_PATH: &str = "/run/secrets/kubernetes.io/serviceaccount/ca.crt";
 const MINUTE: Duration = Duration::from_secs(60);
@@ -153,8 +154,7 @@ impl Config {
                         return Err(ConfigError::ControllerIpsInvalid);
                     }
 
-                    cfg.controller_domain_name
-                        .push(cfg.controller_ips[i].clone());
+                    cfg.controller_domain_name.push(cfg.controller_ips[i].clone());
                     cfg.controller_ips[i] = ip.unwrap();
                 }
             }
@@ -173,7 +173,7 @@ impl Config {
                             "invalid log path {}",
                             cfg.log_file
                         )));
-                    }
+                    },
                 }
             }
 
@@ -193,7 +193,7 @@ impl Config {
                     "failed to read from {K8S_CA_CRT_PATH}: {e}, agent may not be running in K8s."
                 );
                 None
-            }
+            },
         }
     }
 
@@ -215,10 +215,7 @@ impl Config {
         loop {
             session.update_current_server().await;
 
-            match session
-                .grpc_get_kubernetes_cluster_id_with_statsd(request.clone())
-                .await
-            {
+            match session.grpc_get_kubernetes_cluster_id_with_statsd(request.clone()).await {
                 Ok(response) => {
                     let cluster_id_response = response.into_inner();
                     if !cluster_id_response.error_msg().is_empty() {
@@ -246,17 +243,17 @@ impl Config {
                             // FIXME: 这里获取成功后 Session 中的 Channel 会失效，所以在这里重置 Session
                             session.reset();
                             return Some(id);
-                        }
+                        },
                         None => {
                             error!("call get_kubernetes_cluster_id return response is none");
                             session.set_request_failed(true);
-                        }
+                        },
                     }
-                }
+                },
                 Err(e) => {
                     error!("get_kubernetes_cluster_id grpc call error: {}", e);
                     session.set_request_failed(true);
-                }
+                },
             }
             tokio::time::sleep(MINUTE).await;
         }
@@ -361,15 +358,15 @@ impl Eq for ProcessMatcher {}
 
 impl PartialEq for ProcessMatcher {
     fn eq(&self, other: &Self) -> bool {
-        self.match_regex.as_str() == other.match_regex.as_str()
-            && self.match_type == other.match_type
-            && self.match_languages == other.match_languages
-            && self.match_usernames == other.match_usernames
-            && self.only_in_container == other.only_in_container
-            && self.only_with_tag == other.only_with_tag
-            && self.ignore == other.ignore
-            && self.rewrite_name == other.rewrite_name
-            && self.enabled_features == other.enabled_features
+        self.match_regex.as_str() == other.match_regex.as_str() &&
+            self.match_type == other.match_type &&
+            self.match_languages == other.match_languages &&
+            self.match_usernames == other.match_usernames &&
+            self.only_in_container == other.only_in_container &&
+            self.only_with_tag == other.only_with_tag &&
+            self.ignore == other.ignore &&
+            self.rewrite_name == other.rewrite_name &&
+            self.enabled_features == other.enabled_features
     }
 }
 
@@ -453,7 +450,7 @@ impl ProcessMatcher {
                 } else {
                     None
                 }
-            }
+            },
             ProcessMatchType::CmdWithArgs => {
                 if match_replace_fn(
                     &self.match_regex,
@@ -465,7 +462,7 @@ impl ProcessMatcher {
                 } else {
                     None
                 }
-            }
+            },
             ProcessMatchType::ProcessName => {
                 if match_replace_fn(
                     &self.match_regex,
@@ -477,7 +474,7 @@ impl ProcessMatcher {
                 } else {
                     None
                 }
-            }
+            },
             ProcessMatchType::ParentProcessName => {
                 fn match_parent(proc: &ProcessData, reg: &Regex) -> Option<ProcessData> {
                     const MAX_DEPTH: usize = 10;
@@ -508,8 +505,8 @@ impl ProcessMatcher {
                 }
 
                 match_parent(&process_data, &self.match_regex)
-            }
-            ProcessMatchType::Tag => {
+            },
+            ProcessMatchType::Tag =>
                 if let Some(tag) = tag_map.get(&process_data.pid) {
                     let mut found = None;
                     for tag_kv in tag.tags.iter() {
@@ -522,8 +519,7 @@ impl ProcessMatcher {
                     found
                 } else {
                     None
-                }
-            }
+                },
         }
     }
 }
@@ -1263,9 +1259,9 @@ impl EbpfSocketPreprocess {
     fn adjust_http2(protocols: &mut Vec<String>) {
         let bitmap = L7ProtocolBitmap::from(protocols.as_slice());
 
-        if bitmap.is_enabled(L7Protocol::Http2)
-            || bitmap.is_enabled(L7Protocol::Grpc)
-            || bitmap.is_enabled(L7Protocol::Triple)
+        if bitmap.is_enabled(L7Protocol::Http2) ||
+            bitmap.is_enabled(L7Protocol::Grpc) ||
+            bitmap.is_enabled(L7Protocol::Triple)
         {
             protocols.push("HTTP2".to_string());
             protocols.push("Triple".to_string());
@@ -1567,12 +1563,14 @@ pub struct Inputs {
 impl Inputs {
     fn adjust(&mut self) {
         // DPDK from eBPF
-        if self.ebpf.tunning.userspace_worker_threads as usize
-            != self.cbpf.af_packet.tunning.packet_fanout_count
-            && self.cbpf.special_network.dpdk.source == DpdkSource::Ebpf
+        if self.ebpf.tunning.userspace_worker_threads as usize !=
+            self.cbpf.af_packet.tunning.packet_fanout_count &&
+            self.cbpf.special_network.dpdk.source == DpdkSource::Ebpf
         {
-            debug!("Update inputs.cbpf.af_packet.tunning.packet_fanout_count with self.inputs.ebpf.tunning.userspace_worker_threads({}) when self.inputs.cbpf.special_network.dpdk.source is {:?}",
-                self.ebpf.tunning.userspace_worker_threads, self.cbpf.special_network.dpdk.source);
+            debug!(
+                "Update inputs.cbpf.af_packet.tunning.packet_fanout_count with self.inputs.ebpf.tunning.userspace_worker_threads({}) when self.inputs.cbpf.special_network.dpdk.source is {:?}",
+                self.ebpf.tunning.userspace_worker_threads, self.cbpf.special_network.dpdk.source
+            );
             self.cbpf.af_packet.tunning.packet_fanout_count =
                 self.ebpf.tunning.userspace_worker_threads as usize;
         }
@@ -1994,8 +1992,7 @@ impl Timeouts {
             .max()
             .unwrap_or(SessionTimeout::DEFAULT);
 
-        max.max(self.tcp_request_timeout)
-            .max(self.udp_request_timeout)
+        max.max(self.tcp_request_timeout).max(self.udp_request_timeout)
     }
 
     pub fn l7_default_timeout(protocol: L7Protocol) -> Duration {
@@ -2357,9 +2354,9 @@ pub struct RelativeSysLoad {
 
 impl PartialEq for RelativeSysLoad {
     fn eq(&self, other: &Self) -> bool {
-        self.trigger_threshold == other.trigger_threshold
-            || self.recovery_threshold == other.recovery_threshold
-            || self.metric == other.metric
+        self.trigger_threshold == other.trigger_threshold ||
+            self.recovery_threshold == other.recovery_threshold ||
+            self.metric == other.metric
     }
 }
 impl Eq for RelativeSysLoad {}
@@ -2482,10 +2479,7 @@ fn to_traffic_overflow_action<'de: 'a, 'a, D>(
 where
     D: Deserializer<'de>,
 {
-    match <&'a str>::deserialize(deserializer)?
-        .to_uppercase()
-        .as_str()
-    {
+    match <&'a str>::deserialize(deserializer)?.to_uppercase().as_str() {
         "WAIT" => Ok(TrafficOverflowAction::Waiting),
         "DROP" => Ok(TrafficOverflowAction::Dropping),
         other => Err(de::Error::invalid_value(
@@ -3008,8 +3002,8 @@ impl UserConfig {
         capture_mode: agent::PacketCaptureType,
         mem_size: u64,
     ) -> usize {
-        if capture_mode == agent::PacketCaptureType::Analyzer
-            || self.inputs.cbpf.af_packet.tunning.ring_blocks_enabled
+        if capture_mode == agent::PacketCaptureType::Analyzer ||
+            self.inputs.cbpf.af_packet.tunning.ring_blocks_enabled
         {
             self.inputs.cbpf.af_packet.tunning.ring_blocks.max(8)
         } else {
@@ -3018,22 +3012,11 @@ impl UserConfig {
     }
 
     pub fn get_protocol_port(&self) -> HashMap<String, String> {
-        let mut new = self
-            .processors
-            .request_log
-            .filters
-            .port_number_prefilters
-            .clone();
+        let mut new = self.processors.request_log.filters.port_number_prefilters.clone();
 
         let dns_str = L7ProtocolParser::DNS(DnsLog::default()).as_str();
         // dns default only parse 53,5353 port. when l7_protocol_ports config without DNS, need to reserve the dns default config.
-        if !self
-            .processors
-            .request_log
-            .filters
-            .port_number_prefilters
-            .contains_key(dns_str)
-        {
+        if !self.processors.request_log.filters.port_number_prefilters.contains_key(dns_str) {
             new.insert(dns_str.to_string(), Self::DEFAULT_DNS_PORTS.to_string());
         }
         #[cfg(feature = "enterprise")]
@@ -3042,13 +3025,7 @@ impl UserConfig {
                 L7ProtocolParser::TLS(crate::flow_generator::protocol_logs::TlsLog::default())
                     .as_str();
             // tls default only parse 443,6443 port. when l7_protocol_ports config without TLS, need to reserve the tls default config.
-            if !self
-                .processors
-                .request_log
-                .filters
-                .port_number_prefilters
-                .contains_key(tls_str)
-            {
+            if !self.processors.request_log.filters.port_number_prefilters.contains_key(tls_str) {
                 new.insert(tls_str.to_string(), Self::DEFAULT_TLS_PORTS.to_string());
             }
             let oracle_str = L7ProtocolParser::Oracle(
@@ -3089,9 +3066,8 @@ impl UserConfig {
             let custom_ports = &self.custom_app.custom_protocol_port_ranges;
             if !custom_ports.is_empty() {
                 let custom_str = L7ProtocolParser::Custom(Default::default()).as_str();
-                let ranges = new
-                    .entry(custom_str.to_string())
-                    .or_insert_with(|| custom_ports.clone());
+                let ranges =
+                    new.entry(custom_str.to_string()).or_insert_with(|| custom_ports.clone());
                 if ranges.is_empty() {
                     *ranges = custom_ports.clone();
                 } else {
@@ -3135,30 +3111,29 @@ impl UserConfig {
         };
 
         c.set_standalone();
-        c.validate()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        c.validate().map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         Ok(c)
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
-        if self.global.communication.proactive_request_interval < Duration::from_secs(1)
-            || self.global.communication.proactive_request_interval > Duration::from_secs(60 * 60)
+        if self.global.communication.proactive_request_interval < Duration::from_secs(1) ||
+            self.global.communication.proactive_request_interval > Duration::from_secs(60 * 60)
         {
             return Err(ConfigError::RuntimeConfigInvalid(format!(
                 "proactive_request_interval {:?} not in [1s, 1h]",
                 self.global.communication.proactive_request_interval
             )));
         }
-        if self.inputs.resources.push_interval < Duration::from_secs(10)
-            || self.inputs.resources.push_interval > Duration::from_secs(60 * 60)
+        if self.inputs.resources.push_interval < Duration::from_secs(10) ||
+            self.inputs.resources.push_interval > Duration::from_secs(60 * 60)
         {
             return Err(ConfigError::RuntimeConfigInvalid(format!(
                 "push_interval {:?} not in [10s, 1h]",
                 self.inputs.resources.push_interval
             )));
         }
-        if self.global.self_monitoring.interval < Duration::from_secs(1)
-            || self.global.self_monitoring.interval > Duration::from_secs(60 * 60)
+        if self.global.self_monitoring.interval < Duration::from_secs(1) ||
+            self.global.self_monitoring.interval > Duration::from_secs(60 * 60)
         {
             return Err(ConfigError::RuntimeConfigInvalid(format!(
                 "interval {:?} not in [1s, 1h]",
@@ -3196,8 +3171,8 @@ impl UserConfig {
             )));
         }
 
-        if !self.inputs.cbpf.af_packet.interface_regex.is_empty()
-            && regex::Regex::new(&self.inputs.cbpf.af_packet.interface_regex).is_err()
+        if !self.inputs.cbpf.af_packet.interface_regex.is_empty() &&
+            regex::Regex::new(&self.inputs.cbpf.af_packet.interface_regex).is_err()
         {
             return Err(ConfigError::RuntimeConfigInvalid(format!(
                 "malformed interface_regex({})",
@@ -3205,9 +3180,9 @@ impl UserConfig {
             )));
         }
 
-        if self.global.communication.max_escape_duration < Duration::from_secs(600)
-            || self.global.communication.max_escape_duration
-                > Duration::from_secs(30 * 24 * 60 * 60)
+        if self.global.communication.max_escape_duration < Duration::from_secs(600) ||
+            self.global.communication.max_escape_duration >
+                Duration::from_secs(30 * 24 * 60 * 60)
         {
             return Err(ConfigError::RuntimeConfigInvalid(format!(
                 "max_escape_duration {:?} not in [600s, 30d]",
@@ -3492,9 +3467,7 @@ pub struct ExtraLogFields {
 impl ExtraLogFields {
     pub fn deduplicate(&mut self) {
         fn deduplicate_fields(fields: &mut Vec<ExtraLogFieldsInfo>) {
-            fields
-                .iter_mut()
-                .for_each(|f| f.field_name.make_ascii_lowercase());
+            fields.iter_mut().for_each(|f| f.field_name.make_ascii_lowercase());
             fields.sort_by(|a, b| a.field_name.cmp(&b.field_name));
             fields.dedup_by(|a, b| a.field_name == b.field_name);
         }
@@ -3731,7 +3704,7 @@ fn resolve_domain(addr: &str) -> Option<String> {
         Err(e) => {
             eprintln!("{:?}", e);
             None
-        }
+        },
     }
 }
 
@@ -3795,7 +3768,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use std::fs;
 
     #[test]

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+mod cpu;
 mod debugger;
 mod disk;
 #[cfg(all(target_os = "linux", feature = "libtrace"))]
@@ -24,25 +25,21 @@ mod network;
 mod platform;
 mod policy;
 mod rpc;
-mod cpu;
 
 use bincode::{Decode, Encode};
+pub use cpu::CpuMessage;
 pub use debugger::{Client, ConstructDebugCtx, Debugger};
+pub use disk::DiskMessage;
 #[cfg(all(target_os = "linux", feature = "libtrace"))]
 pub use ebpf::EbpfMessage;
+pub use memory::MemoryMessage;
+pub use network::NetworkMessage;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 #[cfg(target_os = "linux")]
 pub use platform::PlatformMessage;
 pub use policy::PolicyMessage;
 pub use rpc::{ConfigResp, RpcMessage};
-pub use cpu::CpuMessage;
-pub use memory::MemoryMessage;
-pub use disk::DiskMessage;
-pub use network::NetworkMessage;
-
-use std::str;
-use std::time::Duration;
-
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use std::{str, time::Duration};
 
 /// 调试操作的默认队列长度
 pub const QUEUE_LEN: usize = 1024;

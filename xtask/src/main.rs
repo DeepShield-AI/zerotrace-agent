@@ -56,13 +56,13 @@ fn main() -> Result<()> {
     let sh = Shell::new()?;
     match cli.cmd {
         Cmd::Check { no_deny } => check(&sh, no_deny),
-        Cmd::Fmt { check }     => fmt(&sh, check),
-        Cmd::Clippy            => clippy(&sh),
-        Cmd::Test              => test(&sh),
-        Cmd::Deny              => deny(&sh),
-        Cmd::HakariGen         => hakari_gen(&sh),
-        Cmd::GenSchema         => gen_schema(&sh),
-        Cmd::BtfBundle         => btf_bundle(&sh),
+        Cmd::Fmt { check } => fmt(&sh, check),
+        Cmd::Clippy => clippy(&sh),
+        Cmd::Test => test(&sh),
+        Cmd::Deny => deny(&sh),
+        Cmd::HakariGen => hakari_gen(&sh),
+        Cmd::GenSchema => gen_schema(&sh),
+        Cmd::BtfBundle => btf_bundle(&sh),
         Cmd::Release { target } => release(&sh, &target),
     }
 }

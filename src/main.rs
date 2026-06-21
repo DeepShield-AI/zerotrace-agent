@@ -14,16 +14,13 @@
  * limitations under the License.
  */
 
-use std::panic;
-use std::path::Path;
-
+use ::zerotrace_agent::*;
 use anyhow::Result;
 use clap::{ArgAction, Parser};
 use log::error;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use signal_hook::{consts::TERM_SIGNALS, iterator::Signals};
-
-use ::zerotrace_agent::*;
+use std::{panic, path::Path};
 
 #[derive(Parser)]
 struct Opts {
@@ -136,7 +133,7 @@ fn main() -> Result<()> {
     // standalone：控制是否单机模式。单机模式agent独立运行，不连接server，适用于离线环境或本地直接管理场景。
     // sidecar：控制是否sidecar模式。sidecar模式agent运行在k8s pod中，通过sidecar容器与agent容器共享网络命名空间，适用于k8s环境。
     // cgroups-disabled：控制是否禁用cgroups。禁用cgroups后，agent将默认检查CPU和内存资源使用情况，每10秒检查一次，以防止资源使用超过限制。（CPU，内存，磁盘，线程数等）
-    
+
     // 实际未实现的功能
     // dump-ifs：控制是否dump接口信息。dump接口信息后，agent将输出所有接口的MAC地址和IP地址，之后退出。用于调试，帮助用户确认agent识别到了哪些网卡、MAC地址以及它们与虚拟机/容器的对应关系。
     // if-mac-source：指定获取接口MAC地址的数据来源。mac直接读取网络接口的真实MAC地址，xml从Libvirt XML配置文件中提取。

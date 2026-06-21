@@ -1,5 +1,4 @@
 use std::time::Duration;
-
 use zerotrace_forwarder::{Forwarder, ForwarderError};
 
 /// HTTP reporter: ships agent wire-format frames to the server over HTTP short

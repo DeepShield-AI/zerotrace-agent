@@ -1,0 +1,59 @@
+# ZeroTrace Demo — 多 pipeline + shared ref: DSL 模式
+#
+# 演示 ADR-005 设计的 Pipeline DSL：
+#   - 单次组件（source）：每个 pipeline 独立注册 — consuming 语义
+#   - 共享组件（processor / reporter）：通过 SharedBlueprint 自动 Clone
+#
+# 两种共享方式：
+#   A. 显式多注册：bp.add_reporter("console_1", r1); bp.add_reporter("console_2", r2)
+#      → 零额外代码，手动管理，适合少量 pipeline
+#   B. Clone-on-register：bp.add_reporter_shared("console", template)
+#      → 自动 Clone，适合大量 pipeline 共用同一类型 reporter
+
+version: 1
+
+bundles:
+  - demo_core
+  - demo_pipeline
+
+# ── 多 pipeline：共享 reporter "console" ────────────────────────────
+# SharedBlueprint 的 add_reporter_shared("console", template) 注册后，
+# 两条 pipeline 都可以引用 "console"，每次 spawn 自动 Clone。
+pipelines:
+
+  host_metrics:
+    sources:
+      - ref: periodic_demo          # 单次 source（consuming）
+    processors:
+      - ref: enrich_env             # 共享 processor（clone-on-spawn）
+      - ref: enrich_collector
+      - ref: threshold_filter
+    reporters:
+      - ref: console                # 共享 reporter（clone-on-spawn）
+    channel_capacity: 1024
+    backpressure: block
+
+  l7_parse_demo:
+    sources:
+      - ref: mock_l7_source         # 单次 source（consuming）
+    processors:
+      - ref: l7_noop
+    reporters:
+      - ref: console                # ← 和 host_metrics 共用同一个 ref！
+    channel_capacity: 512
+    backpressure: drop_oldest
+
+# ── 对比方案 A（显式多注册）的 YAML ─────────────────────────────────
+# 如果没有 SharedBlueprint，需要写成：
+#
+# pipelines:
+#   host_metrics:
+#     reporters: [{ref: console_metrics}]
+#   l7_parse_demo:
+#     reporters: [{ref: console_l7}]
+#
+# 然后在 main.rs 中手动注册两次：
+#   bp.add_reporter("console_metrics", ConsoleReporter::new("m"));
+#   bp.add_reporter("console_l7", ConsoleReporter::new("l7"));
+#
+# SharedBlueprint 把"注册两次"变成了"注册一次模板，自动 Clone"。

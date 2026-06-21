@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-use std::{
-    fmt::{self, Debug, Formatter},
-    slice, str,
+use crate::{
+    common::{
+        ebpf::IO_EVENT,
+        error::Error::{self, ParseEventData},
+    },
+    ebpf::SK_BPF_DATA,
 };
-
 use prost::Message;
 use public::{
     bytes::{read_u32_le, read_u64_le},
     proto::metric,
     sender::{SendMessageType, Sendable},
 };
-
-use crate::common::{
-    ebpf::IO_EVENT,
-    error::Error::{self, ParseEventData},
+use std::{
+    fmt::{self, Debug, Formatter},
+    slice, str,
 };
-use crate::ebpf::SK_BPF_DATA;
 
 const IO_OPERATION_OFFSET: usize = 4;
 const IO_LATENCY_OFFSET: usize = 8;
@@ -178,8 +178,8 @@ impl ProcEvent {
                 let io_event_data = IoEventData::try_from(raw_data)?; // Try to parse IoEventData from data.cap_data
                 end_time = start_time + io_event_data.latency;
                 event_data = EventData::IoEvent(io_event_data);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let proc_event = ProcEvent {
@@ -230,14 +230,11 @@ impl Sendable for BoxedProcEvents {
             ..Default::default()
         };
         match self.0.event_data {
-            EventData::IoEvent(io_event_data) => {
-                pb_proc_event.io_event_data = Some(io_event_data.into())
-            }
-            _ => {}
+            EventData::IoEvent(io_event_data) =>
+                pb_proc_event.io_event_data = Some(io_event_data.into()),
+            _ => {},
         }
-        pb_proc_event
-            .encode(buf)
-            .map(|_| pb_proc_event.encoded_len())
+        pb_proc_event.encode(buf).map(|_| pb_proc_event.encoded_len())
     }
 
     fn message_type(&self) -> SendMessageType {

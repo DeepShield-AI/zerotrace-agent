@@ -1,0 +1,8 @@
+error: Bundle can only be derived for structs
+ --> tests/ui/fail/not_a_struct.rs:5:1
+  |
+5 | / #[bundle(id = "bad")]
+6 | | enum BadEnum {
+7 | |     Variant,
+8 | | }
+  | |_^

@@ -14,24 +14,21 @@
  * limitations under the License.
  */
 
-use std::{mem::size_of, path::PathBuf, process};
-
+use crate::error::{Error, Result};
 use log::debug;
+use public::utils::WIN_ERROR_CODE_STR;
+use std::{mem::size_of, path::PathBuf, process};
 use windows::Win32::{
-    Foundation::{CloseHandle, GetLastError, BOOL, CHAR, HINSTANCE, INVALID_HANDLE_VALUE, PWSTR},
+    Foundation::{BOOL, CHAR, CloseHandle, GetLastError, HINSTANCE, INVALID_HANDLE_VALUE, PWSTR},
     System::{
         Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
+            CreateToolhelp32Snapshot, PROCESSENTRY32, Process32Next, TH32CS_SNAPPROCESS,
         },
         LibraryLoader::GetModuleFileNameW,
         ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
         Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ},
     },
 };
-
-use public::utils::WIN_ERROR_CODE_STR;
-
-use crate::error::{Error, Result};
 
 //返回当前进程占用内存RSS单位（字节）
 pub fn get_memory_rss() -> Result<u64> {
