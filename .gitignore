@@ -30,3 +30,7 @@ actual.txt
 
 plugins/**/Cargo.lock
 logs/
+.claude/
+.vscode/
+.zed/
+ignored/

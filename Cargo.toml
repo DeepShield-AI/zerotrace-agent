@@ -1,7 +1,7 @@
 [package]
 name = "zerotrace-agent"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 default-run = "zerotrace-agent"
 
 [workspace]
@@ -11,7 +11,9 @@ members = [
     # ── New ZeroTrace crates ──
     "crates/zerotrace-core",
     "crates/zerotrace-kernel",
+    "crates/zerotrace-kernel-derive",
     "crates/zerotrace-runtime",
+    "crates/zerotrace-demo",
     "crates/zerotrace-config",
     "crates/zerotrace-forwarder",
     "crates/zerotrace-platform",

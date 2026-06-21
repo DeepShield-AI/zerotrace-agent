@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
+use anyhow::Result;
+use chrono::prelude::*;
 #[cfg(feature = "libtrace")]
 use std::path::{Path, PathBuf};
 use std::{env, process::Command, str};
-
-use anyhow::Result;
-use chrono::prelude::*;
 #[cfg(feature = "libtrace")]
 use walkdir::WalkDir;
 
@@ -28,34 +27,28 @@ fn get_branch() -> Result<String> {
         return Ok(branch);
     }
 
-    let output = Command::new("git")
-        .args(["branch", "--show-current"])
-        .output()?;
+    let output = Command::new("git").args(["branch", "--show-current"]).output()?;
     if output.status.success() {
         return Ok(String::from_utf8(output.stdout)?);
     }
 
-    let output = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()?;
+    let output = Command::new("git").args(["rev-parse", "--abbrev-ref", "HEAD"]).output()?;
     if output.status.success() && &output.stdout != "HEAD".as_bytes() {
         return Ok(String::from_utf8(output.stdout)?);
     }
 
-    let output = Command::new("git")
-        .args(["log", "-n", "1", "--pretty=%D", "HEAD"])
-        .output()?;
+    let output = Command::new("git").args(["log", "-n", "1", "--pretty=%D", "HEAD"]).output()?;
     if output.status.success() {
         // output: HEAD -> master, origin/main
         return match output.stdout.iter().position(|x| *x == ',' as u8) {
             Some(mut position) => {
-                while (output.stdout[position] as char).is_ascii_whitespace()
-                    && position < output.stdout.len()
+                while (output.stdout[position] as char).is_ascii_whitespace() &&
+                    position < output.stdout.len()
                 {
                     position += 1;
                 }
                 Ok(str::from_utf8(&output.stdout[position..])?.to_owned())
-            }
+            },
             _ => Ok(String::from_utf8(output.stdout)?),
         };
     }
@@ -103,7 +96,7 @@ fn set_libtrace_rerun_files() -> Result<()> {
     fn watched(path: &Path) -> bool {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
             match ext {
-                "c" => {
+                "c" =>
                     if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                         if name.starts_with("socket_trace_") || name.starts_with("perf_profiler_") {
                             return false;
@@ -116,8 +109,7 @@ fn set_libtrace_rerun_files() -> Result<()> {
                             _ => (),
                         }
                         return true;
-                    }
-                }
+                    },
                 "h" => return true,
                 _ => (),
             }
@@ -204,7 +196,7 @@ fn set_linkage() -> Result<()> {
             println!("cargo:rustc-link-lib=dylib=pcap");
             #[cfg(not(feature = "dylib_pcap"))]
             println!("cargo:rustc-link-lib=static=pcap");
-        }
+        },
         "musl" => {
             #[cfg(target_arch = "x86_64")]
             println!("cargo:rustc-link-lib=static=bcc");
@@ -220,7 +212,7 @@ fn set_linkage() -> Result<()> {
             println!("cargo:rustc-link-lib=static=pthread");
             println!("cargo:rustc-link-lib=static=rt");
             println!("cargo:rustc-link-lib=static=dl");
-        }
+        },
         _ => panic!("Unsupported target"),
     }
     Ok(())
@@ -232,7 +224,10 @@ fn compile_wasm_plugin_proto() -> Result<()> {
         .build_server(false)
         .emit_rerun_if_changed(false)
         .out_dir("src/legacy/plugin/wasm")
-        .compile(&["src/legacy/plugin/WasmPluginApi.proto"], &["src/legacy/plugin"])?;
+        .compile(
+            &["src/legacy/plugin/WasmPluginApi.proto"],
+            &["src/legacy/plugin"],
+        )?;
     println!("cargo:rerun-if-changed=src/legacy/plugin/WasmPluginApi.proto");
     Ok(())
 }
