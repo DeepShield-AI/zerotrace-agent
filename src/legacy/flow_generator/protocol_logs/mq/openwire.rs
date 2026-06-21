@@ -1,8 +1,3 @@
-use bitflags::bitflags;
-use nom::{bytes, error, number, Err};
-use serde::Serialize;
-use std::fmt;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -15,14 +10,17 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
-            set_captured_byte, value_is_default, value_is_negative, AppProtoHead, L7ResponseStatus,
-            PrioFields, BASE_FIELD_PRIORITY,
+            set_captured_byte, value_is_default, value_is_negative,
         },
     },
 };
-
+use bitflags::bitflags;
+use nom::{Err, bytes, error, number};
 use public::l7_protocol::LogMessageType;
+use serde::Serialize;
+use std::fmt;
 
 /// references:
 ///   1. the JMS repository: "https://github.com/apache/activemq-openwire"
@@ -348,7 +346,7 @@ impl<'a> BooleanStream<'a> {
             payload,
             offset: 0,
             bitpos: 0,
-            bytes_consumed: bytes_consumed,
+            bytes_consumed,
         }
     }
     fn read_bool(&mut self) -> Option<bool> {
@@ -375,14 +373,14 @@ impl<'a> BooleanStream<'a> {
                 bs_length = byte as usize;
                 length_len += 1;
                 payload = new_payload;
-            }
+            },
             0x80 => {
                 let (new_payload, short) = parse_short(payload)?;
                 bs_length = short as usize;
                 length_len += 2;
                 payload = new_payload;
-            }
-            _ => {}
+            },
+            _ => {},
         }
         if bs_length == 0 {
             return Err(Error::OpenWireLogParseFailed);
@@ -456,14 +454,13 @@ fn parse_trace_and_span(
             Some(index) => {
                 next_payload = &payload[index + header_pattern.len()..];
                 &payload[index + header_pattern.len()..]
-            }
+            },
             None => break,
         };
         // parse values length
         let values = match parse_short(payload) {
-            Ok((payload, length)) => payload
-                .get(..length as usize)
-                .ok_or(Error::OpenWireLogParseEOF)?,
+            Ok((payload, length)) =>
+                payload.get(..length as usize).ok_or(Error::OpenWireLogParseEOF)?,
             Err(_) => continue,
         };
         let values = match std::str::from_utf8(values) {
@@ -524,7 +521,7 @@ impl Unmarshal for BaseCommand {
             Some(boolean) => {
                 info.response_required = boolean;
                 Ok(payload)
-            }
+            },
             None => Err(Error::OpenWireLogParseFailed),
         }
     }
@@ -561,7 +558,7 @@ impl BaseDataStream {
                         payload,
                         std::str::from_utf8(string).map_err(|_| Error::OpenWireLogParseFailed)?,
                     ))
-                }
+                },
                 None => Err(Error::OpenWireLogParseFailed),
             },
             Some(false) => Ok((payload, "")),
@@ -578,7 +575,7 @@ impl BaseDataStream {
                     payload,
                     std::str::from_utf8(string).map_err(|_| Error::OpenWireLogParseFailed)?,
                 ))
-            }
+            },
             false => Ok((payload, "")),
         }
     }
@@ -615,7 +612,7 @@ impl BaseDataStream {
                 let (payload, length) = parse_integer(payload)?;
                 let (payload, bytes) = parse_bytes(payload, length as usize)?;
                 Ok((payload, Some(bytes)))
-            }
+            },
             Some(false) => Ok((payload, None)),
             None => Err(Error::OpenWireLogParseFailed),
         }
@@ -626,7 +623,7 @@ impl BaseDataStream {
                 let (payload, length) = parse_integer(payload)?;
                 let (payload, bytes) = parse_bytes(payload, length as usize)?;
                 Ok((payload, Some(bytes)))
-            }
+            },
             (payload, false) => Ok((payload, None)),
         }
     }
@@ -646,7 +643,7 @@ impl BaseDataStream {
                 }
                 let data_marshaller = OpenWireCommandMarshaller::from(data_type);
                 data_marshaller.tight_unmarshal(parser, info, bs, payload)
-            }
+            },
             Some(false) => Ok(payload),
             None => Err(Error::OpenWireLogParseFailed),
         }
@@ -662,7 +659,7 @@ impl BaseDataStream {
                 let data_type = OpenWireCommand::try_from(data_type)?;
                 let data_marshaller = OpenWireCommandMarshaller::from(data_type);
                 data_marshaller.loose_unmarshal(parser, info, payload)
-            }
+            },
             (payload, false) => Ok(payload),
         }
     }
@@ -680,13 +677,13 @@ impl BaseDataStream {
                     let (payload, _) = parse_short(payload)?;
                     // parse object
                     Self::tight_unmarshal_nested_object(parser, info, bs, payload)
-                }
+                },
                 Some(false) => {
                     // parse cache index
                     let (payload, _) = parse_short(payload)?;
                     // cannot parse cached object
                     Ok(payload)
-                }
+                },
                 None => Err(Error::OpenWireLogParseFailed),
             }
         } else {
@@ -706,13 +703,13 @@ impl BaseDataStream {
                     let (payload, _) = parse_short(payload)?;
                     // parse object
                     Self::loose_unmarshal_nested_object(parser, info, payload)
-                }
+                },
                 (payload, false) => {
                     // parse cache index
                     let (payload, _) = parse_short(payload)?;
                     // cannot parse cached object
                     Ok(payload)
-                }
+                },
             }
         } else {
             Self::loose_unmarshal_nested_object(parser, info, payload)
@@ -732,7 +729,7 @@ impl BaseDataStream {
                 let (_, err_msg) = Self::tight_unmarshal_string(payload, bs)?;
                 info.err_msg = Some(err_msg.to_string());
                 Err(Error::OpenWireLogParseUnimplemented)
-            }
+            },
             Some(false) => Ok(payload),
             None => Err(Error::OpenWireLogParseFailed),
         }
@@ -750,21 +747,21 @@ impl BaseDataStream {
                 let (_, err_msg) = Self::loose_unmarshal_string(payload)?;
                 info.err_msg = Some(err_msg.to_string());
                 Err(Error::OpenWireLogParseUnimplemented)
-            }
+            },
             (payload, false) => Ok(payload),
         }
     }
     fn is_marshall_aware(command_type: OpenWireCommand) -> bool {
         match command_type {
             // WireFormatInfo and ActiveMQMessage
-            OpenWireCommand::WireFormatInfo
-            | OpenWireCommand::ActiveMQMessage
-            | OpenWireCommand::ActiveMQBytesMessage
-            | OpenWireCommand::ActiveMQMapMessage
-            | OpenWireCommand::ActiveMQObjectMessage
-            | OpenWireCommand::ActiveMQStreamMessage
-            | OpenWireCommand::ActiveMQTextMessage
-            | OpenWireCommand::ActiveMQBlobMessage => true,
+            OpenWireCommand::WireFormatInfo |
+            OpenWireCommand::ActiveMQMessage |
+            OpenWireCommand::ActiveMQBytesMessage |
+            OpenWireCommand::ActiveMQMapMessage |
+            OpenWireCommand::ActiveMQObjectMessage |
+            OpenWireCommand::ActiveMQStreamMessage |
+            OpenWireCommand::ActiveMQTextMessage |
+            OpenWireCommand::ActiveMQBlobMessage => true,
             _ => false,
         }
     }
@@ -1182,14 +1179,13 @@ impl Unmarshal for WireFormatInfo {
         // parse magic field "ActiveMQ"
         let (payload, magic) = parse_bytes(payload, 8usize)?;
         match std::str::from_utf8(magic) {
-            Ok(magic) => {
+            Ok(magic) =>
                 if magic != "ActiveMQ" {
                     return Err(Error::OpenWireLogParseFailed);
-                }
-            }
+                },
             _ => {
                 return Err(Error::OpenWireLogParseFailed);
-            }
+            },
         }
 
         // parse version
@@ -1226,7 +1222,7 @@ impl Unmarshal for WireFormatInfo {
                 Some(value) => {
                     let boolean = value != &0;
                     info.is_tight_encoding_enabled = boolean;
-                }
+                },
                 _ => return Err(Error::OpenWireLogParseEOF),
             }
         }
@@ -1238,7 +1234,7 @@ impl Unmarshal for WireFormatInfo {
                 Some(value) => {
                     let boolean = value != &0;
                     info.is_size_prefix_disabled = boolean;
-                }
+                },
                 _ => return Err(Error::OpenWireLogParseEOF),
             }
         }
@@ -1250,7 +1246,7 @@ impl Unmarshal for WireFormatInfo {
                 Some(value) => {
                     let boolean = value != &0;
                     info.is_cache_enabled = boolean;
-                }
+                },
                 _ => return Err(Error::OpenWireLogParseEOF),
             }
         }
@@ -1705,13 +1701,12 @@ impl OpenWireInfo {
         match self.msg_type {
             LogMessageType::Request => self.req_msg_size,
             LogMessageType::Response => self.res_msg_size,
-            LogMessageType::Session => {
+            LogMessageType::Session =>
                 if self.direction == PacketDirection::ClientToServer {
                     self.req_msg_size
                 } else {
                     self.res_msg_size
-                }
-            }
+                },
             _ => None,
         }
     }
@@ -1731,14 +1726,12 @@ impl OpenWireInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::OpenWire) {
-            self.is_on_blacklist = t.request_type.is_on_blacklist(self.command_type.as_str())
-                || self
-                    .topic
+            self.is_on_blacklist = t.request_type.is_on_blacklist(self.command_type.as_str()) ||
+                self.topic
                     .as_ref()
                     .map(|p| t.request_resource.is_on_blacklist(p) || t.endpoint.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .broker_url
+                    .unwrap_or_default() ||
+                self.broker_url
                     .as_ref()
                     .map(|p| t.request_domain.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -1957,45 +1950,45 @@ impl L7ProtocolParserInterface for OpenWireLog {
 impl OpenWireLog {
     fn is_message_type_valid(command_type: OpenWireCommand) -> bool {
         match command_type {
-            OpenWireCommand::WireFormatInfo
-            | OpenWireCommand::BrokerInfo
-            | OpenWireCommand::ConnectionInfo
-            | OpenWireCommand::SessionInfo
-            | OpenWireCommand::ConsumerInfo
-            | OpenWireCommand::ProducerInfo
-            | OpenWireCommand::TransactionInfo
-            | OpenWireCommand::DestinationInfo
-            | OpenWireCommand::RemoveSubscriptionInfo
-            | OpenWireCommand::KeepAliveInfo
-            | OpenWireCommand::ShutdownInfo
-            | OpenWireCommand::RemoveInfo
-            | OpenWireCommand::ControlCommand
-            | OpenWireCommand::FlushCommand
-            | OpenWireCommand::ConnectionError
-            | OpenWireCommand::ConsumerControl
-            | OpenWireCommand::ConnectionControl
-            | OpenWireCommand::ProducerAck
-            | OpenWireCommand::MessagePull
-            | OpenWireCommand::MessageDispatch
-            | OpenWireCommand::MessageAck
-            | OpenWireCommand::ActiveMQMessage
-            | OpenWireCommand::ActiveMQBytesMessage
-            | OpenWireCommand::ActiveMQMapMessage
-            | OpenWireCommand::ActiveMQObjectMessage
-            | OpenWireCommand::ActiveMQStreamMessage
-            | OpenWireCommand::ActiveMQTextMessage
-            | OpenWireCommand::ActiveMQBlobMessage
-            | OpenWireCommand::DiscoveryEvent
-            | OpenWireCommand::DurableSubscriptionInfo
-            | OpenWireCommand::PartialCommand
-            | OpenWireCommand::PartialLastCommand
-            | OpenWireCommand::Replay
-            | OpenWireCommand::MessageDispatchNotification
-            | OpenWireCommand::Response
-            | OpenWireCommand::ExceptionResponse
-            | OpenWireCommand::DataResponse
-            | OpenWireCommand::DataArrayResponse
-            | OpenWireCommand::IntegerResponse => true,
+            OpenWireCommand::WireFormatInfo |
+            OpenWireCommand::BrokerInfo |
+            OpenWireCommand::ConnectionInfo |
+            OpenWireCommand::SessionInfo |
+            OpenWireCommand::ConsumerInfo |
+            OpenWireCommand::ProducerInfo |
+            OpenWireCommand::TransactionInfo |
+            OpenWireCommand::DestinationInfo |
+            OpenWireCommand::RemoveSubscriptionInfo |
+            OpenWireCommand::KeepAliveInfo |
+            OpenWireCommand::ShutdownInfo |
+            OpenWireCommand::RemoveInfo |
+            OpenWireCommand::ControlCommand |
+            OpenWireCommand::FlushCommand |
+            OpenWireCommand::ConnectionError |
+            OpenWireCommand::ConsumerControl |
+            OpenWireCommand::ConnectionControl |
+            OpenWireCommand::ProducerAck |
+            OpenWireCommand::MessagePull |
+            OpenWireCommand::MessageDispatch |
+            OpenWireCommand::MessageAck |
+            OpenWireCommand::ActiveMQMessage |
+            OpenWireCommand::ActiveMQBytesMessage |
+            OpenWireCommand::ActiveMQMapMessage |
+            OpenWireCommand::ActiveMQObjectMessage |
+            OpenWireCommand::ActiveMQStreamMessage |
+            OpenWireCommand::ActiveMQTextMessage |
+            OpenWireCommand::ActiveMQBlobMessage |
+            OpenWireCommand::DiscoveryEvent |
+            OpenWireCommand::DurableSubscriptionInfo |
+            OpenWireCommand::PartialCommand |
+            OpenWireCommand::PartialLastCommand |
+            OpenWireCommand::Replay |
+            OpenWireCommand::MessageDispatchNotification |
+            OpenWireCommand::Response |
+            OpenWireCommand::ExceptionResponse |
+            OpenWireCommand::DataResponse |
+            OpenWireCommand::DataArrayResponse |
+            OpenWireCommand::IntegerResponse => true,
             _ => false,
         }
     }
@@ -2021,40 +2014,40 @@ impl OpenWireLog {
         info.command_type = command_type;
 
         match command_type {
-            OpenWireCommand::WireFormatInfo
-            | OpenWireCommand::BrokerInfo
-            | OpenWireCommand::ConnectionInfo
-            | OpenWireCommand::SessionInfo
-            | OpenWireCommand::ConsumerInfo
-            | OpenWireCommand::ProducerInfo
-            | OpenWireCommand::TransactionInfo
-            | OpenWireCommand::DestinationInfo
-            | OpenWireCommand::RemoveSubscriptionInfo
-            | OpenWireCommand::KeepAliveInfo
-            | OpenWireCommand::ShutdownInfo
-            | OpenWireCommand::RemoveInfo
-            | OpenWireCommand::ControlCommand
-            | OpenWireCommand::FlushCommand
-            | OpenWireCommand::ConnectionError
-            | OpenWireCommand::ConsumerControl
-            | OpenWireCommand::ConnectionControl
-            | OpenWireCommand::ProducerAck
-            | OpenWireCommand::MessagePull
-            | OpenWireCommand::MessageDispatch
-            | OpenWireCommand::MessageAck
-            | OpenWireCommand::ActiveMQMessage
-            | OpenWireCommand::ActiveMQBytesMessage
-            | OpenWireCommand::ActiveMQMapMessage
-            | OpenWireCommand::ActiveMQObjectMessage
-            | OpenWireCommand::ActiveMQStreamMessage
-            | OpenWireCommand::ActiveMQTextMessage
-            | OpenWireCommand::ActiveMQBlobMessage
-            | OpenWireCommand::DiscoveryEvent
-            | OpenWireCommand::DurableSubscriptionInfo
-            | OpenWireCommand::PartialCommand
-            | OpenWireCommand::PartialLastCommand
-            | OpenWireCommand::Replay
-            | OpenWireCommand::MessageDispatchNotification => {
+            OpenWireCommand::WireFormatInfo |
+            OpenWireCommand::BrokerInfo |
+            OpenWireCommand::ConnectionInfo |
+            OpenWireCommand::SessionInfo |
+            OpenWireCommand::ConsumerInfo |
+            OpenWireCommand::ProducerInfo |
+            OpenWireCommand::TransactionInfo |
+            OpenWireCommand::DestinationInfo |
+            OpenWireCommand::RemoveSubscriptionInfo |
+            OpenWireCommand::KeepAliveInfo |
+            OpenWireCommand::ShutdownInfo |
+            OpenWireCommand::RemoveInfo |
+            OpenWireCommand::ControlCommand |
+            OpenWireCommand::FlushCommand |
+            OpenWireCommand::ConnectionError |
+            OpenWireCommand::ConsumerControl |
+            OpenWireCommand::ConnectionControl |
+            OpenWireCommand::ProducerAck |
+            OpenWireCommand::MessagePull |
+            OpenWireCommand::MessageDispatch |
+            OpenWireCommand::MessageAck |
+            OpenWireCommand::ActiveMQMessage |
+            OpenWireCommand::ActiveMQBytesMessage |
+            OpenWireCommand::ActiveMQMapMessage |
+            OpenWireCommand::ActiveMQObjectMessage |
+            OpenWireCommand::ActiveMQStreamMessage |
+            OpenWireCommand::ActiveMQTextMessage |
+            OpenWireCommand::ActiveMQBlobMessage |
+            OpenWireCommand::DiscoveryEvent |
+            OpenWireCommand::DurableSubscriptionInfo |
+            OpenWireCommand::PartialCommand |
+            OpenWireCommand::PartialLastCommand |
+            OpenWireCommand::Replay |
+            OpenWireCommand::MessageDispatchNotification => {
                 info.msg_type = LogMessageType::Request;
                 info.req_msg_size = Some(msg_size as u32);
                 // parse sw8 trace_id and span_id
@@ -2062,15 +2055,15 @@ impl OpenWireLog {
                     (info.trace_ids, info.span_id) =
                         parse_trace_and_span(payload, &config.l7_log_dynamic).unwrap_or_default();
                 }
-            }
-            OpenWireCommand::Response
-            | OpenWireCommand::ExceptionResponse
-            | OpenWireCommand::DataResponse
-            | OpenWireCommand::DataArrayResponse
-            | OpenWireCommand::IntegerResponse => {
+            },
+            OpenWireCommand::Response |
+            OpenWireCommand::ExceptionResponse |
+            OpenWireCommand::DataResponse |
+            OpenWireCommand::DataArrayResponse |
+            OpenWireCommand::IntegerResponse => {
                 info.msg_type = LogMessageType::Response;
                 info.res_msg_size = Some(msg_size as u32);
-            }
+            },
             _ => return Err(Error::OpenWireLogParseFailed),
         };
 
@@ -2185,7 +2178,7 @@ impl OpenWireLog {
                 Ok(p) => {
                     payload = p;
                     infos.push(L7ProtocolInfo::OpenWireInfo(info));
-                }
+                },
                 Err(Error::OpenWireLogParseUnimplemented) => {
                     let msg_size = match info.get_msg_size() {
                         Some(msg_size) => 4 + msg_size as usize,
@@ -2198,12 +2191,12 @@ impl OpenWireLog {
                             None => {
                                 next_skip_len = Some(msg_size - payload.len());
                                 break;
-                            }
+                            },
                         };
                     } else {
                         break;
                     }
-                }
+                },
                 Err(Error::OpenWireLogParseEOF) => {
                     let msg_size = match info.get_msg_size() {
                         Some(msg_size) => 4 + msg_size as usize,
@@ -2214,7 +2207,7 @@ impl OpenWireLog {
                         next_skip_len = Some(msg_size - payload.len());
                     }
                     break;
-                }
+                },
                 Err(Error::OpenWireLogParseFailed) => {
                     if first_byte_parse_failed {
                         first_byte_parse_failed = false;
@@ -2226,7 +2219,7 @@ impl OpenWireLog {
                                     Some(p) => {
                                         payload = p;
                                         continue;
-                                    }
+                                    },
                                     // conservatively skip only one packet
                                     None => break,
                                 };
@@ -2234,7 +2227,7 @@ impl OpenWireLog {
                         }
                     }
                     payload = payload.get(1..).unwrap_or_default();
-                }
+                },
                 _ => break,
             }
         }
@@ -2264,19 +2257,14 @@ impl OpenWireLog {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::path::Path;
-    use std::{fs, rc::Rc};
-
     use super::*;
-
-    use crate::common::l7_protocol_log::L7PerfCache;
-    use crate::config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType};
-    use crate::flow_generator::L7_RRT_CACHE_CAPACITY;
     use crate::{
-        common::{flow::PacketDirection, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
+        config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
+        flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/openwire";
 
@@ -2334,7 +2322,7 @@ mod tests {
                     match info {
                         L7ProtocolInfo::OpenWireInfo(info) => {
                             output.push_str(&format!("{:?} is_openwire: {}\n", info, is_openwire));
-                        }
+                        },
                         _ => unreachable!(),
                     }
                 }

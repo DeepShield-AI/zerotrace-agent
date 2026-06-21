@@ -40,40 +40,32 @@ fn main() {
 #[cfg(feature = "extended_observability")]
 pub mod memory_profile;
 
-use std::ffi::{CStr, CString};
-use std::ptr::{self, null_mut};
-use std::slice;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-
+use crate::{
+    common::{
+        FlowAclListener, FlowAclListenerId,
+        ebpf::EbpfType,
+        flow::L7Stats,
+        l7_protocol_log::{L7ProtocolBitmap, L7ProtocolParserInterface, get_all_protocol},
+        meta_packet::{MetaPacket, SegmentFlags},
+        proc_event::{BoxedProcEvents, EventType, ProcEvent},
+    },
+    config::{
+        FlowAccess,
+        handler::{CollectorAccess, EbpfAccess, EbpfConfig, LogParserAccess},
+    },
+    ebpf,
+    exception::ExceptionHandler,
+    flow_generator::{AppProto, FlowMap, flow_map::Config},
+    integration_collector::Profile,
+    platform::ProcessData,
+    policy::PolicyGetter,
+    rpc::get_timestamp,
+    utils::{process::ProcessListener, stats},
+};
 use ahash::HashSet;
 use arc_swap::access::Access;
 use libc::{c_int, c_ulonglong, c_void};
 use log::{debug, error, info, warn};
-use thiserror::Error;
-use zstd::bulk::compress;
-
-use crate::common::ebpf::EbpfType;
-use crate::common::flow::L7Stats;
-use crate::common::l7_protocol_log::{
-    get_all_protocol, L7ProtocolBitmap, L7ProtocolParserInterface,
-};
-use crate::common::meta_packet::{MetaPacket, SegmentFlags};
-use crate::common::proc_event::{BoxedProcEvents, EventType, ProcEvent};
-use crate::common::{FlowAclListener, FlowAclListenerId};
-use crate::config::handler::{CollectorAccess, EbpfAccess, EbpfConfig, LogParserAccess};
-use crate::config::FlowAccess;
-use crate::ebpf;
-use crate::exception::ExceptionHandler;
-use crate::flow_generator::{flow_map::Config, AppProto, FlowMap};
-use crate::integration_collector::Profile;
-use crate::platform::ProcessData;
-use crate::policy::PolicyGetter;
-use crate::rpc::get_timestamp;
-use crate::utils::{process::ProcessListener, stats};
-
 #[cfg(feature = "extended_observability")]
 use public::queue::Error::Terminated;
 use public::{
@@ -87,10 +79,23 @@ use public::{
         agent::{AgentType, Exception},
         metric,
     },
-    queue::{bounded_with_debug, DebugSender, Receiver},
+    queue::{DebugSender, Receiver, bounded_with_debug},
     utils::bitmap::parse_u16_range_list_to_bitmap,
 };
 use reorder::{Reorder, ReorderCounter, StatsReorderCounter};
+use std::{
+    ffi::{CStr, CString},
+    ptr::{self, null_mut},
+    slice,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+use thiserror::Error;
+use zstd::bulk::compress;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -333,9 +338,9 @@ impl EbpfDispatcher {
                 continue;
             };
 
-            if last.generate_ebpf_flow_id() == p.generate_ebpf_flow_id()
-                && last.segment_flags == SegmentFlags::Start
-                && last.cap_end_seq + 1 == p.cap_start_seq
+            if last.generate_ebpf_flow_id() == p.generate_ebpf_flow_id() &&
+                last.segment_flags == SegmentFlags::Start &&
+                last.cap_end_seq + 1 == p.cap_start_seq
             {
                 last.merge(&mut p);
             } else {
@@ -377,7 +382,7 @@ impl EbpfDispatcher {
             EbpfType::GoHttp2Uprobe | EbpfType::GoHttp2UprobeData => {
                 flow_map.inject_meta_packet(config, &mut packet);
                 reorder.flush(packet.lookup_key.timestamp.as_millis() as u64)
-            }
+            },
             _ => reorder.inject_item(packet),
         };
         let mut packets = packets
@@ -398,12 +403,7 @@ impl EbpfDispatcher {
     ) {
         let ebpf_config = self.config.load();
         let out_of_order_reassembly_bitmap = L7ProtocolBitmap::from(
-            ebpf_config
-                .ebpf
-                .socket
-                .preprocess
-                .out_of_order_reassembly_protocols
-                .as_slice(),
+            ebpf_config.ebpf.socket.preprocess.out_of_order_reassembly_protocols.as_slice(),
         );
         let reorder_counter = Arc::new(ReorderCounter::default());
         self.stats_collector.register_countable(
@@ -413,16 +413,8 @@ impl EbpfDispatcher {
         let mut reorder = Reorder::new(
             Box::new(out_of_order_reassembly_bitmap),
             reorder_counter,
-            ebpf_config
-                .ebpf
-                .socket
-                .preprocess
-                .out_of_order_reassembly_cache_size,
-            ebpf_config
-                .ebpf
-                .socket
-                .preprocess
-                .out_of_order_reassembly_timeout,
+            ebpf_config.ebpf.socket.preprocess.out_of_order_reassembly_cache_size,
+            ebpf_config.ebpf.socket.preprocess.out_of_order_reassembly_timeout,
         );
         let mut flow_map = FlowMap::new(
             self.dispatcher_id as u32,
@@ -461,11 +453,7 @@ impl EbpfDispatcher {
                 ebpf: Some(&ebpf_config),
             };
 
-            if self
-                .receiver
-                .recv_all(&mut batch, Some(Duration::from_secs(1)))
-                .is_err()
-            {
+            if self.receiver.recv_all(&mut batch, Some(Duration::from_secs(1))).is_err() {
                 Self::inject_flush_ticker(
                     get_timestamp(self.time_diff.load(Ordering::Relaxed)),
                     &mut flow_map,
@@ -573,7 +561,7 @@ static mut PROFILE_STACK_COMPRESSION: bool = true;
 static mut TIME_DIFF: Option<Arc<AtomicI64>> = None;
 
 pub unsafe fn string_from_null_terminated_c_str(ptr: *const u8) -> String {
-    CStr::from_ptr(ptr as *const libc::c_char)
+    unsafe { CStr::from_ptr(ptr as *const libc::c_char) }
         .to_string_lossy()
         .into_owned()
 }
@@ -620,11 +608,11 @@ impl EbpfCollector {
                         Err(Terminated(a, b)) => {
                             error!("dpdk init error: {:?}, zerotrace-agent restart...", (a, b));
                             crate::utils::clean_and_exit(1);
-                        }
+                        },
                         Err(e) => {
                             warn!("meta packet send ebpf error: {:?}", e);
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
                 return 0;
@@ -677,10 +665,7 @@ impl EbpfCollector {
                 return 0;
             }
 
-            let time_diff = TIME_DIFF
-                .as_ref()
-                .map(|t| t.load(Ordering::Relaxed))
-                .unwrap_or(0);
+            let time_diff = TIME_DIFF.as_ref().map(|t| t.load(Ordering::Relaxed)).unwrap_or(0);
 
             #[cfg(feature = "extended_observability")]
             if (*data).profiler_type == ebpf::PROFILER_TYPE_MEMORY {
@@ -722,11 +707,11 @@ impl EbpfCollector {
                     Ok(compressed_data) => {
                         profile.data_compressed = true;
                         profile.data = compressed_data;
-                    }
+                    },
                     Err(e) => {
                         profile.data = profile_data.to_vec();
                         debug!("failed to compress ebpf profile: {:?}", e);
-                    }
+                    },
                 }
             } else {
                 profile.data = profile_data.to_vec();
@@ -795,9 +780,11 @@ impl EbpfCollector {
         // ebpf core modules init
         let mut handle = ConfigHandle::default();
         let is_uprobe_meltdown = crate::utils::guard::is_kernel_ebpf_uprobe_meltdown();
-        ebpf::set_uprobe_golang_enabled(
-            !is_uprobe_meltdown && config.ebpf.socket.uprobe.golang.enabled,
-        );
+        unsafe {
+            ebpf::set_uprobe_golang_enabled(
+                !is_uprobe_meltdown && config.ebpf.socket.uprobe.golang.enabled,
+            )
+        };
         if !is_uprobe_meltdown && config.ebpf.socket.uprobe.golang.enabled {
             let feature = "ebpf.socket.uprobe.golang";
             process_listener.register(feature, set_feature_uprobe_golang);
@@ -806,20 +793,14 @@ impl EbpfCollector {
                 .process_matcher
                 .iter()
                 .find(|p| {
-                    p.enabled_features
-                        .iter()
-                        .find(|f| f.eq_ignore_ascii_case(feature))
-                        .is_some()
+                    p.enabled_features.iter().find(|f| f.eq_ignore_ascii_case(feature)).is_some()
                 })
                 .map(|p| p.match_regex.as_str())
                 .unwrap_or_default();
             info!("ebpf set golang uprobe proc regexp: {}", uprobe_proc_regexp);
             ebpf::set_feature_regex(
                 ebpf::FEATURE_UPROBE_GOLANG,
-                CString::new(uprobe_proc_regexp.as_bytes())
-                    .unwrap()
-                    .as_c_str()
-                    .as_ptr(),
+                CString::new(uprobe_proc_regexp.as_bytes()).unwrap().as_c_str().as_ptr(),
             );
         } else {
             info!("ebpf golang uprobe proc regexp is empty, skip set")
@@ -836,10 +817,7 @@ impl EbpfCollector {
                 .process_matcher
                 .iter()
                 .find(|p| {
-                    p.enabled_features
-                        .iter()
-                        .find(|f| f.eq_ignore_ascii_case(feature))
-                        .is_some()
+                    p.enabled_features.iter().find(|f| f.eq_ignore_ascii_case(feature)).is_some()
                 })
                 .map(|p| p.match_regex.as_str())
                 .unwrap_or_default();
@@ -849,10 +827,7 @@ impl EbpfCollector {
             );
             ebpf::set_feature_regex(
                 ebpf::FEATURE_UPROBE_OPENSSL,
-                CString::new(uprobe_proc_regexp.as_bytes())
-                    .unwrap()
-                    .as_c_str()
-                    .as_ptr(),
+                CString::new(uprobe_proc_regexp.as_bytes()).unwrap().as_c_str().as_ptr(),
             );
         } else {
             info!("ebpf openssl uprobe proc regexp is empty, skip set")
@@ -866,10 +841,7 @@ impl EbpfCollector {
                 .process_matcher
                 .iter()
                 .find(|p| {
-                    p.enabled_features
-                        .iter()
-                        .find(|f| f.eq_ignore_ascii_case(feature))
-                        .is_some()
+                    p.enabled_features.iter().find(|f| f.eq_ignore_ascii_case(feature)).is_some()
                 })
                 .map(|p| p.match_regex.as_str())
                 .unwrap_or_default();
@@ -879,10 +851,7 @@ impl EbpfCollector {
             );
             ebpf::set_feature_regex(
                 ebpf::FEATURE_UPROBE_GOLANG_SYMBOL,
-                CString::new(uprobe_proc_regexp.as_bytes())
-                    .unwrap()
-                    .as_c_str()
-                    .as_ptr(),
+                CString::new(uprobe_proc_regexp.as_bytes()).unwrap().as_c_str().as_ptr(),
             );
         } else {
             info!("ebpf golang symbol proc regexp is empty, skip set")
@@ -896,12 +865,7 @@ impl EbpfCollector {
         }
 
         let segmentation_reassembly_bitmap = L7ProtocolBitmap::from(
-            config
-                .ebpf
-                .socket
-                .preprocess
-                .segmentation_reassembly_protocols
-                .as_slice(),
+            config.ebpf.socket.preprocess.segmentation_reassembly_protocols.as_slice(),
         );
         for i in get_all_protocol().into_iter() {
             if segmentation_reassembly_bitmap.is_enabled(i.protocol()) {
@@ -964,8 +928,8 @@ impl EbpfCollector {
             return Err(Error::EbpfInitError);
         }
 
-        if ebpf::set_virtual_file_collect(config.ebpf.file.io_event.enable_virtual_file_collect)
-            != 0
+        if ebpf::set_virtual_file_collect(config.ebpf.file.io_event.enable_virtual_file_collect) !=
+            0
         {
             info!(
                 "ebpf set_virtual_file_collect error: {}",
@@ -1071,9 +1035,9 @@ impl EbpfCollector {
         let off_cpu = &ebpf_conf.profile.off_cpu;
         let memory = &ebpf_conf.profile.memory;
 
-        let profiler_enabled = (!is_uprobe_meltdown && !on_cpu.disabled)
-            || (cfg!(feature = "extended_observability")
-                && (!off_cpu.disabled || (!is_uprobe_meltdown && !memory.disabled)));
+        let profiler_enabled = (!is_uprobe_meltdown && !on_cpu.disabled) ||
+            (cfg!(feature = "extended_observability") &&
+                (!off_cpu.disabled || (!is_uprobe_meltdown && !memory.disabled)));
         if profiler_enabled {
             if !is_uprobe_meltdown && !on_cpu.disabled {
                 ebpf::enable_oncpu_profiler();
@@ -1170,10 +1134,7 @@ impl EbpfCollector {
                     .unwrap_or_default();
                 ebpf::set_feature_regex(
                     ebpf::FEATURE_PROFILE_ONCPU,
-                    CString::new(on_cpu_regexp.as_bytes())
-                        .unwrap()
-                        .as_c_str()
-                        .as_ptr(),
+                    CString::new(on_cpu_regexp.as_bytes()).unwrap().as_c_str().as_ptr(),
                 );
 
                 // CPUID will not be included in the aggregation of stack trace data.
@@ -1199,10 +1160,7 @@ impl EbpfCollector {
 
                     ebpf::set_feature_regex(
                         ebpf::FEATURE_PROFILE_ONCPU,
-                        CString::new(off_cpu_regexp.as_bytes())
-                            .unwrap()
-                            .as_c_str()
-                            .as_ptr(),
+                        CString::new(off_cpu_regexp.as_bytes()).unwrap().as_c_str().as_ptr(),
                     );
 
                     ebpf::set_offcpu_cpuid_aggregation(off_cpu.aggregate_by_cpu as i32);
@@ -1226,10 +1184,7 @@ impl EbpfCollector {
                         .unwrap_or_default();
                     ebpf::set_feature_regex(
                         ebpf::FEATURE_PROFILE_MEMORY,
-                        CString::new(memory_cpu_regexp.as_bytes())
-                            .unwrap()
-                            .as_c_str()
-                            .as_ptr(),
+                        CString::new(memory_cpu_regexp.as_bytes()).unwrap().as_c_str().as_ptr(),
                     );
                 }
             }
@@ -1242,29 +1197,20 @@ impl EbpfCollector {
 
             if !is_uprobe_meltdown && !dpdk.command.is_empty() {
                 ebpf::set_dpdk_cmd_name(
-                    CString::new(dpdk.command.as_bytes())
-                        .unwrap()
-                        .as_c_str()
-                        .as_ptr(),
+                    CString::new(dpdk.command.as_bytes()).unwrap().as_c_str().as_ptr(),
                 );
             }
 
             if !dpdk.rx_hooks.is_empty() {
                 ebpf::set_dpdk_hooks(
                     ebpf::DPDK_HOOK_TYPE_RECV as c_int,
-                    CString::new(dpdk.rx_hooks.join(",").as_bytes())
-                        .unwrap()
-                        .as_c_str()
-                        .as_ptr(),
+                    CString::new(dpdk.rx_hooks.join(",").as_bytes()).unwrap().as_c_str().as_ptr(),
                 );
             }
             if !dpdk.tx_hooks.is_empty() {
                 ebpf::set_dpdk_hooks(
                     ebpf::DPDK_HOOK_TYPE_XMIT as c_int,
-                    CString::new(dpdk.tx_hooks.join(",").as_bytes())
-                        .unwrap()
-                        .as_c_str()
-                        .as_ptr(),
+                    CString::new(dpdk.tx_hooks.join(",").as_bytes()).unwrap().as_c_str().as_ptr(),
                 );
             }
 
@@ -1346,7 +1292,7 @@ impl EbpfCollector {
     pub fn new(
         dispatcher_id: usize,
         time_diff: Arc<AtomicI64>,
-        config: EbpfAccess, // eBPF 配置访问器
+        config: EbpfAccess,                 // eBPF 配置访问器
         log_parser_config: LogParserAccess, // L7 日志解析配置
         flow_map_config: FlowAccess,
         collector_config: CollectorAccess,
@@ -1470,20 +1416,17 @@ impl EbpfCollector {
         unsafe {
             let ecfg = &config.ebpf.profile;
             let is_uprobe_meltdown = crate::utils::guard::is_kernel_ebpf_uprobe_meltdown();
-            let restart_cprofiler = ebpf::dwarf_available()
-                && ebpf::continuous_profiler_running()
-                && ((!is_uprobe_meltdown
-                    && ebpf::get_dwarf_enabled() != !ecfg.unwinding.dwarf_disabled)
-                    || ebpf::get_dwarf_process_map_size() as u32
-                        != ecfg.unwinding.dwarf_process_map_size
-                    || ebpf::get_dwarf_shard_map_size() as u32
-                        != ecfg.unwinding.dwarf_shard_map_size);
+            let restart_cprofiler = ebpf::dwarf_available() &&
+                ebpf::continuous_profiler_running() &&
+                ((!is_uprobe_meltdown &&
+                    ebpf::get_dwarf_enabled() != !ecfg.unwinding.dwarf_disabled) ||
+                    ebpf::get_dwarf_process_map_size() as u32 !=
+                        ecfg.unwinding.dwarf_process_map_size ||
+                    ebpf::get_dwarf_shard_map_size() as u32 !=
+                        ecfg.unwinding.dwarf_shard_map_size);
             ebpf::set_dwarf_enabled(!is_uprobe_meltdown && !ecfg.unwinding.dwarf_disabled);
             ebpf::set_dwarf_regex(
-                CString::new(ecfg.unwinding.dwarf_regex.as_bytes())
-                    .unwrap()
-                    .as_c_str()
-                    .as_ptr(),
+                CString::new(ecfg.unwinding.dwarf_regex.as_bytes()).unwrap().as_c_str().as_ptr(),
             );
             ebpf::set_dwarf_process_map_size(ecfg.unwinding.dwarf_process_map_size as i32);
             ebpf::set_dwarf_shard_map_size(ecfg.unwinding.dwarf_shard_map_size as i32);

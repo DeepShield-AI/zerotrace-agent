@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+use super::InterfaceEntry;
+use log::{debug, error, info};
+use public::utils::net::MacAddr;
+use roxmltree::Document;
 use std::{
     fs,
     io::{Error, ErrorKind, Read, Result},
@@ -23,13 +27,6 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
-
-use log::{debug, error, info};
-use roxmltree::Document;
-
-use public::utils::net::MacAddr;
-
-use super::InterfaceEntry;
 
 const DEFAULT_LIBVIRT_XML_PATH: &'static str = "/etc/libvirt/qemu";
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
@@ -83,19 +80,21 @@ impl LibvirtXmlExtractor {
         *self.thread.lock().unwrap() = Some(
             thread::Builder::new()
                 .name("libvirt-xml-extractor".to_owned())
-                .spawn(move || loop {
-                    let (path_lock, entries) = (path.lock().unwrap(), Arc::clone(&entries));
-                    if path_lock.exists() {
-                        LibvirtXmlExtractor::refresh(path_lock, entries);
-                    }
+                .spawn(move || {
+                    loop {
+                        let (path_lock, entries) = (path.lock().unwrap(), Arc::clone(&entries));
+                        if path_lock.exists() {
+                            LibvirtXmlExtractor::refresh(path_lock, entries);
+                        }
 
-                    let guard = running.lock().unwrap();
-                    if !*guard {
-                        break;
-                    }
-                    let (guard, _) = timer.wait_timeout(guard, REFRESH_INTERVAL).unwrap();
-                    if !*guard {
-                        break;
+                        let guard = running.lock().unwrap();
+                        if !*guard {
+                            break;
+                        }
+                        let (guard, _) = timer.wait_timeout(guard, REFRESH_INTERVAL).unwrap();
+                        if !*guard {
+                            break;
+                        }
                     }
                 })
                 .unwrap(),
@@ -216,10 +215,8 @@ impl LibvirtXmlExtractor {
                 }
                 let domain_uuid = domain_uuid.unwrap();
 
-                let output = Command::new("virsh")
-                    .arg("dumpxml")
-                    .arg(domain_uuid.as_str())
-                    .output()?;
+                let output =
+                    Command::new("virsh").arg("dumpxml").arg(domain_uuid.as_str()).output()?;
 
                 if !output.status.success() {
                     return Err(Error::new(ErrorKind::Other, "failed to run virsh dumpxml"));
@@ -252,9 +249,9 @@ impl LibvirtXmlExtractor {
                         }
                         debug!("not running vm {} ignored", file_path.as_ref().display());
                         Err(Error::new(ErrorKind::Other, e))
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 
@@ -285,7 +282,7 @@ impl LibvirtXmlExtractor {
                         file.as_path().display(),
                         e
                     );
-                }
+                },
             }
         }
 

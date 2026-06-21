@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::ops::RangeInclusive;
-
 use public::bytes::{read_u16_be, read_u32_be, read_u64_be};
+use std::ops::RangeInclusive;
 
 const LONG_8_BYTES: u8 = 0x4c;
 const LONG_1_BYTES: RangeInclusive<u8> = 0xd8..=0xef;
@@ -111,12 +110,12 @@ impl<'a> HessianObjIterator<'a> {
             TREE_MAP => {
                 self.in_map_count += 1;
                 return self.read_field();
-            }
+            },
             MAP_END => {
                 self.in_map_count -= 1;
                 return self.read_field();
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         if self.in_map_count != 0 {
@@ -141,19 +140,19 @@ impl<'a> HessianObjIterator<'a> {
             self.current_field_idx += 1;
         }
 
-        if b0 == LONG_8_BYTES
-            || b0 == INTEGER_4_BYTES
-            || LONG_1_BYTES.contains(&b0)
-            || LONG_2_BYTES.contains(&b0)
-            || LONG_3_BYTES.contains(&b0)
-            || INTEGER_1_BYTES.contains(&b0)
-            || INTEGER_2_BYTES.contains(&b0)
-            || INTEGER_3_BYTES.contains(&b0)
+        if b0 == LONG_8_BYTES ||
+            b0 == INTEGER_4_BYTES ||
+            LONG_1_BYTES.contains(&b0) ||
+            LONG_2_BYTES.contains(&b0) ||
+            LONG_3_BYTES.contains(&b0) ||
+            INTEGER_1_BYTES.contains(&b0) ||
+            INTEGER_2_BYTES.contains(&b0) ||
+            INTEGER_3_BYTES.contains(&b0)
         {
             self.read_integer(Some(b0)).map(|i| FieldEnum::Integer(i))
-        } else if b0 == STRING_LEN_2_BYTES
-            || STRING_LEN_0_1023.contains(&b0)
-            || STRING_LEN_0_31.contains(&b0)
+        } else if b0 == STRING_LEN_2_BYTES ||
+            STRING_LEN_0_1023.contains(&b0) ||
+            STRING_LEN_0_31.contains(&b0)
         {
             self.read_string(Some(b0)).map(|s| FieldEnum::String(s))
         } else if b0 == NULL {
@@ -171,9 +170,7 @@ impl<'a> HessianObjIterator<'a> {
 
         match b0 {
             // int
-            INTEGER_4_BYTES => self
-                .read_n_bytes(4)
-                .and_then(|b| Some(read_u32_be(b) as i64)),
+            INTEGER_4_BYTES => self.read_n_bytes(4).and_then(|b| Some(read_u32_be(b) as i64)),
             _ if INTEGER_1_BYTES.contains(&b0) => Some(b0 as i64 - 0x90),
             _ if INTEGER_2_BYTES.contains(&b0) => self
                 .read_n_bytes(1)
@@ -183,9 +180,7 @@ impl<'a> HessianObjIterator<'a> {
                 Some(((b0 as i64) << 16) + b1 + b2 - 0xd40000)
             }),
 
-            LONG_8_BYTES => self
-                .read_n_bytes(8)
-                .and_then(|b| Some(read_u64_be(b) as i64)),
+            LONG_8_BYTES => self.read_n_bytes(8).and_then(|b| Some(read_u64_be(b) as i64)),
             _ if LONG_1_BYTES.contains(&b0) => Some(b0 as i64 - 0xe0),
             _ if LONG_2_BYTES.contains(&b0) => self
                 .read_n_bytes(1)
@@ -213,7 +208,7 @@ impl<'a> HessianObjIterator<'a> {
                 let b1 = b1[0];
                 self.read_n_bytes((b0 - 0x30) as usize + b1 as usize)
                     .and_then(|s| std::str::from_utf8(s).map_or(None, |s| Some(s)))
-            }
+            },
             STRING_LEN_2_BYTES => {
                 let Some(l) = self.read_n_bytes(2) else {
                     return None;
@@ -221,7 +216,7 @@ impl<'a> HessianObjIterator<'a> {
                 let l = read_u16_be(l) as usize;
                 self.read_n_bytes(l)
                     .and_then(|s| std::str::from_utf8(s).map_or(None, |s| Some(s)))
-            }
+            },
             // not support x52 chunk string
             _ => None,
         }
@@ -241,12 +236,12 @@ impl<'a> HessianObjIterator<'a> {
                 TREE_MAP => {
                     self.in_map_count += 1;
                     return self.read_field();
-                }
+                },
                 MAP_END => {
                     self.in_map_count -= 1;
                     return self.read_field();
-                }
-                _ => {}
+                },
+                _ => {},
             }
 
             let Some((_, val)) = self.read_basic_field(Some(b0)) else {
@@ -322,7 +317,7 @@ mod test {
                 "sofaCallerIdc" => assert_eq!(v, FieldEnum::String("")),
                 "sofaCallerIp" => assert_eq!(v, FieldEnum::String("")),
                 "sofaTraceId" => assert_eq!(v, FieldEnum::String("0a0b9a491683255362727389515827")),
-                "sofaPenAttrs" => {}
+                "sofaPenAttrs" => {},
                 "sofaCallerZone" => assert_eq!(v, FieldEnum::String("")),
                 "sofaCallerApp" => assert_eq!(v, FieldEnum::String("")),
                 _ => unreachable!(),

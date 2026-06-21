@@ -1,5 +1,3 @@
-use public::l7_protocol::LogMessageType;
-
 use crate::{
     common::{
         flow::{L7PerfStats, L7Protocol, PacketDirection},
@@ -11,15 +9,17 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
+            AppProtoHead, L7ResponseStatus,
             pb_adapter::{ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response},
-            set_captured_byte, AppProtoHead, L7ResponseStatus,
+            set_captured_byte,
         },
     },
     plugin::wasm::{
-        wasm_plugin::{zmtp_message, ZmtpMessage},
         WasmData,
+        wasm_plugin::{ZmtpMessage, zmtp_message},
     },
 };
+use public::l7_protocol::LogMessageType;
 use serde::Serialize;
 use std::fmt;
 
@@ -222,9 +222,8 @@ impl ZmtpInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::ZMTP) {
-            self.is_on_blacklist = t.request_type.is_on_blacklist(self.frame_type.as_str())
-                || self
-                    .subscription
+            self.is_on_blacklist = t.request_type.is_on_blacklist(self.frame_type.as_str()) ||
+                self.subscription
                     .as_ref()
                     .map(|p| {
                         t.request_domain.is_on_blacklist(p) || t.request_resource.is_on_blacklist(p)
@@ -459,7 +458,7 @@ impl ZmtpLog {
                 // short-size
                 let (payload, size) = parse_byte(payload).ok_or(Error::ZmtpLogParseFailed)?;
                 (payload, size as u64)
-            }
+            },
             0x06 => {
                 // long-size
                 let (payload, size) = parse_long(payload).ok_or(Error::ZmtpLogParseFailed)?;
@@ -468,7 +467,7 @@ impl ZmtpLog {
                     return Err(Error::ZmtpLogParseFailed);
                 }
                 (payload, size as u64)
-            }
+            },
             _ => return Err(Error::ZmtpLogParseFailed),
         };
         info.req_msg_size = Some(size);
@@ -503,9 +502,7 @@ impl ZmtpLog {
             info.err_msg = Some(String::from_utf8_lossy(err_msg).to_string());
             return Ok(payload);
         }
-        let remaining = size
-            .checked_sub(1 + length as u64)
-            .ok_or(Error::ZmtpLogParseFailed)?;
+        let remaining = size.checked_sub(1 + length as u64).ok_or(Error::ZmtpLogParseFailed)?;
         // command data
         let (payload, data) = match parse_bytes(payload, remaining as usize) {
             Some((payload, data)) => (payload, data),
@@ -531,17 +528,17 @@ impl ZmtpLog {
                                 }
                             }
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
-            }
+            },
             "SUBSCRIBE" => match mechanism {
                 Some(Mechanism::NULL) | Some(Mechanism::PLAIN) | None => {
                     info.subscription = Some(String::from_utf8_lossy(data).to_string());
-                }
-                _ => {}
+                },
+                _ => {},
             },
-            _ => {}
+            _ => {},
         }
         if data.len() < remaining as usize {
             Err(Error::ZmtpLogParseEOF)
@@ -563,7 +560,7 @@ impl ZmtpLog {
                 // short-size
                 let (payload, size) = parse_byte(payload).ok_or(Error::ZmtpLogParseFailed)?;
                 (payload, size as u64)
-            }
+            },
             0x02 | 0x03 => {
                 // long-size
                 let (payload, size) = parse_long(payload).ok_or(Error::ZmtpLogParseFailed)?;
@@ -572,7 +569,7 @@ impl ZmtpLog {
                     return Err(Error::ZmtpLogParseFailed);
                 }
                 (payload, size as u64)
-            }
+            },
             _ => return Err(Error::ZmtpLogParseFailed),
         };
         info.req_msg_size = Some(size);
@@ -586,7 +583,7 @@ impl ZmtpLog {
         match Self::parse_greeting(payload, info) {
             Ok(payload) => {
                 return Ok(payload);
-            }
+            },
             Err(Error::ZmtpLogParseEOF) => return Err(Error::ZmtpLogParseEOF),
             _ => *info = ZmtpInfo::default(),
         }
@@ -631,7 +628,7 @@ impl ZmtpLog {
                         return Err(Error::ZmtpLogParseFailed);
                     }
                     &payload[0..0]
-                }
+                },
                 Err(_) => return Err(Error::ZmtpLogParseFailed),
             };
             if param.direction == PacketDirection::ServerToClient {
@@ -651,15 +648,15 @@ impl ZmtpLog {
                         }
                     }
                     info_list.push(L7ProtocolInfo::ZmtpInfo(info));
-                }
+                },
                 FrameType::Message => {
                     if strict_check {
                         continue;
                     }
-                    if self.client_socket_type == Some(SocketType::REQ)
-                        || self.client_socket_type == Some(SocketType::REP)
-                        || self.server_socket_type == Some(SocketType::REQ)
-                        || self.server_socket_type == Some(SocketType::REP)
+                    if self.client_socket_type == Some(SocketType::REQ) ||
+                        self.client_socket_type == Some(SocketType::REP) ||
+                        self.server_socket_type == Some(SocketType::REQ) ||
+                        self.server_socket_type == Some(SocketType::REP)
                     {
                         if param.direction == PacketDirection::ClientToServer {
                             info.msg_type = LogMessageType::Request;
@@ -673,7 +670,7 @@ impl ZmtpLog {
                     if info.more_frames != Some(true) || info.req_msg_size != Some(0) {
                         info_list.push(L7ProtocolInfo::ZmtpInfo(info));
                     }
-                }
+                },
                 _ => return Err(Error::ZmtpLogParseFailed),
             }
         }
@@ -734,18 +731,13 @@ impl L7ProtocolParserInterface for ZmtpLog {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::path::Path;
-    use std::{fs, rc::Rc};
-
     use super::*;
-
-    use crate::common::l7_protocol_log::L7PerfCache;
-    use crate::flow_generator::L7_RRT_CACHE_CAPACITY;
     use crate::{
-        common::{flow::PacketDirection, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
+        flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/zmtp";
 
@@ -783,15 +775,14 @@ mod tests {
 
             let is_zmtp = ZmtpLog::check_protocol(payload, param);
             match zmtp.parse(payload, param, false) {
-                Ok(info_list) => {
+                Ok(info_list) =>
                     for info in info_list {
                         let info = match info {
                             L7ProtocolInfo::ZmtpInfo(info) => info,
                             _ => unreachable!(),
                         };
                         output.push_str(&format!("{:?} is_zmtp: {}\n", info, is_zmtp));
-                    }
-                }
+                    },
                 _ => output.push_str("parse failed\n"),
             }
         }

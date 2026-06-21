@@ -14,25 +14,23 @@
  * limitations under the License.
  */
 
-use std::{
-    sync::atomic::Ordering,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-use log::error;
-use public::l7_protocol::{CustomProtocol, L7Protocol, LogMessageType};
-
 use crate::{
     common::{
         flow::L7PerfStats,
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, ParseParam},
     },
-    flow_generator::{protocol_logs::set_captured_byte, Error, Result},
+    flow_generator::{Error, Result, protocol_logs::set_captured_byte},
     plugin::{
-        c_ffi::{c_str_to_string, ParseCtx, ParseInfo, ACTION_CONTINUE, ACTION_ERROR, ACTION_OK},
         CustomInfo,
+        c_ffi::{ACTION_CONTINUE, ACTION_ERROR, ACTION_OK, ParseCtx, ParseInfo, c_str_to_string},
     },
+};
+use log::error;
+use public::l7_protocol::{CustomProtocol, L7Protocol, LogMessageType};
+use std::{
+    sync::atomic::Ordering,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const RESULT_LEN: i32 = 8;
@@ -91,7 +89,7 @@ impl L7ProtocolParserInterface for SoLog {
                         error!("read proto str from so plugin fail");
                         counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                         return None;
-                    }
+                    },
                 }
 
                 return match res.direction {
@@ -193,26 +191,26 @@ impl L7ProtocolParserInterface for SoLog {
                                     )));
                                 }
                                 v.push(L7ProtocolInfo::CustomInfo(info));
-                            }
+                            },
                             Err(e) => {
                                 counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                                 error!("so plugin {} convert l7 info fail: {}", c.name, e);
-                            }
+                            },
                         }
                     }
                     return Ok(L7ParseResult::Multi(v));
-                }
+                },
                 ACTION_CONTINUE => continue,
                 ACTION_ERROR => {
                     counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                     return Err(Error::SoParseFail);
-                }
+                },
 
                 _ => {
                     error!("so plugin {} return unknown action {}", c.name, res.action);
                     counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                     return Err(Error::SoReturnUnexpectVal);
-                }
+                },
             }
         }
         Err(Error::SoParseFail)

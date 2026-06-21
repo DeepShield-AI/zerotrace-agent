@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
+// Enterprise Edition Feature: packet-sequence
+use super::consts;
+use log::{info, warn};
+use packet_sequence_block::BoxedPacketSequenceBlock;
+use public::queue::{DebugSender, Error, Receiver};
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
 };
-
-use log::{info, warn};
-use packet_sequence_block::BoxedPacketSequenceBlock;
-
-// Enterprise Edition Feature: packet-sequence
-use super::consts;
-
-use public::queue::{DebugSender, Error, Receiver};
 
 pub struct PacketSequenceParser {
     input_queue: Arc<Receiver<Box<packet_sequence_block::PacketSequenceBlock>>>,
@@ -76,7 +73,7 @@ impl PacketSequenceParser {
                                 warn!("packet sequence block to queue failed, because {:?}", e);
                                 batch.clear();
                             }
-                        }
+                        },
                         Err(Error::Timeout) => continue,
                         Err(Error::Terminated(..)) => break,
                         Err(Error::BatchTooLarge(_)) => unreachable!(),

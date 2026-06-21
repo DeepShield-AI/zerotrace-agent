@@ -14,30 +14,31 @@
  * limitations under the License.
  */
 
+use super::proc_scan_hook::proc_scan_hook;
+use crate::config::handler::OsProcScanConfig;
+use log::{debug, info};
+use nom::AsBytes;
+use procfs::{ProcError, ProcResult, process::Process};
+use public::{
+    bytes::write_u64_be,
+    proto::agent::{ProcessInfo, Tag},
+    pwd::PasswordInfo,
+};
+use ring::digest;
+use serde::Deserialize;
 #[cfg(target_os = "android")]
 use std::os::android::fs::MetadataExt;
 #[cfg(target_os = "linux")]
 use std::os::linux::fs::MetadataExt;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use std::sync::{Arc, RwLock};
-
-use std::collections::HashSet;
-use std::path::{PathBuf, MAIN_SEPARATOR};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{collections::HashMap, os::unix::process::CommandExt, process::Command};
-
-use log::{debug, info};
-use nom::AsBytes;
-use procfs::{process::Process, ProcError, ProcResult};
-use public::bytes::write_u64_be;
-use public::proto::agent::{ProcessInfo, Tag};
-use public::pwd::PasswordInfo;
-use ring::digest;
-use serde::Deserialize;
-
-use super::proc_scan_hook::proc_scan_hook;
-
-use crate::config::handler::OsProcScanConfig;
+use std::{
+    collections::{HashMap, HashSet},
+    os::unix::process::CommandExt,
+    path::{MAIN_SEPARATOR, PathBuf},
+    process::Command,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 const CONTAINER_ID_LEN: usize = 64;
 const SHA1_DIGEST_LEN: usize = 20;
@@ -297,10 +298,7 @@ pub(crate) fn get_all_process_in(conf: &OsProcScanConfig, ret: &mut Vec<ProcessD
         conf.os_app_tag_exec_user.as_str(),
         conf.os_app_tag_exec.as_slice(),
         conf.os_proc_root.as_str(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
     );
     let process_datas = get_proc_scan_process_datas();
     let mut tags_map = match get_os_app_tag_by_exec(user, cmd) {
@@ -313,7 +311,7 @@ pub(crate) fn get_all_process_in(conf: &OsProcScanConfig, ret: &mut Vec<ProcessD
                 err
             );
             return;
-        }
+        },
     };
 
     for mut process_data in process_datas {
@@ -353,7 +351,7 @@ pub(crate) fn get_all_process_in(conf: &OsProcScanConfig, ret: &mut Vec<ProcessD
                         pwd_info.insert(inode, pwd);
                     }
                 }
-            }
+            },
         }
 
         // fill tags
@@ -503,8 +501,8 @@ pub fn get_container_id(proc: &Process) -> Option<String> {
                     "pids" | "cpuset" | "devices" | "memory" | "cpu" | "" => {
                         path = i.pathname;
                         break 'l;
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         };
@@ -537,13 +535,10 @@ pub fn get_container_id(proc: &Process) -> Option<String> {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
-
-    use rand::{seq::SliceRandom, thread_rng};
-
-    use crate::platform::platform_synchronizer::linux_process::fill_child_proc_tag_by_parent;
-
     use super::{OsAppTagKV, ProcessData};
+    use crate::platform::platform_synchronizer::linux_process::fill_child_proc_tag_by_parent;
+    use rand::{seq::SliceRandom, thread_rng};
+    use std::time::Duration;
 
     #[test]
     fn test_tag_spread() {

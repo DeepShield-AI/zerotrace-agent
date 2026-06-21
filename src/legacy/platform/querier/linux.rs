@@ -14,33 +14,28 @@
  * limitations under the License.
  */
 
-use std::hash::Hasher;
-use std::sync::Arc;
-
-use ahash::AHasher;
-use log::{debug, info, trace, warn};
-use regex::Regex;
-
 use crate::{
     config::handler::PlatformConfig,
     platform::{
-        self,
+        self, GenericPoller, InterfaceEntry, LibvirtXmlExtractor,
         kubernetes::{InterfaceInfoStore, Poller},
         platform_synchronizer::{
-            linux_process::get_all_process_in, process_info_enabled, ProcessData,
+            ProcessData, linux_process::get_all_process_in, process_info_enabled,
         },
-        GenericPoller, InterfaceEntry, LibvirtXmlExtractor,
     },
     utils::command::{
         get_all_vm_xml, get_brctl_show, get_hostname, get_ip_address, get_ovs_interfaces,
         get_ovs_ports, get_vlan_config, get_vm_states,
     },
 };
-
+use ahash::AHasher;
+use log::{debug, info, trace, warn};
 use public::{
     netns::{self, InterfaceInfo, NsFile},
     proto::agent as pb,
 };
+use regex::Regex;
+use std::{hash::Hasher, sync::Arc};
 
 pub struct Querier {
     override_os_hostname: Option<String>,
@@ -121,14 +116,14 @@ impl Querier {
                 Ok(new_re) => {
                     info!("extra_netns_regex updated to /{}/", new_re.as_str());
                     self.netns_regex = Some(new_re);
-                }
+                },
                 Err(e) => {
                     warn!(
                         "extra_netns_regex /{}/ is invalid: {}",
                         config.extra_netns_regex.as_str(),
                         e
                     )
-                }
+                },
             }
         }
 
@@ -276,7 +271,7 @@ impl Querier {
                 hasher.write(hostname.as_bytes());
                 trace!("digest={:016x}", hasher.finish());
                 self.raw_hostname = Some(hostname);
-            }
+            },
             Err(e) => debug!("get_hostname failed: {}", e),
         }
     }
@@ -289,9 +284,8 @@ impl Querier {
                 warn!("setns to {:?} failed: {}", ns, e);
                 continue;
             }
-            let raw_host_ip_addr = get_ip_address()
-                .map_err(|err| debug!("get_ip_address error:{}", err))
-                .ok();
+            let raw_host_ip_addr =
+                get_ip_address().map_err(|err| debug!("get_ip_address error:{}", err)).ok();
             if let Some(ip_addr) = raw_host_ip_addr.as_ref() {
                 for line in ip_addr.lines() {
                     // 忽略可能变化的行避免version频繁更新
@@ -328,14 +322,14 @@ impl Querier {
                 hasher.write(s.as_bytes());
                 trace!("digest={:016x}", hasher.finish());
                 field.replace(s);
-            }
+            },
             Err(e) => debug!("get {} failed: {}", label, e),
         }
     }
 
     fn update_process_data(&mut self, config: &PlatformConfig, hasher: &mut AHasher) {
-        if !(process_info_enabled(config.agent_type)
-            && config.os_proc_scan_conf.os_proc_sync_enabled)
+        if !(process_info_enabled(config.agent_type) &&
+            config.os_proc_scan_conf.os_proc_sync_enabled)
         {
             return;
         }
@@ -379,7 +373,7 @@ impl Querier {
                 Err(e) => {
                     warn!("query namespace interfaces failed: {:?}", e);
                     return;
-                }
+                },
             };
             self.kubeif_store.merge(m);
             let mut n = 0;

@@ -14,22 +14,21 @@
  * limitations under the License.
  */
 
-use std::net::IpAddr;
-
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use super::af_packet::bpf::*;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::common::{
-    enums::EthernetType, ETH_TYPE_LEN, ETH_TYPE_OFFSET, GRE4_PROTO_OFFSET, GRE6_PROTO_OFFSET,
-    GRE_PROTO_LEN, IPV4_ADDR_LEN, IPV4_DST_OFFSET, IPV4_FLAGS_FRAG_OFFSET_LEN, IPV4_FLAGS_OFFSET,
-    IPV4_PROTO_LEN, IPV4_PROTO_OFFSET, IPV4_SRC_OFFSET, IPV6_DST_OFFSET, IPV6_PROTO_LEN,
-    IPV6_PROTO_OFFSET, IPV6_SRC_OFFSET, PORT_LEN, TCP6_DST_OFFSET, TCP6_SRC_OFFSET, TCP_DST_OFFSET,
-    TCP_SRC_OFFSET, UDP6_DST_OFFSET, UDP6_SRC_OFFSET, UDP_DST_OFFSET, UDP_SRC_OFFSET,
-    VLAN_HEADER_SIZE, VXLAN6_FLAGS_OFFSET, VXLAN_FLAGS_OFFSET,
+    ETH_TYPE_LEN, ETH_TYPE_OFFSET, GRE_PROTO_LEN, GRE4_PROTO_OFFSET, GRE6_PROTO_OFFSET,
+    IPV4_ADDR_LEN, IPV4_DST_OFFSET, IPV4_FLAGS_FRAG_OFFSET_LEN, IPV4_FLAGS_OFFSET, IPV4_PROTO_LEN,
+    IPV4_PROTO_OFFSET, IPV4_SRC_OFFSET, IPV6_DST_OFFSET, IPV6_PROTO_LEN, IPV6_PROTO_OFFSET,
+    IPV6_SRC_OFFSET, PORT_LEN, TCP_DST_OFFSET, TCP_SRC_OFFSET, TCP6_DST_OFFSET, TCP6_SRC_OFFSET,
+    UDP_DST_OFFSET, UDP_SRC_OFFSET, UDP6_DST_OFFSET, UDP6_SRC_OFFSET, VLAN_HEADER_SIZE,
+    VXLAN_FLAGS_OFFSET, VXLAN6_FLAGS_OFFSET, enums::EthernetType,
 };
 use crate::common::{enums::IpProtocol, erspan::GRE_PROTO_ERSPAN_III};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use public::enums::LinuxSllPacketType::Outgoing;
+use std::net::IpAddr;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 type JumpModifier = fn(jump_if: JumpIf, index: usize, total: usize) -> JumpIf;
@@ -69,9 +68,8 @@ impl BpfBuilder {
             }
             let modifier = modifier.unwrap();
             match self.ins[i] {
-                BpfSyntax::JumpIf(e) => {
-                    self.ins[i] = BpfSyntax::JumpIf(modifier(e, i, self.ins.len()))
-                }
+                BpfSyntax::JumpIf(e) =>
+                    self.ins[i] = BpfSyntax::JumpIf(modifier(e, i, self.ins.len())),
                 _ => continue,
             }
         }
@@ -831,10 +829,7 @@ mod tests {
         };
 
         let syntax = builder.build_pcap_syntax();
-        let output = syntax
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
+        let output = syntax.iter().map(|x| x.to_string()).collect::<Vec<String>>();
 
         let except = [
             "ld #ifidx",
@@ -921,10 +916,7 @@ mod tests {
         };
 
         let syntax = builder.build_pcap_syntax();
-        let output = syntax
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
+        let output = syntax.iter().map(|x| x.to_string()).collect::<Vec<String>>();
 
         output.iter().for_each(|x| println!("\"{}\",", x));
 

@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-use std::io::{Error as IoError, ErrorKind, Result as IoResult};
-
 use public::utils::net::{
-    get_adapters_addresses, is_global, is_link_local_multicast, is_link_local_unicast, Error,
-    LinkFlags, Result,
+    Error, LinkFlags, Result, get_adapters_addresses, is_global, is_link_local_multicast,
+    is_link_local_unicast,
 };
+use std::io::{Error as IoError, ErrorKind, Result as IoResult};
 
 pub fn get_ip_address() -> Result<String, Error> {
     let (links, addrs) = get_adapters_addresses()?;

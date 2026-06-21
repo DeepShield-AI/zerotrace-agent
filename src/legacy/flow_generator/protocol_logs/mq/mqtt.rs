@@ -14,18 +14,6 @@
  * limitations under the License.
  */
 
-use std::fmt::{self, Write};
-
-use log::{debug, warn};
-use nom::{
-    bits, bytes,
-    combinator::map_res,
-    error,
-    multi::{many1, many1_count},
-    number, sequence, IResult, Parser,
-};
-use serde::{Serialize, Serializer};
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -38,14 +26,23 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
+            AppProtoHead, L7ResponseStatus,
             pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
-            set_captured_byte, swap_if, value_is_default, value_is_negative, AppProtoHead,
-            L7ResponseStatus,
+            set_captured_byte, swap_if, value_is_default, value_is_negative,
         },
     },
 };
-use public::l7_protocol::LogMessageType;
-use public::proto::flow_log::MqttTopic;
+use log::{debug, warn};
+use nom::{
+    IResult, Parser, bits, bytes,
+    combinator::map_res,
+    error,
+    multi::{many1, many1_count},
+    number, sequence,
+};
+use public::{l7_protocol::LogMessageType, proto::flow_log::MqttTopic};
+use serde::{Serialize, Serializer};
+use std::fmt::{self, Write};
 
 #[derive(Serialize, Clone, Debug)]
 pub struct MqttInfo {
@@ -158,13 +155,12 @@ impl Default for MqttInfo {
 impl MqttInfo {
     fn generate_endpoint(&self) -> Option<String> {
         match self.pkt_type {
-            PacketKind::Publish { .. } => {
+            PacketKind::Publish { .. } =>
                 if let Some(t) = &self.publish_topic {
                     Some(t.clone())
                 } else {
                     None
-                }
-            }
+                },
             PacketKind::Unsubscribe | PacketKind::Subscribe => {
                 if let Some(s) = &self.subscribe_topics {
                     let mut topic_str = String::new();
@@ -178,7 +174,7 @@ impl MqttInfo {
                 } else {
                     None
                 }
-            }
+            },
             _ => None,
         }
     }
@@ -197,10 +193,10 @@ impl MqttInfo {
         match other.pkt_type {
             PacketKind::Publish { .. } => {
                 std::mem::swap(&mut self.publish_topic, &mut other.publish_topic);
-            }
+            },
             PacketKind::Unsubscribe | PacketKind::Subscribe => {
                 std::mem::swap(&mut self.subscribe_topics, &mut other.subscribe_topics);
-            }
+            },
             _ => (),
         }
         swap_if!(self, endpoint, is_none, other);
@@ -220,14 +216,12 @@ impl MqttInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::MQTT) {
-            self.is_on_blacklist = t.request_type.is_on_blacklist(self.pkt_type.as_str())
-                || self
-                    .client_id
+            self.is_on_blacklist = t.request_type.is_on_blacklist(self.pkt_type.as_str()) ||
+                self.client_id
                     .as_ref()
                     .map(|p: &String| t.request_domain.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .endpoint
+                    .unwrap_or_default() ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.request_resource.is_on_blacklist(p) || t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -396,7 +390,7 @@ impl MqttLog {
                     info.req_msg_size = Some(header.remaining_length as u32);
                     info.pkt_type = header.kind;
                     self.version = version;
-                }
+                },
                 PacketKind::Connack => {
                     let (_, return_code) =
                         parse_connack_packet(input).map_err(|_| Error::MqttLogParseFailed)?;
@@ -406,7 +400,7 @@ impl MqttLog {
                     info.res_msg_size = Some(header.remaining_length as u32);
                     info.pkt_type = header.kind;
                     self.status = self.parse_status_code(return_code);
-                }
+                },
                 PacketKind::Publish { dup, qos, .. } => {
                     let (_, topic_name) =
                         mqtt_string(input).map_err(|_| Error::MqttLogParseFailed)?;
@@ -427,7 +421,7 @@ impl MqttLog {
                     info.publish_topic.replace(topic_name.to_string());
                     info.pkt_type = header.kind;
                     info.version = self.version;
-                }
+                },
                 PacketKind::Subscribe => {
                     // 跳过解析报文标识符
                     // skip parsing packet identifier
@@ -448,7 +442,7 @@ impl MqttLog {
                             })
                             .collect(),
                     );
-                }
+                },
                 PacketKind::Unsubscribe => {
                     let (_, (_, reqs)) = mqtt_packet_identifier
                         .and(mqtt_unsubscription_requests)
@@ -466,30 +460,30 @@ impl MqttLog {
                             })
                             .collect(),
                     );
-                }
+                },
                 PacketKind::Pingreq | PacketKind::Pubrel => {
                     info.pkt_type = header.kind;
                     info.version = self.version;
                     info.req_msg_size = Some(header.remaining_length as u32);
                     self.msg_type = LogMessageType::Request;
-                }
-                PacketKind::Suback
-                | PacketKind::Pingresp
-                | PacketKind::Pubcomp
-                | PacketKind::Pubrec
-                | PacketKind::Puback
-                | PacketKind::Unsuback => {
+                },
+                PacketKind::Suback |
+                PacketKind::Pingresp |
+                PacketKind::Pubcomp |
+                PacketKind::Pubrec |
+                PacketKind::Puback |
+                PacketKind::Unsuback => {
                     info.pkt_type = header.kind;
                     info.version = self.version;
                     self.msg_type = LogMessageType::Response;
                     info.res_msg_size = Some(header.remaining_length as u32);
-                }
+                },
                 PacketKind::Disconnect => {
                     info.pkt_type = header.kind;
                     self.msg_type = LogMessageType::Session;
                     info.res_msg_size = Some(header.remaining_length as u32);
                     info.version = self.version;
-                }
+                },
             }
 
             info.status = self.status;
@@ -682,10 +676,10 @@ fn mqtt_packet_kind(input: &[u8]) -> IResult<&[u8], PacketKind> {
                         input,
                         error::ErrorKind::MapRes,
                     )));
-                }
+                },
             };
             (input, PacketKind::Publish { qos, dup, retain })
-        }
+        },
         (4, 0b0000) => (input, PacketKind::Puback),
         (5, 0b0000) => (input, PacketKind::Pubrec),
         (6, 0b0010) => (input, PacketKind::Pubrel),
@@ -706,7 +700,7 @@ fn mqtt_packet_kind(input: &[u8]) -> IResult<&[u8], PacketKind> {
                 input,
                 error::ErrorKind::MapRes,
             )));
-        }
+        },
     };
 
     Ok((input, kind))
@@ -874,8 +868,8 @@ fn mqtt_subscription_ack(input: &[u8]) -> IResult<&[u8], SubscriptionAck> {
                 return Err(nom::Err::Error(error::Error::new(
                     input,
                     error::ErrorKind::MapRes,
-                )))
-            }
+                )));
+            },
         },
     ))
 }
@@ -903,18 +897,13 @@ fn mqtt_unsubscription_requests(input: &[u8]) -> IResult<&[u8], Vec<&str>> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::path::Path;
-    use std::{fs, rc::Rc};
-
     use super::*;
-
-    use crate::common::l7_protocol_log::L7PerfCache;
-    use crate::flow_generator::L7_RRT_CACHE_CAPACITY;
     use crate::{
-        common::{flow::PacketDirection, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
+        flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/mqtt";
 
@@ -1107,7 +1096,7 @@ mod tests {
                 let data = bytes::complete::take(header.remaining_length as u32);
                 let (_, packet) = data.and_then(parse_connect_packet).parse(input).unwrap();
                 assert_eq!(packet, (4, "HELLO"));
-            }
+            },
             _ => (),
         }
     }

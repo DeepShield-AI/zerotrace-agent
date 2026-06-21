@@ -17,16 +17,14 @@
 #[cfg(test)]
 mod test;
 
-use std::ffi::CStr;
-use std::ffi::CString;
-use std::sync::atomic::AtomicU64;
-
+use super::c_ffi::{CHECK_PAYLOAD_FUNC_SYM, INIT_FUNC_SYM, PARSE_PAYLOAD_FUNC_SYM, SoPluginFunc};
 use libc::c_void;
 use md5::{Digest, Md5};
 use public::counter::{CounterType, CounterValue, RefCountable};
-
-use super::c_ffi::SoPluginFunc;
-use super::c_ffi::{CHECK_PAYLOAD_FUNC_SYM, INIT_FUNC_SYM, PARSE_PAYLOAD_FUNC_SYM};
+use std::{
+    ffi::{CStr, CString},
+    sync::atomic::AtomicU64,
+};
 
 pub fn load_plugin(plugin: &[u8], name: &String) -> Result<SoPluginFunc, String> {
     let file_name = CString::new(name.as_bytes()).unwrap();
@@ -50,10 +48,7 @@ pub fn load_plugin(plugin: &[u8], name: &String) -> Result<SoPluginFunc, String>
         let handle = libc::dlopen(fd_path.as_ptr(), libc::RTLD_LOCAL | libc::RTLD_LAZY);
         if handle.is_null() {
             libc::close(fd);
-            return Err(CStr::from_ptr(libc::dlerror())
-                .to_str()
-                .unwrap()
-                .to_string());
+            return Err(CStr::from_ptr(libc::dlerror()).to_str().unwrap().to_string());
         }
 
         let get_func = |sym: &str| {
@@ -61,10 +56,7 @@ pub fn load_plugin(plugin: &[u8], name: &String) -> Result<SoPluginFunc, String>
             let func = libc::dlsym(handle, func_sym.as_ptr());
             if func.is_null() {
                 libc::close(fd);
-                Err(CStr::from_ptr(libc::dlerror())
-                    .to_str()
-                    .unwrap()
-                    .to_string())
+                Err(CStr::from_ptr(libc::dlerror()).to_str().unwrap().to_string())
             } else {
                 Ok(func)
             }
@@ -109,8 +101,7 @@ impl RefCountable for SoPluginCounter {
                 "execute_duration",
                 CounterType::Gauged,
                 CounterValue::Unsigned(
-                    self.exe_duration
-                        .swap(0, std::sync::atomic::Ordering::Relaxed),
+                    self.exe_duration.swap(0, std::sync::atomic::Ordering::Relaxed),
                 ),
             ),
             (

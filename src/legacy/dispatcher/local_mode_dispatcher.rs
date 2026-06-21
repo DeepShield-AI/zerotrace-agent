@@ -14,47 +14,46 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, HashSet};
-use std::mem::drop;
-use std::process::Command;
-use std::str;
-use std::sync::atomic::Ordering;
-#[cfg(target_os = "linux")]
-use std::sync::Arc;
-use std::time::Duration;
-
-use arc_swap::access::Access;
-use log::{debug, info, log_enabled, warn};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::{
-    sched::{sched_setaffinity, CpuSet},
-    unistd::Pid,
-};
-use regex::Regex;
-
 use super::{
+    TunnelTypeBitmap,
     base_dispatcher::{BaseDispatcher, BaseDispatcherListener, InternalState},
     error::Result,
-    TunnelTypeBitmap,
 };
-
 #[cfg(target_os = "linux")]
 use crate::platform::{GenericPoller, LibvirtXmlExtractor, Poller};
 use crate::{
     common::{
+        FIELD_OFFSET_ETH_TYPE, MAC_ADDR_LEN, MetaPacket, TapPort, VLAN_HEADER_SIZE,
         decapsulate::TunnelType,
         enums::{CaptureNetworkType, EthernetType},
-        MetaPacket, TapPort, FIELD_OFFSET_ETH_TYPE, MAC_ADDR_LEN, VLAN_HEADER_SIZE,
     },
     config::DispatcherConfig,
-    flow_generator::{flow_map::Config, FlowMap},
+    flow_generator::{FlowMap, flow_map::Config},
     handler::MiniPacket,
     rpc::get_timestamp,
     utils::bytes::read_u16_be,
 };
+use arc_swap::access::Access;
+use log::{debug, info, log_enabled, warn};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::{
+    sched::{CpuSet, sched_setaffinity},
+    unistd::Pid,
+};
 use public::{
     proto::agent::{AgentType, IfMacSource},
     utils::net::{Link, MacAddr},
+};
+use regex::Regex;
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    mem::drop,
+    process::Command,
+    str,
+    sync::atomic::Ordering,
+    time::Duration,
 };
 
 pub(super) struct LocalModeDispatcher {
@@ -113,9 +112,9 @@ impl LocalModeDispatcher {
         let src_local =
             mac_low == &data[MAC_ADDR_LEN + Self::VALID_MAC_INDEX..MAC_ADDR_LEN + MAC_ADDR_LEN];
         // dst mac
-        let dst_local = !src_local
-            && (mac_low == &data[Self::VALID_MAC_INDEX..MAC_ADDR_LEN]
-                || MacAddr::is_multicast(&data[..]));
+        let dst_local = !src_local &&
+            (mac_low == &data[Self::VALID_MAC_INDEX..MAC_ADDR_LEN] ||
+                MacAddr::is_multicast(&data[..]));
 
         // LOCAL模式L2END使用underlay网络的MAC地址，实际流量解析使用overlay
 
@@ -133,7 +132,7 @@ impl LocalModeDispatcher {
                 is.counter.invalid_packets.fetch_add(1, Ordering::Relaxed);
                 warn!("decap_tunnel failed: {:?}", e);
                 return None;
-            }
+            },
         };
         let overlay_packet = &data[decap_length..];
         let mut meta_packet = MetaPacket::empty();
@@ -151,14 +150,12 @@ impl LocalModeDispatcher {
         }
 
         is.counter.rx.fetch_add(1, Ordering::Relaxed);
-        is.counter
-            .rx_bytes
-            .fetch_add(capture_length, Ordering::Relaxed);
+        is.counter.rx_bytes.fetch_add(capture_length, Ordering::Relaxed);
 
         if is.tunnel_info.tunnel_type != TunnelType::None {
             meta_packet.tunnel = Some(is.tunnel_info);
-            if is.tunnel_info.tunnel_type == TunnelType::TencentGre
-                || is.tunnel_info.tunnel_type == TunnelType::Vxlan
+            if is.tunnel_info.tunnel_type == TunnelType::TencentGre ||
+                is.tunnel_info.tunnel_type == TunnelType::Vxlan
             {
                 // 腾讯TCE、青云私有云需要通过TunnelID查询云平台信息
                 // 这里只需要考虑单层隧道封装的情况
@@ -167,8 +164,8 @@ impl LocalModeDispatcher {
             }
         } else {
             // 无隧道并且MAC地址都是0一定是loopback流量
-            if meta_packet.lookup_key.src_mac == MacAddr::ZERO
-                && meta_packet.lookup_key.dst_mac == MacAddr::ZERO
+            if meta_packet.lookup_key.src_mac == MacAddr::ZERO &&
+                meta_packet.lookup_key.dst_mac == MacAddr::ZERO
             {
                 meta_packet.lookup_key.l2_end_0 = true;
                 meta_packet.lookup_key.l2_end_1 = true;
@@ -289,10 +286,7 @@ impl LocalModeDispatcher {
                     base.tap_interface_whitelist.add(packet.if_index as usize);
                 }
             }
-            if base
-                .tap_interface_whitelist
-                .next_sync(meta_packet.lookup_key.timestamp.into())
-            {
+            if base.tap_interface_whitelist.next_sync(meta_packet.lookup_key.timestamp.into()) {
                 base.need_update_bpf.store(true, Ordering::Relaxed);
             }
             drop(packet);
@@ -406,10 +400,7 @@ impl LocalModeDispatcherListener {
         let mut interfaces = interfaces.to_vec();
         // interfaces为实际TAP口的集合，macs为TAP口对应主机的MAC地址集合
         interfaces.sort_by_key(|link| link.if_index);
-        let keys = interfaces
-            .iter()
-            .map(|link| link.if_index as u64)
-            .collect::<Vec<_>>();
+        let keys = interfaces.iter().map(|link| link.if_index as u64).collect::<Vec<_>>();
         let macs = self.get_mapped_macs(
             &interfaces,
             if_mac_source,
@@ -457,7 +448,7 @@ impl LocalModeDispatcherListener {
                         mac = octets.into();
                     }
                     mac
-                }
+                },
                 IfMacSource::IfName => {
                     let new_mac = self.rewriter.regenerate_mac(iface);
                     if log_enabled!(log::Level::Debug) && new_mac != iface.mac_addr {
@@ -467,11 +458,10 @@ impl LocalModeDispatcherListener {
                         );
                     }
                     new_mac
-                }
+                },
                 #[cfg(target_os = "linux")]
-                IfMacSource::IfLibvirtXml => {
-                    *name_to_mac_map.get(&iface.name).unwrap_or(&iface.mac_addr)
-                }
+                IfMacSource::IfLibvirtXml =>
+                    *name_to_mac_map.get(&iface.name).unwrap_or(&iface.mac_addr),
                 #[cfg(any(target_os = "windows", target_os = "android"))]
                 IfMacSource::IfLibvirtXml => MacAddr::ZERO,
             });
@@ -540,7 +530,7 @@ impl LocalModeDispatcherListener {
                         result.insert(link.if_index, link.mac_addr);
                     }
                 }
-            }
+            },
             Err(e) => warn!("failed getting link list: {:?}", e),
         }
 
@@ -563,7 +553,7 @@ impl LocalModeDispatcherListener {
                     debug!("\tif_index: {}, mac: {}, mapped", entry.tap_idx, entry.mac);
                     result.insert(entry.tap_idx, entry.mac);
                 }
-            }
+            },
             _ => return result,
         }
 
@@ -581,7 +571,7 @@ impl LocalModeDispatcherListener {
                         result.insert(link.if_index, link.mac_addr);
                     }
                 }
-            }
+            },
             Err(e) => warn!("failed getting link list: {:?}", e),
         }
 
@@ -627,8 +617,7 @@ impl MacRewriter {
             // safe unwrap because string matched
             MacAddr::try_from(u64::from_str_radix(&ifname[..8], 16).unwrap()).unwrap()
         } else if self.qing_cloud_sriov_regex.is_match(ifname) {
-            self.get_mac_by_bridge_fdb(interface)
-                .unwrap_or(interface.mac_addr)
+            self.get_mac_by_bridge_fdb(interface).unwrap_or(interface.mac_addr)
         } else if self.tce_cloud_dpdk_regex.is_match(ifname) {
             let first = u8::from_str_radix(&ifname[5..7], 16).unwrap();
             let second = u8::from_str_radix(&ifname[7..9], 16).unwrap();
@@ -640,16 +629,14 @@ impl MacRewriter {
     }
 
     fn get_mac_by_bridge_fdb(&self, interface: &Link) -> Option<MacAddr> {
-        let output = match Command::new("bridge")
-            .args(["fdb", "show", "dev", &interface.name])
-            .output()
-        {
-            Ok(output) => output.stdout,
-            Err(e) => {
-                warn!("bridge command failed: {}", e);
-                return None;
-            }
-        };
+        let output =
+            match Command::new("bridge").args(["fdb", "show", "dev", &interface.name]).output() {
+                Ok(output) => output.stdout,
+                Err(e) => {
+                    warn!("bridge command failed: {}", e);
+                    return None;
+                },
+            };
         for line in output.split(|x| *x == b'\n') {
             let mut iter = line.split(|x| *x == b' ');
             if let Some(part) = iter.next() {
@@ -660,7 +647,7 @@ impl MacRewriter {
                         Err(e) => {
                             warn!("{:?}", e);
                             None
-                        }
+                        },
                     };
                 }
             }

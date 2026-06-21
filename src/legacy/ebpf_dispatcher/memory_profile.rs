@@ -14,38 +14,7 @@
 * limitations under the License.
 */
 
-use std::{
-    cell::RefCell,
-    collections::{hash_map, HashMap, HashSet},
-    ffi::CStr,
-    num::NonZeroUsize,
-    ptr::NonNull,
-    rc::Rc,
-    slice,
-    sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-        Arc, Weak,
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, SystemTime},
-    vec,
-};
-
-use arc_swap::access::Access;
-use log::{debug, info, warn};
-use lru::LruCache;
-use procfs::process::Process;
-use sysinfo::{ProcessExt, SystemExt};
-
-use public::{
-    counter::{Counter, OwnedCountable, RefCountable},
-    debug::QueueDebugger,
-    proto::metric,
-    queue::{self, bounded_with_debug, BufferedSender, DebugSender, Receiver, StatsHandle},
-};
-
 use super::string_from_null_terminated_c_str;
-
 use crate::{
     config::{config::EbpfProfileMemory, handler::EbpfAccess},
     ebpf,
@@ -53,6 +22,33 @@ use crate::{
     policy::PolicyGetter,
     utils::stats::{self, Countable},
 };
+use arc_swap::access::Access;
+use log::{debug, info, warn};
+use lru::LruCache;
+use procfs::process::Process;
+use public::{
+    counter::{Counter, OwnedCountable, RefCountable},
+    debug::QueueDebugger,
+    proto::metric,
+    queue::{self, BufferedSender, DebugSender, Receiver, StatsHandle, bounded_with_debug},
+};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, hash_map},
+    ffi::CStr,
+    num::NonZeroUsize,
+    ptr::NonNull,
+    rc::Rc,
+    slice,
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, SystemTime},
+    vec,
+};
+use sysinfo::{ProcessExt, SystemExt};
 
 const ADDRESS_LRU_LEN_MIN: usize = 1024;
 const ADDRESS_LRU_LEN_MAX: usize = 4194704;
@@ -120,11 +116,11 @@ impl Processor {
             hash_map::Entry::Occupied(mut entry) => {
                 let mut borrowed = entry.get_mut().borrow_mut();
                 borrowed.as_mut().count += profile.count;
-            }
+            },
             hash_map::Entry::Vacant(entry) => {
                 std::mem::drop(borrowed);
                 entry.insert(data);
-            }
+            },
         }
     }
 
@@ -164,8 +160,7 @@ impl Processor {
             Self::update_frees(&mut self.in_use, pid, stack_id, size);
         }
 
-        self.allocated_addrs
-            .resize(NonZeroUsize::new(lru_len).unwrap());
+        self.allocated_addrs.resize(NonZeroUsize::new(lru_len).unwrap());
     }
 
     pub fn process(&mut self, data: vec::Drain<Data>) {
@@ -189,13 +184,10 @@ impl Processor {
                     Self::update_frees(&mut self.in_use, profile.pid, stack_id, size);
                 } else {
                     // lru overflow may also cause this
-                    self.counter
-                        .free_without_alloc
-                        .fetch_add(1, Ordering::Relaxed);
+                    self.counter.free_without_alloc.fetch_add(1, Ordering::Relaxed);
                     // also reduces initial memory estimation
-                    self.initial_memory = self
-                        .initial_memory
-                        .saturating_sub((profile.count as i64).abs() as u64);
+                    self.initial_memory =
+                        self.initial_memory.saturating_sub((profile.count as i64).abs() as u64);
                 }
             } else {
                 // data will reside in both allocs and in_use hashmaps
@@ -221,9 +213,7 @@ impl Processor {
                     // alloc entry replaced, remove the old from self.in_use
                     if old_key == addr_key {
                         // consecutive allocs on same address
-                        self.counter
-                            .alloc_without_free
-                            .fetch_add(1, Ordering::Relaxed);
+                        self.counter.alloc_without_free.fetch_add(1, Ordering::Relaxed);
                     } else {
                         // LRU full
                         self.counter.lru_overflow.fetch_add(1, Ordering::Relaxed);
@@ -345,11 +335,11 @@ impl Interior {
                     Ok(compressed_data) => {
                         profile.data_compressed = true;
                         profile.data = compressed_data;
-                    }
+                    },
                     Err(e) => {
                         profile.data = stack.to_vec();
                         debug!("failed to compress ebpf profile: {:?}", e);
-                    }
+                    },
                 }
             } else {
                 profile.data = stack.to_vec();
@@ -376,8 +366,8 @@ impl Interior {
         }
         self.last_report = timestamp;
 
-        let doc_timestamp = (timestamp.as_nanos() as i64 - config.report_interval.as_nanos() as i64
-            + self.time_diff.load(Ordering::Relaxed)) as u64;
+        let doc_timestamp = (timestamp.as_nanos() as i64 - config.report_interval.as_nanos() as i64 +
+            self.time_diff.load(Ordering::Relaxed)) as u64;
 
         for (_, data) in processor.allocs.drain() {
             let data_ref = data.borrow();
@@ -406,14 +396,14 @@ impl Interior {
             match process_addrs_and_stime.entry(key.pid) {
                 hash_map::Entry::Occupied(mut entry) => {
                     entry.get_mut().0.push(key.mem_addr);
-                }
+                },
                 hash_map::Entry::Vacant(entry) => {
                     let stime = Self::process_stime_millis(key.pid);
                     if stime.is_none() {
                         dead_pids.insert(key.pid);
                     }
                     entry.insert((vec![key.mem_addr], stime));
-                }
+                },
             }
         }
 
@@ -426,15 +416,13 @@ impl Interior {
 
             match process_addrs_and_stime.get(pid) {
                 Some((_, Some(stime)))
-                    if (*stime as i64 - data.stime as i64).abs()
-                        < Self::PROCESS_RESTART_THRESHOLD.as_nanos() as i64 =>
-                {
-                    ()
-                }
+                    if (*stime as i64 - data.stime as i64).abs() <
+                        Self::PROCESS_RESTART_THRESHOLD.as_nanos() as i64 =>
+                    (),
                 _ => {
                     dead_pids.insert(*pid);
                     return false;
-                }
+                },
             }
 
             let flags = data.flags;
@@ -514,15 +502,12 @@ impl Interior {
 
         while self.running.load(Ordering::Relaxed) {
             let mut ts_nanos: Option<u64> = None;
-            match self
-                .input
-                .recv_all(&mut batch, Some(Self::QUEUE_RECV_TIMEOUT))
-            {
+            match self.input.recv_all(&mut batch, Some(Self::QUEUE_RECV_TIMEOUT)) {
                 Ok(_) => {
                     cache.append(&mut batch);
                     cache.sort_unstable_by_key(|it| it.as_ref().timestamp);
                     ts_nanos = cache.last().map(|it| it.as_ref().timestamp);
-                }
+                },
                 Err(queue::Error::Timeout) => (),
                 Err(queue::Error::Terminated(_, _)) => self.running.store(false, Ordering::Relaxed),
                 Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
@@ -536,9 +521,7 @@ impl Interior {
             // otherwise use current time
             let now = match ts_nanos {
                 Some(ts) => Duration::from_nanos(ts),
-                None => SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap(),
+                None => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap(),
             };
             let ts_nanos = now.as_nanos() as u64;
             let dequeue_before =
@@ -550,9 +533,7 @@ impl Interior {
                 .dequeued_by_interval
                 .fetch_add(interval_dequeue_idx as u64, Ordering::Relaxed);
             // length limit
-            let length_dequeue_idx = cache
-                .len()
-                .saturating_sub(memory_config.sort_length as usize);
+            let length_dequeue_idx = cache.len().saturating_sub(memory_config.sort_length as usize);
             self.counter
                 .dequeued_by_length
                 .fetch_add(length_dequeue_idx as u64, Ordering::Relaxed);
@@ -667,8 +648,7 @@ impl MemoryProfiler {
         }
 
         info!("stopping memory profiler");
-        self.inner_recv
-            .replace(self.thread_handle.take().unwrap().join().unwrap());
+        self.inner_recv.replace(self.thread_handle.take().unwrap().join().unwrap());
         info!("stopped memory profiler");
     }
 }

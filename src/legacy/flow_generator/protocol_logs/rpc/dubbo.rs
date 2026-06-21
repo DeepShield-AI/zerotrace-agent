@@ -17,13 +17,6 @@
 mod consts;
 mod hessian2;
 
-use std::{borrow::Cow, mem::replace};
-
-use serde::Serialize;
-
-use public::l7_protocol::{Field, FieldSetter, L7Log, L7LogAttribute, LogMessageType};
-use public_derive::L7Log;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -36,19 +29,23 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, CUSTOM_FIELD_POLICY_PRIORITY, L7ResponseStatus,
+            PLUGIN_FIELD_PRIORITY, PrioField, PrioFields,
             consts::*,
             pb_adapter::{
                 ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, MetricKeyVal,
                 TraceInfo,
             },
-            set_captured_byte, swap_if, value_is_default, value_is_negative, AppProtoHead,
-            L7ResponseStatus, PrioField, PrioFields, BASE_FIELD_PRIORITY,
-            CUSTOM_FIELD_POLICY_PRIORITY, PLUGIN_FIELD_PRIORITY,
+            set_captured_byte, swap_if, value_is_default, value_is_negative,
         },
     },
-    plugin::{wasm::WasmData, CustomInfo},
+    plugin::{CustomInfo, wasm::WasmData},
     utils::bytes::{read_u32_be, read_u64_be},
 };
+use public::l7_protocol::{Field, FieldSetter, L7Log, L7LogAttribute, LogMessageType};
+use public_derive::L7Log;
+use serde::Serialize;
+use std::{borrow::Cow, mem::replace};
 
 cfg_if::cfg_if! {
 if #[cfg(feature = "enterprise")] {
@@ -252,8 +249,7 @@ impl DubboInfo {
                 val: id.to_string(),
             });
         }
-        self.trace_ids
-            .merge_field(BASE_FIELD_PRIORITY, id.to_string());
+        self.trace_ids.merge_field(BASE_FIELD_PRIORITY, id.to_string());
     }
 
     fn set_span_id(&mut self, span_id: String, trace_type: &TraceType) {
@@ -327,11 +323,10 @@ impl DubboInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::Dubbo) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.service_name)
-                || t.request_type.is_on_blacklist(&self.method_name)
-                || t.request_domain.is_on_blacklist(&self.service_name)
-                || self
-                    .endpoint
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.service_name) ||
+                t.request_type.is_on_blacklist(&self.method_name) ||
+                t.request_domain.is_on_blacklist(&self.service_name) ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -347,7 +342,7 @@ impl DubboInfo {
         match trace_id {
             Field::Str(s) => {
                 self.trace_ids.merge_field(prio, s.into_owned());
-            }
+            },
             _ => return,
         }
     }
@@ -613,10 +608,9 @@ impl L7ProtocolParserInterface for DubboLog {
 }
 
 mod kryo {
-    use nom::FindSubstring;
-
     use super::DubboInfo;
     use crate::config::handler::{L7LogDynamicConfig, TraceType};
+    use nom::FindSubstring;
 
     fn decode_ascii_string(payload: &[u8], start: usize) -> Option<(String, usize)> {
         if start >= payload.len() {
@@ -635,9 +629,8 @@ mod kryo {
 
     fn lookup_str(payload: &[u8], trace_type: &TraceType) -> Option<String> {
         let tag = match trace_type {
-            TraceType::Sw3 | TraceType::Sw8 | TraceType::CloudWise | TraceType::Customize(_) => {
-                trace_type.as_str()
-            }
+            TraceType::Sw3 | TraceType::Sw8 | TraceType::CloudWise | TraceType::Customize(_) =>
+                trace_type.as_str(),
             _ => return None,
         };
         if tag.len() <= 1 {
@@ -735,11 +728,12 @@ mod kryo {
 }
 
 mod fastjson2 {
-    use nom::FindSubstring;
-
     use super::DubboInfo;
-    use crate::config::handler::{L7LogDynamicConfig, TraceType};
-    use crate::utils::bytes::read_u32_be;
+    use crate::{
+        config::handler::{L7LogDynamicConfig, TraceType},
+        utils::bytes::read_u32_be,
+    };
+    use nom::FindSubstring;
 
     const ASCII_HEADER_SIZE: usize = 4;
 
@@ -845,9 +839,8 @@ mod fastjson2 {
 
     fn lookup_str(payload: &[u8], trace_type: &TraceType) -> Option<String> {
         let tag = match trace_type {
-            TraceType::Sw3 | TraceType::Sw8 | TraceType::CloudWise | TraceType::Customize(_) => {
-                trace_type.as_str()
-            }
+            TraceType::Sw3 | TraceType::Sw8 | TraceType::CloudWise | TraceType::Customize(_) =>
+                trace_type.as_str(),
             _ => return None,
         };
         if tag.len() <= 1 {
@@ -955,7 +948,7 @@ impl DubboLog {
             KRYO_SERIALIZATION2_ID => kryo::get_req_body_info(config, payload, info),
             KRYO_SERIALIZATION_ID => kryo::get_req_body_info(config, payload, info),
             FASTJSON2_SERIALIZATION_ID => fastjson2::get_req_body_info(config, payload, info),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -1011,7 +1004,7 @@ impl DubboLog {
                 #[cfg(feature = "enterprise")]
                 cf_ctx,
             ),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -1068,7 +1061,7 @@ impl DubboLog {
                     #[cfg(feature = "enterprise")]
                     custom_policies,
                 );
-            }
+            },
             PacketDirection::ServerToClient => {
                 self.response(
                     &config,
@@ -1079,7 +1072,7 @@ impl DubboLog {
                     #[cfg(feature = "enterprise")]
                     custom_policies,
                 );
-            }
+            },
         }
         Ok(())
     }
@@ -1109,13 +1102,12 @@ impl DubboLog {
                 Op::RewriteNativeTag(tag, value) => {
                     match tag {
                         // request_resource priority greater than request_type
-                        NativeTag::RequestType => {
+                        NativeTag::RequestType =>
                             if info.method_name.is_empty() {
                                 info.method_name = value.to_string();
-                            }
-                        }
+                            },
                         // trace info
-                        NativeTag::SpanId => {
+                        NativeTag::SpanId =>
                             if CUSTOM_FIELD_POLICY_PRIORITY < info.span_id.prio() {
                                 let old = std::mem::replace(
                                     &mut info.span_id,
@@ -1127,17 +1119,16 @@ impl DubboLog {
                                         val: old.into_inner(),
                                     });
                                 }
-                            }
-                        }
+                            },
                         _ => auto_merge_custom_field(op, info),
                     }
-                }
+                },
                 Op::AddMetric(key, value) => {
                     info.metrics.push(MetricKeyVal {
                         key: key.to_string(),
                         val: *value,
                     });
-                }
+                },
                 // not supported
                 Op::SaveHeader(_) | Op::SavePayload(_) => (),
                 _ => auto_merge_custom_field(op, info),
@@ -1201,21 +1192,14 @@ impl DubboHeader {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::fmt;
-    use std::path::Path;
-    use std::time::Duration;
-    use std::{fs, rc::Rc};
-
     use super::*;
-
-    use crate::common::l7_protocol_log::L7PerfCache;
-    use crate::config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType};
-    use crate::flow_generator::L7_RRT_CACHE_CAPACITY;
     use crate::{
-        common::{flow::PacketDirection, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
+        config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
+        flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fmt, fs, path::Path, rc::Rc, time::Duration};
 
     const FILE_DIR: &str = "resources/test/flow_generator/dubbo";
 

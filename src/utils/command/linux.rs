@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
+use super::exec_command;
+use nix::sched::{CloneFlags, setns};
 use std::{
     fs::{self, File},
     io::{Error, ErrorKind, Result},
     os::unix::io::AsRawFd,
     path::Path,
 };
-
-use nix::sched::{setns, CloneFlags};
-
-use super::exec_command;
 
 const OVS_INTERFACE_COLUMNS_OPTION: &str = "--columns=_uuid,external_ids,ifindex,mac,mac_in_use,name,ofport,options,other_config,status,type";
 const NEUTRON_OPENVSWITCH_AGENT: &str = "/usr/lib/systemd/system/neutron-openvswitch-agent.service";
@@ -190,7 +188,7 @@ pub fn get_hostname() -> Result<String> {
     match (fs::read_link(origin_path), fs::read_link(root_path)) {
         (Ok(origin_link), Ok(root_link)) if origin_link == root_link => {
             return hostname();
-        }
+        },
         _ => (),
     }
 

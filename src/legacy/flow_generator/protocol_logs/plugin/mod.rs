@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-use enum_dispatch::enum_dispatch;
-use public::l7_protocol::{CustomProtocol, L7Protocol, L7ProtocolEnum, LogMessageType};
-use wasm::WasmLog;
-
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use self::shared_obj::{SoLog, get_so_parser};
+use self::{custom_wrap::CustomWrapLog, wasm::get_wasm_parser};
 use crate::{
     common::{
         flow::L7PerfStats,
         l7_protocol_log::{L7ParseResult, L7ProtocolParser, L7ProtocolParserInterface, ParseParam},
     },
-    flow_generator::{protocol_logs::sql::ObfuscateCache, Result},
+    flow_generator::{Result, protocol_logs::sql::ObfuscateCache},
 };
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use self::shared_obj::{get_so_parser, SoLog};
-use self::{custom_wrap::CustomWrapLog, wasm::get_wasm_parser};
+use enum_dispatch::enum_dispatch;
+use public::l7_protocol::{CustomProtocol, L7Protocol, L7ProtocolEnum, LogMessageType};
+use wasm::WasmLog;
 
 pub mod custom_wrap;
 #[cfg(any(target_os = "linux", target_os = "android"))]

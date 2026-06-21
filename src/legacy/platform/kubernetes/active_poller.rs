@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
+use super::Poller;
+use log::{debug, info, warn};
+use public::netns::{self, InterfaceInfo, NsFile};
+use regex::Regex;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc, Condvar, Mutex,
+        atomic::{AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
-
-use log::{debug, info, warn};
-use regex::Regex;
-
-use super::Poller;
-use public::netns::{self, InterfaceInfo, NsFile};
 
 const ENTRY_EXPIRE_COUNT: u8 = 3;
 
@@ -235,12 +233,12 @@ impl NsEntry {
                         changed = true;
                     }
                     old_info.1 = 0;
-                }
+                },
                 Err(insert_idx) => {
                     debug!("interface {:?} added", info);
                     self.info.insert(insert_idx, (info, 0));
                     changed = true;
-                }
+                },
             }
         }
         changed
@@ -286,9 +284,7 @@ impl InterfaceInfoStore {
         if self.m.len() != new_map.len() {
             return false;
         }
-        self.m
-            .iter()
-            .all(|(ns, entry)| new_map.get(ns).map_or(false, |v| *entry == *v))
+        self.m.iter().all(|(ns, entry)| new_map.get(ns).map_or(false, |v| *entry == *v))
     }
 
     // returns true if updated

@@ -14,6 +14,22 @@
  * limitations under the License.
  */
 
+use super::querier::Querier;
+use crate::{
+    config::handler::PlatformAccess, exception::ExceptionHandler, rpc::Session, trident::AgentId,
+};
+#[cfg(target_os = "linux")]
+use crate::{
+    platform::{
+        LibvirtXmlExtractor, kubernetes::GenericPoller,
+        platform_synchronizer::linux_process::set_proc_scan_process_datas,
+    },
+    utils::process::ProcessListener,
+};
+use arc_swap::access::Access;
+use log::{debug, error, info, trace};
+use parking_lot::RwLock;
+use public::proto::agent::{self, Exception};
 #[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
@@ -22,28 +38,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, SystemTime},
 };
-
-use arc_swap::access::Access;
-use log::{debug, error, info, trace};
-use parking_lot::RwLock;
-
 use tokio::runtime::Runtime;
-
-use crate::{
-    config::handler::PlatformAccess, exception::ExceptionHandler, rpc::Session, trident::AgentId,
-};
-#[cfg(target_os = "linux")]
-use crate::{
-    platform::{
-        kubernetes::GenericPoller,
-        platform_synchronizer::linux_process::set_proc_scan_process_datas, LibvirtXmlExtractor,
-    },
-    utils::process::ProcessListener,
-};
-
-use public::proto::agent::{self, Exception};
-
-use super::querier::Querier;
 
 struct Interior {
     running: Arc<Mutex<bool>>,
@@ -136,8 +131,7 @@ impl Synchronizer {
     pub fn set_kubernetes_poller(&self, poller: Arc<GenericPoller>) {
         info!("updating kubernetes poller");
         self.kubernetes_poller.lock().unwrap().replace(poller);
-        self.kubernetes_poller_updated
-            .store(true, Ordering::Release);
+        self.kubernetes_poller_updated.store(true, Ordering::Release);
     }
 
     pub fn is_running(&self) -> bool {
@@ -203,10 +197,7 @@ impl Synchronizer {
             #[cfg(target_os = "linux")]
             xml_extractor: self.xml_extractor.clone(),
 
-            version: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            version: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
             peer_version: 0,
             digest: 0,
         };
@@ -234,10 +225,7 @@ impl Synchronizer {
             let agent_id: agent::AgentId = (&*args.agent_id.read()).into();
 
             #[cfg(target_os = "linux")]
-            if args
-                .kubernetes_poller_updated
-                .swap(false, Ordering::Acquire)
-            {
+            if args.kubernetes_poller_updated.swap(false, Ordering::Acquire) {
                 if let Some(poller) = args.kubernetes_poller.lock().unwrap().clone() {
                     info!("updated kubernetes poller");
                     querier.set_kubernetes_poller(poller);
@@ -281,23 +269,17 @@ impl Synchronizer {
                 if args.version == args.peer_version {
                     debug!("version {} heartbeat to remote", args.version);
                 } else if log::log_enabled!(log::Level::Debug) {
-                    let n_interfaces = msg
-                        .platform_data
-                        .as_ref()
-                        .map(|p| p.interfaces.len())
-                        .unwrap_or(0);
-                    let n_processes = msg
-                        .process_data
-                        .as_ref()
-                        .map(|p| p.process_entries.len())
-                        .unwrap_or(0);
-                    debug!("syncing version {} -> {} to remote with {n_interfaces} interfaces and {n_processes} processes", args.version, args.peer_version);
+                    let n_interfaces =
+                        msg.platform_data.as_ref().map(|p| p.interfaces.len()).unwrap_or(0);
+                    let n_processes =
+                        msg.process_data.as_ref().map(|p| p.process_entries.len()).unwrap_or(0);
+                    debug!(
+                        "syncing version {} -> {} to remote with {n_interfaces} interfaces and {n_processes} processes",
+                        args.version, args.peer_version
+                    );
                 }
                 trace!("genesis_sync request: {msg:?}");
-                match args
-                    .runtime
-                    .block_on(args.session.grpc_genesis_sync_with_statsd(msg))
-                {
+                match args.runtime.block_on(args.session.grpc_genesis_sync_with_statsd(msg)) {
                     Ok(res) => {
                         let res = res.into_inner();
                         args.peer_version = res.version();
@@ -328,7 +310,7 @@ impl Synchronizer {
                             }
                             continue 'outer;
                         }
-                    }
+                    },
                     Err(e) => {
                         args.exception_handler.set(Exception::ControllerSocketError);
                         error!(
@@ -345,7 +327,7 @@ impl Synchronizer {
                             break 'outer;
                         }
                         continue 'outer;
-                    }
+                    },
                 }
             }
         }

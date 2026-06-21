@@ -14,23 +14,24 @@
  * limitations under the License.
  */
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::atomic::AtomicBool;
-use std::sync::{
-    atomic::{AtomicI32, Ordering},
-    Arc, RwLock,
+use super::bit::count_trailing_zeros32;
+use crate::common::{
+    decapsulate::TunnelInfo,
+    endpoint::{EPC_INTERNET, EPC_ZEROTRACE, EndpointData, EndpointInfo},
+    lookup_key::LookupKey,
+    platform_data::{IfType, PlatformData},
+    policy::{Cidr, CidrType, Container, PeerConnection},
 };
-
 use ahash::AHashMap;
 use log::warn;
-
-use super::bit::count_trailing_zeros32;
-use crate::common::decapsulate::TunnelInfo;
-use crate::common::endpoint::{EndpointData, EndpointInfo, EPC_ZEROTRACE, EPC_INTERNET};
-use crate::common::lookup_key::LookupKey;
-use crate::common::platform_data::{IfType, PlatformData};
-use crate::common::policy::{Cidr, CidrType, Container, PeerConnection};
 use public::utils::net::is_unicast_link_local;
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicI32, Ordering},
+    },
+};
 
 const BROADCAST_MAC: u64 = 0xffffffffffff;
 const MULTICAST_MAC: u64 = 0x010000000000;
@@ -70,11 +71,7 @@ impl EpcNetIpKey {
     fn clone_by_masklen(&self, masklen: usize, is_ipv4: bool) -> Self {
         let max_prefix = if is_ipv4 { IPV4_BITS } else { IPV6_BITS };
         let shift = max_prefix.saturating_sub(masklen);
-        let mask = if shift >= 128 {
-            0
-        } else {
-            u128::MAX << shift
-        };
+        let mask = if shift >= 128 { 0 } else { u128::MAX << shift };
 
         Self {
             ip: self.ip & mask,
@@ -128,8 +125,7 @@ fn is_unicast_mac(mac: u64) -> bool {
 impl Labeler {
     pub fn update_local_epc(&mut self, local_epc: i32, running_in_single_epc: bool) {
         self.local_epc.store(local_epc, Ordering::Relaxed);
-        self.running_in_single_epc
-            .store(running_in_single_epc, Ordering::Relaxed);
+        self.running_in_single_epc.store(running_in_single_epc, Ordering::Relaxed);
     }
 
     fn update_mac_table(&mut self, interfaces: &Vec<Arc<PlatformData>>) {
@@ -210,7 +206,7 @@ impl Labeler {
                 } else {
                     None
                 }
-            }
+            },
             IpAddr::V6(ip) => {
                 if let Some(platform) = self.epc_ip_table.read().unwrap().get(&EpcIpKey {
                     ip: u128::from_be_bytes(ip.octets()),
@@ -220,21 +216,15 @@ impl Labeler {
                 } else {
                     None
                 }
-            }
+            },
         }
     }
 
     pub fn update_peer_table(&mut self, peers: &Vec<Arc<PeerConnection>>) {
         let mut peer_table: AHashMap<i32, Vec<i32>> = AHashMap::new();
         for peer in peers {
-            peer_table
-                .entry(peer.local_epc)
-                .or_default()
-                .push(peer.remote_epc);
-            peer_table
-                .entry(peer.remote_epc)
-                .or_default()
-                .push(peer.local_epc);
+            peer_table.entry(peer.local_epc).or_default().push(peer.remote_epc);
+            peer_table.entry(peer.remote_epc).or_default().push(peer.local_epc);
         }
 
         *self.peer_table.write().unwrap() = peer_table;
@@ -285,9 +275,9 @@ impl Labeler {
             let key = EpcNetIpKey::new(&item.ip.network(), item.ip.prefix_len(), epc_id);
 
             if let Some(old) = epc_table.insert(key, item.clone()) {
-                if enabled_invalid_log
-                    && ((item.cidr_type == CidrType::Wan && item.epc_id != old.epc_id)
-                        || item.is_vip != old.is_vip)
+                if enabled_invalid_log &&
+                    ((item.cidr_type == CidrType::Wan && item.epc_id != old.epc_id) ||
+                        item.is_vip != old.is_vip)
                 {
                     invalid_cidr.push(item.ip)
                 }
@@ -305,10 +295,7 @@ impl Labeler {
                 .or_insert((item.netmask_len(), item.netmask_len()));
 
             if item.tunnel_id > 0 {
-                tunnel_table
-                    .entry(item.tunnel_id)
-                    .or_default()
-                    .push(Arc::clone(item));
+                tunnel_table.entry(item.tunnel_id).or_default().push(Arc::clone(item));
             }
         }
 
@@ -319,11 +306,7 @@ impl Labeler {
 
         // 排序使用降序是为了CIDR的最长前缀匹配
         for (_k, v) in &mut tunnel_table.iter_mut() {
-            v.sort_by(|a, b| {
-                b.netmask_len()
-                    .partial_cmp(&Arc::clone(a).netmask_len())
-                    .unwrap()
-            });
+            v.sort_by(|a, b| b.netmask_len().partial_cmp(&Arc::clone(a).netmask_len()).unwrap());
         }
 
         *self.tunnel_cidr_table.write().unwrap() = tunnel_table;
@@ -444,11 +427,10 @@ impl Labeler {
                         }
                         // IPv4-mapped IPv6 addresses are defined in [IETF RFC 4291 Section 2.5.5.2]
                         net_addr | 0xffff_0000_0000
-                    }
-                    IpAddr::V6(ipv6) => {
-                        u128::from_be_bytes(ipv6.octets())
-                            & 0xffffffffffffffff_ffffffffffffffff << (128 - ip.netmask)
-                    }
+                    },
+                    IpAddr::V6(ipv6) =>
+                        u128::from_be_bytes(ipv6.octets()) &
+                            0xffffffffffffffff_ffffffffffffffff << (128 - ip.netmask),
                 };
                 ip_table.insert(net_addr, Arc::clone(interface));
             }
@@ -462,29 +444,23 @@ impl Labeler {
         match ip {
             IpAddr::V4(ipv4) => {
                 let ip_int = u32::from_be_bytes(ipv4.octets());
-                if let Some(netmask) = self
-                    .ip_netmask_table
-                    .read()
-                    .unwrap()
-                    .get(&((ip_int >> 16) as u16))
+                if let Some(netmask) =
+                    self.ip_netmask_table.read().unwrap().get(&((ip_int >> 16) as u16))
                 {
                     let mut netmask_temp = *netmask;
                     while netmask_temp > 0 {
                         let count = count_trailing_zeros32(netmask_temp);
                         netmask_temp ^= 1 << count;
                         let net_addr = (ip_int & (0xffff_ffff << count)) as u128;
-                        if let Some(v) = self
-                            .ip_table
-                            .read()
-                            .unwrap()
-                            .get(&(net_addr | 0xffff_0000_0000))
+                        if let Some(v) =
+                            self.ip_table.read().unwrap().get(&(net_addr | 0xffff_0000_0000))
                         {
                             return Some(v.as_ref().clone());
                         }
                     }
                 }
                 return None;
-            }
+            },
             IpAddr::V6(ipv6) => {
                 let net_addr = u128::from_be_bytes(ipv6.octets());
                 if let Some(v) = self.ip_table.read().unwrap().get(&net_addr) {
@@ -492,7 +468,7 @@ impl Labeler {
                 } else {
                     None
                 }
-            }
+            },
         }
     }
 
@@ -584,10 +560,10 @@ impl Labeler {
         let mut src_data = &mut endpoint.src_info;
         let mut dst_data = &mut endpoint.dst_info;
         if dst_data.l3_epc_id == 0 && src_data.l3_epc_id > 0 {
-            if !is_unicast_mac(u64::from(key.dst_mac))
-                || key.dst_ip.is_loopback()
-                || key.dst_ip.is_multicast()
-                || key.src_ip == key.dst_ip
+            if !is_unicast_mac(u64::from(key.dst_mac)) ||
+                key.dst_ip.is_loopback() ||
+                key.dst_ip.is_multicast() ||
+                key.src_ip == key.dst_ip
             {
                 dst_data.l3_epc_id = src_data.l3_epc_id;
                 dst_data.l2_epc_id = src_data.l2_epc_id;
@@ -846,13 +822,11 @@ impl Labeler {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv6Addr, str::FromStr};
-
-    use ipnet::IpNet;
-
     use super::*;
     use crate::common::platform_data::IpSubnet;
+    use ipnet::IpNet;
     use public::utils::net::MacAddr;
+    use std::{net::Ipv6Addr, str::FromStr};
 
     #[test]
     fn test_mac_normal() {

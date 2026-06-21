@@ -14,26 +14,6 @@
  * limitations under the License.
  */
 
-use std::{
-    cmp,
-    collections::HashSet,
-    ffi::CString,
-    fmt,
-    net::IpAddr,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, SystemTime},
-};
-
-use arc_swap::access::Access;
-use libc::RT_SCOPE_LINK;
-use log::{debug, error, info, log_enabled, warn, Level};
-use pnet::packet::icmpv6::Icmpv6Types;
-use regex::Regex;
-
 use super::Poller;
 use crate::{
     common::{
@@ -43,20 +23,37 @@ use crate::{
     },
     config::handler::PlatformAccess,
     dispatcher::{
-        af_packet::{bpf::*, Options, Tpacket},
+        af_packet::{Options, Tpacket, bpf::*},
         recv_engine::{
-            RecvEngine, DEFAULT_BLOCK_SIZE, FRAME_SIZE_MAX, FRAME_SIZE_MIN, POLL_TIMEOUT,
+            DEFAULT_BLOCK_SIZE, FRAME_SIZE_MAX, FRAME_SIZE_MIN, POLL_TIMEOUT, RecvEngine,
         },
     },
 };
-
+use arc_swap::access::Access;
+use libc::RT_SCOPE_LINK;
+use log::{Level, debug, error, info, log_enabled, warn};
+use pnet::packet::icmpv6::Icmpv6Types;
 use public::{
     bytes::read_u16_be,
     enums::{EthernetType, IpProtocol},
     error::Error,
     netns::{InterfaceInfo, NsFile},
     proto::agent::PacketCaptureType,
-    utils::net::{addr_list, MacAddr},
+    utils::net::{MacAddr, addr_list},
+};
+use regex::Regex;
+use std::{
+    cmp,
+    collections::HashSet,
+    ffi::CString,
+    fmt,
+    net::IpAddr,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, SystemTime},
 };
 
 const LINUX_SLL_PACKET_TYPE_OUT_GONING: u32 = 4;
@@ -229,13 +226,13 @@ impl PassivePoller {
                 };
                 info!("Afpacket init with {afp:?}");
                 RecvEngine::AfPacket(Tpacket::new(afp).unwrap())
-            }
+            },
             _ => {
                 error!(
                     "construct RecvEngine error: PacketCaptureType({capture_mode:?}) not support"
                 );
                 return;
-            }
+            },
         };
         if let Err(e) = engine.set_bpf(Self::get_bpf(), &CString::new("").unwrap()) {
             error!("RecvEngine set bpf error: {e}");
@@ -255,7 +252,7 @@ impl PassivePoller {
                     warn!("capture packet failed: {}", e);
                     thread::sleep(Duration::from_millis(1));
                     continue;
-                }
+                },
             };
             let now = SystemTime::now();
             // 每分钟移除超时的记录
@@ -301,7 +298,7 @@ impl PassivePoller {
                 Err(e) => {
                     debug!("parse packet eth_type failed: {e}");
                     continue;
-                }
+                },
             };
 
             let entry = match eth_type {
@@ -323,7 +320,7 @@ impl PassivePoller {
                             *<&[u8; 4]>::try_from(&packet_data[so..so + IPV4_ADDR_LEN]).unwrap(),
                         ),
                     }
-                }
+                },
                 EthernetType::IPV6 => {
                     if packet_len < IPV6_PROTO_OFFSET + extra_offset + 1 {
                         debug!("ignore short ipv6 packet, size={packet_len}");
@@ -339,9 +336,9 @@ impl PassivePoller {
                         debug!("ignore short icmpv6 packet, size={packet_len}");
                         continue;
                     }
-                    if protocol != IpProtocol::ICMPV6
-                        || packet_data[ICMPV6_TYPE_OFFSET + extra_offset]
-                            != Icmpv6Types::NeighborAdvert.0
+                    if protocol != IpProtocol::ICMPV6 ||
+                        packet_data[ICMPV6_TYPE_OFFSET + extra_offset] !=
+                            Icmpv6Types::NeighborAdvert.0
                     {
                         continue;
                     }
@@ -358,7 +355,7 @@ impl PassivePoller {
                             *<&[u8; 16]>::try_from(&packet_data[so..so + IPV6_ADDR_LEN]).unwrap(),
                         ),
                     }
-                }
+                },
                 _ => continue,
             };
 

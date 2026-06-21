@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{fs, io};
-
 use clap::Parser;
-use tonic::{codec::Streaming, transport::Server, Request, Response, Status};
-
-use zerotrace_agent::config::UserConfig;
 use public::proto::agent::*;
+use std::{
+    fs, io,
+    sync::{Arc, RwLock},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tonic::{Request, Response, Status, codec::Streaming, transport::Server};
+use zerotrace_agent::config::UserConfig;
 
 #[derive(Debug, Default, Clone, PartialEq, clap::ValueEnum)]
 enum Detail {

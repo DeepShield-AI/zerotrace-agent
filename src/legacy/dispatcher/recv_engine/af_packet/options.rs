@@ -15,9 +15,7 @@
  */
 
 use page_size;
-
 pub use public::error::af_packet::{Error, Result};
-
 use public::proto::agent::CaptureSocketType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
@@ -47,9 +45,9 @@ impl From<CaptureSocketType> for OptTpacketVersion {
 
 impl OptTpacketVersion {
     fn invalid(&self) -> bool {
-        if *self < OptTpacketVersion::TpacketVersionHighestavailablet
-            || *self > OptTpacketVersion::TpacketVersion3
-            || *self == OptTpacketVersion::TpacketVersion1
+        if *self < OptTpacketVersion::TpacketVersionHighestavailablet ||
+            *self > OptTpacketVersion::TpacketVersion3 ||
+            *self == OptTpacketVersion::TpacketVersion1
         {
             return true;
         }

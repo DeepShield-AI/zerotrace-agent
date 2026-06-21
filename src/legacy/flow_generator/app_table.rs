@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
+use crate::{
+    common::{
+        L7_PROTOCOL_INFERENCE_MAX_FAIL_COUNT, L7_PROTOCOL_INFERENCE_TTL, flow::PacketDirection,
+        meta_packet::MetaPacket,
+    },
+    config::InferenceWhitelist,
+};
+use lru::LruCache;
+use public::l7_protocol::{L7Protocol, L7ProtocolEnum};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     num::NonZeroUsize,
 };
-
-use lru::LruCache;
-use public::l7_protocol::{L7Protocol, L7ProtocolEnum};
-
-use crate::common::flow::PacketDirection;
-use crate::common::meta_packet::MetaPacket;
-use crate::common::{L7_PROTOCOL_INFERENCE_MAX_FAIL_COUNT, L7_PROTOCOL_INFERENCE_TTL};
-use crate::config::InferenceWhitelist;
 
 #[derive(Eq, Hash, PartialEq)]
 struct AppTable4Key {
@@ -147,8 +148,8 @@ impl AppTable {
             // 如果第一次check就失败会设置为unknown，所以需要加上count判断
             // ====================================================
             // if first check fail will set to unknown, need to add count determine
-            if v.l7_protocol_enum.get_l7_protocol() == L7Protocol::Unknown
-                && v.unknown_count < self.l7_protocol_inference_max_fail_count
+            if v.l7_protocol_enum.get_l7_protocol() == L7Protocol::Unknown &&
+                v.unknown_count < self.l7_protocol_inference_max_fail_count
             {
                 return None;
             } else {
@@ -183,8 +184,8 @@ impl AppTable {
             // 如果第一次check就失败会设置为unknown，所以需要加上count判断
             // ====================================================
             // if first check fail will set to unknown, need to add count determine
-            if v.l7_protocol_enum.get_l7_protocol() == L7Protocol::Unknown
-                && v.unknown_count < self.l7_protocol_inference_max_fail_count
+            if v.l7_protocol_enum.get_l7_protocol() == L7Protocol::Unknown &&
+                v.unknown_count < self.l7_protocol_inference_max_fail_count
             {
                 return None;
             } else {
@@ -258,8 +259,8 @@ impl AppTable {
                 if dst_protocol.get_l7_protocol() != L7Protocol::Unknown {
                     return Some((dst_protocol.clone(), dport, 0, *last));
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         let (ip, _, sport) = Self::get_ip_epc_port(packet, false);
@@ -282,8 +283,8 @@ impl AppTable {
                 if src_protocol.get_l7_protocol() != L7Protocol::Unknown {
                     return Some((src_protocol.clone(), sport, 0, *last));
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         if src_protocol.is_none() && dst_protocol.is_none() {
@@ -456,12 +457,10 @@ impl AppTable {
         };
         let source = packet.ebpf_type.into();
         match ip {
-            IpAddr::V4(i) => {
-                self.set_ipv4_protocol(time_in_sec, i, epc, port, protocol, pid, source)
-            }
-            IpAddr::V6(i) => {
-                self.set_ipv6_protocol(time_in_sec, i, epc, port, protocol, pid, source)
-            }
+            IpAddr::V4(i) =>
+                self.set_ipv4_protocol(time_in_sec, i, epc, port, protocol, pid, source),
+            IpAddr::V6(i) =>
+                self.set_ipv6_protocol(time_in_sec, i, epc, port, protocol, pid, source),
         }
     }
 }

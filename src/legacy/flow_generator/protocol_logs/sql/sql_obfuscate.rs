@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
+use super::{BLANK_SPACE, ObfuscateCache, QUESTION_MARK, forward};
+use public::utils::hash::hash_to_u64;
 use std::{
     cell::OnceCell,
     collections::HashMap,
     iter::{Enumerate, Peekable},
     slice::Iter,
 };
-
-use public::utils::hash::hash_to_u64;
-
-use super::{forward, ObfuscateCache, BLANK_SPACE, QUESTION_MARK};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum Token {
@@ -313,7 +311,7 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
     let mut start = 0;
     while let Some(&(i, ch)) = iteration.peek() {
         let token = match ch {
-            b'/' => {
+            b'/' =>
                 if input[i..].starts_with(b"//") {
                     Token::String(scan_single_line_comment(&mut iteration, length))
                 } else if input[i..].starts_with(b"/*") {
@@ -321,9 +319,8 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::Slash)
-                }
-            }
-            b'-' => {
+                },
+            b'-' =>
                 if input[i..].starts_with(b"->>") {
                     forward(&mut iteration, 3);
                     Token::Operator(Operator::JsonSelectText)
@@ -335,9 +332,8 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::Dash)
-                }
-            }
-            b'#' => {
+                },
+            b'#' =>
                 if input[i..].starts_with(b"#>>") {
                     forward(&mut iteration, 3);
                     Token::Operator(Operator::JsonSelectPathText)
@@ -350,9 +346,8 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::PoundSign)
-                }
-            }
-            b'?' => {
+                },
+            b'?' =>
                 if input[i..].starts_with(b"?|") {
                     forward(&mut iteration, 2);
                     Token::Operator(Operator::JsonAnyKeysExist)
@@ -362,28 +357,25 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::JsonKeyExists)
-                }
-            }
-            b':' => {
+                },
+            b':' =>
                 if input[i..].starts_with(b"::") {
                     forward(&mut iteration, 2);
                     Token::Operator(Operator::ColonCast)
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::Colon)
-                }
-            }
-            b'~' => {
+                },
+            b'~' =>
                 if input[i..].starts_with(b"~*") {
                     forward(&mut iteration, 2);
                     Token::Operator(Operator::Regex)
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::Tilde)
-                }
-            }
+                },
             b'"' | b'\'' => Token::String(scan_quoted_string(&mut iteration, length)),
-            b'<' => {
+            b'<' =>
                 if input[i..].starts_with(b"<=") {
                     forward(&mut iteration, 2);
                     Token::Operator(Operator::Le)
@@ -396,9 +388,8 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::Lt)
-                }
-            }
-            b'!' => {
+                },
+            b'!' =>
                 if input[i..].starts_with(b"!~*") {
                     forward(&mut iteration, 3);
                     Token::Operator(Operator::Ne)
@@ -408,81 +399,78 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::ExclamationMark)
-                }
-            }
-            b'@' => {
+                },
+            b'@' =>
                 if input[i..].starts_with(b"@>") {
                     forward(&mut iteration, 2);
                     Token::Operator(Operator::JsonContains)
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::At)
-                }
-            }
-            b'>' => {
+                },
+            b'>' =>
                 if input[i..].starts_with(b">=") {
                     forward(&mut iteration, 2);
                     Token::Operator(Operator::Ge)
                 } else {
                     forward(&mut iteration, 1);
                     Token::Operator(Operator::Gt)
-                }
-            }
+                },
             b';' | b',' | b'(' | b')' | b'\n' => {
                 forward(&mut iteration, 1);
                 Token::Separator(*ch)
-            }
+            },
             b'+' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Plus)
-            }
+            },
             b'*' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Star)
-            }
+            },
             b'=' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Equals)
-            }
+            },
             b'[' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::LeftSquareBracket)
-            }
+            },
             b']' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::RightSquareBracket)
-            }
+            },
             b'^' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Caret)
-            }
+            },
             b'%' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Percent)
-            }
+            },
             b'|' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Pipe)
-            }
+            },
             b'{' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::LeftCurlyBrace)
-            }
+            },
             b'}' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::RightCurlyBrace)
-            }
+            },
             b'.' => {
                 forward(&mut iteration, 1);
                 Token::Operator(Operator::Dot)
-            }
+            },
             b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'$' => {
                 while let Some(_) = iteration.next_if(|&(_, ch)| {
-                    ch.is_ascii_alphanumeric()
-                        || *ch == b'_'
-                        || *ch == b'.'
-                        || *ch == b'$'
-                        || *ch == b'*'
+                    ch.is_ascii_alphanumeric() ||
+                        *ch == b'_' ||
+                        *ch == b'.' ||
+                        *ch == b'$' ||
+                        *ch == b'*'
                 }) {}
                 let end = if let Some(&(i, _)) = iteration.peek() {
                     i
@@ -492,23 +480,23 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
 
                 if end - start > MAX_KEYWORD_LENGTH {
                     Token::String(end)
-                } else if let Ok(v) = Keyword::try_from(unsafe {
+                } else {
                     // SAFETY:
                     // - input[start..end] have been checked for ascii characters
-                    std::str::from_utf8_unchecked(&input[start..end])
-                        .to_uppercase()
-                        .as_bytes()
-                }) {
-                    Token::Keyword(v)
-                } else {
-                    Token::String(end)
+                    let upper =
+                        unsafe { std::str::from_utf8_unchecked(&input[start..end]) }.to_uppercase();
+                    if let Ok(v) = Keyword::try_from(upper.as_bytes()) {
+                        Token::Keyword(v)
+                    } else {
+                        Token::String(end)
+                    }
                 }
-            }
+            },
             b' ' => {
                 forward(&mut iteration, 1);
                 start = iteration.peek().map(|(idx, _)| *idx).unwrap_or(length);
                 continue;
-            }
+            },
             _ => {
                 if need_obfuscated {
                     output.push(*ch);
@@ -516,16 +504,16 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 forward(&mut iteration, 1);
                 start = iteration.peek().map(|(idx, _)| *idx).unwrap_or(length);
                 continue;
-            }
+            },
         };
 
-        if matches!(token, Token::Operator(_))
-            || token == Token::Keyword(Keyword::In)
-            || token == Token::Keyword(Keyword::Values)
-            || token == Token::Keyword(Keyword::Is)
-            || token == Token::Keyword(Keyword::Like)
-            || token == Token::Keyword(Keyword::Limit)
-            || token == Token::Keyword(Keyword::Offset)
+        if matches!(token, Token::Operator(_)) ||
+            token == Token::Keyword(Keyword::In) ||
+            token == Token::Keyword(Keyword::Values) ||
+            token == Token::Keyword(Keyword::Is) ||
+            token == Token::Keyword(Keyword::Like) ||
+            token == Token::Keyword(Keyword::Limit) ||
+            token == Token::Keyword(Keyword::Offset)
         {
             need_masked = true;
             already_masked = false;
@@ -553,8 +541,8 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                     last_token = token;
                     continue;
                 }
-                if !matches!(last_token, Token::Unknown)
-                    && !matches!(last_token, Token::Separator(_))
+                if !matches!(last_token, Token::Unknown) &&
+                    !matches!(last_token, Token::Separator(_))
                 {
                     if need_obfuscated {
                         output.push(BLANK_SPACE);
@@ -575,13 +563,13 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                         output.extend_from_slice(&replace_digits(&input[start..end]));
                     }
                 }
-            }
+            },
             Token::Separator(s) => {
                 if matches!(last_token, Token::Keyword(_)) && need_obfuscated {
                     output.push(BLANK_SPACE);
                 }
-                if need_masked
-                    && ((*ch == b')' || *ch == b';') || (last_keyword_is_set && *ch == b','))
+                if need_masked &&
+                    ((*ch == b')' || *ch == b';') || (last_keyword_is_set && *ch == b','))
                 {
                     need_masked = false;
                     already_masked = false;
@@ -589,7 +577,7 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 if (!need_masked || !already_masked) && need_obfuscated {
                     output.push(s);
                 }
-            }
+            },
             Token::Keyword(ref k) => {
                 if *k == Keyword::As {
                     last_token = token;
@@ -597,12 +585,12 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                     continue;
                 } else if *k == Keyword::Set {
                     last_keyword_is_set = true;
-                } else if *k != Keyword::Values
-                    && *k != Keyword::In
-                    && *k != Keyword::Is
-                    && *k != Keyword::Like
-                    && *k != Keyword::Limit
-                    && *k != Keyword::Offset
+                } else if *k != Keyword::Values &&
+                    *k != Keyword::In &&
+                    *k != Keyword::Is &&
+                    *k != Keyword::Like &&
+                    *k != Keyword::Limit &&
+                    *k != Keyword::Offset
                 {
                     need_masked = false;
                     already_masked = false;
@@ -617,18 +605,17 @@ fn obfuscate(input: &[u8]) -> Vec<u8> {
                 if need_obfuscated {
                     output.extend_from_slice(k.as_bytes());
                 }
-            }
-            Token::Operator(ref o) => {
+            },
+            Token::Operator(ref o) =>
                 if need_obfuscated {
-                    if !matches!(last_token, Token::Operator(_))
-                        && !matches!(last_token, Token::Separator(_))
+                    if !matches!(last_token, Token::Operator(_)) &&
+                        !matches!(last_token, Token::Separator(_))
                     {
                         output.push(BLANK_SPACE);
                     }
                     output.extend_from_slice(o.as_bytes());
-                }
-            }
-            _ => {}
+                },
+            _ => {},
         }
         last_token = token;
         start = iteration.peek().map(|(idx, _)| *idx).unwrap_or(length);
@@ -722,11 +709,9 @@ fn replace_digits(buffer: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
-
-    use lru::LruCache;
-
     use super::{super::OBFUSCATE_CACHE_SIZE, *};
+    use lru::LruCache;
+    use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
     #[test]
     fn test_sql_obfuscate() {
@@ -735,109 +720,118 @@ mod tests {
         ))));
 
         let test_cases = [
-                (
-                    "SELECT id FROM table;",
-                    None,
+            ("SELECT id FROM table;", None),
+            (
+                "DELETE FROM table WHERE id = 1;",
+                Some("DELETE FROM table WHERE id = ?;"),
+            ),
+            (
+                "SELECT `id` FROM `database.table` WHERE id = 1;",
+                Some("SELECT `id` FROM `database.table` WHERE id = ?;"),
+            ),
+            (
+                "UPDATE table SET column1 = value1, column2 = value2, column3 = value3 WHERE id = 1;",
+                Some("UPDATE table SET column? = ?,column? = ?,column? = ? WHERE id = ?;"),
+            ),
+            (
+                "INSERT INTO table (column1, column2, column3) VALUES (value1, value2, value3);",
+                Some("INSERT INTO table (column?,column?,column?) VALUES (?);"),
+            ),
+            (
+                "SELECT * FROM table WHERE name LIKE '%keyword%';",
+                Some("SELECT * FROM table WHERE name LIKE ?;"),
+            ),
+            (
+                "SELECT * FROM table WHERE id is Null;",
+                Some("SELECT * FROM table WHERE id IS ?;"),
+            ),
+            (
+                "SELECT * FROM table LIMIT 1 OFFSET 2;",
+                Some("SELECT * FROM table LIMIT ? OFFSET ?;"),
+            ),
+            (
+                "SELECT * FROM table123😊 WHERE id😊 = 123;",
+                Some("SELECT * FROM table?😊 WHERE id😊 = ?;"),
+            ),
+            (
+                "SELECT json_column ->'😊key' FROM ta123ble;",
+                Some("SELECT json_column -> ? FROM ta?ble;"),
+            ),
+            (
+                "SELECT * FROM table WHERE name ='Tom' OR name = \"Jerry\";",
+                Some("SELECT * FROM table WHERE name = ? OR name = ?;"),
+            ),
+            (
+                "SELECT * FROM table WHERE (age > 18 AND count < 10) OR (age <= 1 AND count >= 10) OR age != 100 OR count <> 100;",
+                Some(
+                    "SELECT * FROM table WHERE (age > ? AND count < ?) OR (age <= ? AND count >= ?) OR age <> ? OR count <> ?;",
                 ),
-                (
-                    "DELETE FROM table WHERE id = 1;",
-                    Some("DELETE FROM table WHERE id = ?;"),
+            ),
+            (
+                "SELECT * FROM table WHERE (id = 123 AND id NOT IN(1,2,3));",
+                Some("SELECT * FROM table WHERE (id = ? AND id NOT IN (?));"),
+            ),
+            (
+                "SELECT * FROM table where id = 1;-- some comment, 一些注释",
+                Some("SELECT * FROM table WHERE id = ?;-- some comment, 一些注释"),
+            ),
+            (
+                "SELECT * FROM table where id = 1;// some comment, 一些注释",
+                Some("SELECT * FROM table WHERE id = ?;// some comment, 一些注释"),
+            ),
+            (
+                r#"/* 这是一个多行注释*/ SELECT count(*) FROM table WHERE id = 100;"#,
+                Some(r#"/* 这是一个多行注释*/ SELECT count(*) FROM table WHERE id = ?;"#),
+            ),
+            (
+                "MERGE INTO Employees AS target USING EmployeeUpdates AS source ON (target.EmployeeID = source.EmployeeID) WHEN MATCHED THEN UPDATE SET target.Name = source.Name WHEN NOT MATCHED BY TARGET THEN INSERT (EmployeeID, Name) VALUES (source.EmployeeID, source.Name) WHEN NOT MATCHED BY SOURCE THEN DELETE OUTPUT $action, inserted.*, deleted.*;",
+                Some(
+                    "MERGE INTO Employees  USING EmployeeUpdates ON (target.EmployeeID = ?) WHEN MATCHED THEN UPDATE SET target.Name = ? WHEN NOT MATCHED BY TARGET THEN INSERT (EmployeeID,Name) VALUES (?) WHEN NOT MATCHED BY SOURCE THEN DELETE OUTPUT $action,inserted.*,deleted.*;",
                 ),
-                (
-                    "SELECT `id` FROM `database.table` WHERE id = 1;",
-                    Some("SELECT `id` FROM `database.table` WHERE id = ?;"),
+            ),
+            (
+                "SELECT CustomerID, CustomerName, City FROM Customers WHERE City = 'New York' UNION SELECT O.CustomerID, C.CustomerName, C.City FROM Orders O JOIN Customers C ON O.CustomerID = C.CustomerID WHERE C.City = 'New York';",
+                Some(
+                    "SELECT CustomerID, CustomerName, City FROM Customers WHERE City = ? UNION SELECT O.CustomerID,C.CustomerName,C.City FROM Orders O JOIN Customers C ON O.CustomerID = ? WHERE C.City = ?;",
                 ),
-                (
-                    "UPDATE table SET column1 = value1, column2 = value2, column3 = value3 WHERE id = 1;",
-                    Some("UPDATE table SET column? = ?,column? = ?,column? = ? WHERE id = ?;"),
+            ),
+            (
+                "SELECT CustomerID, CustomerName, City FROM Customers WHERE CustomerID IN (SELECT CustomerID FROM Orders WHERE CustomerID IN (SELECT CustomerID FROM Customers WHERE City = 'New York'));",
+                Some(
+                    "SELECT CustomerID, CustomerName, City FROM Customers WHERE CustomerID IN ( SELECT CustomerID FROM Orders WHERE CustomerID IN ( SELECT CustomerID FROM Customers WHERE City = ?));",
                 ),
-                (
-                    "INSERT INTO table (column1, column2, column3) VALUES (value1, value2, value3);",
-                    Some("INSERT INTO table (column?,column?,column?) VALUES (?);"),
+            ),
+            (
+                "SELECT Orders.OrderID, Customers.CustomerName, Orders.OrderDate FROM Orders INNER JOIN Customers ON Orders.CustomerID = Customers.CustomerID WHERE Customers.Country = 'USA';",
+                Some(
+                    "SELECT Orders.OrderID, Customers.CustomerName, Orders.OrderDate FROM Orders INNER JOIN Customers ON Orders.CustomerID = ? WHERE Customers.Country = ?;",
                 ),
-                (
-                    "SELECT * FROM table WHERE name LIKE '%keyword%';",
-                    Some("SELECT * FROM table WHERE name LIKE ?;"),
+            ),
+            (
+                "SELECT Customers.CustomerName, Orders.OrderDate, (SELECT COUNT(*) FROM OrderDetails WHERE OrderDetails.OrderID = Orders.OrderID) AS TotalItems FROM Customers INNER JOIN Orders ON Customers.CustomerID = Orders.CustomerID WHERE Orders.OrderDate BETWEEN '2022-01-01' AND '2022-12-31';",
+                Some(
+                    "SELECT Customers.CustomerName, Orders.OrderDate, (SELECT COUNT(*) FROM OrderDetails WHERE OrderDetails.OrderID = ?) FROM Customers INNER JOIN Orders ON Customers.CustomerID = ? WHERE Orders.OrderDate BETWEEN '?-?-?' AND '?-?-?';",
                 ),
-                (
-                    "SELECT * FROM table WHERE id is Null;",
-                    Some("SELECT * FROM table WHERE id IS ?;"),
+            ),
+            (
+                "SELECT CustomerName, OrderDate, TotalAmount FROM (SELECT Customers.CustomerName, Orders.OrderDate, SUM(OrderDetails.Quantity * OrderDetails.UnitPrice) OVER (PARTITION BY Customers.CustomerID) AS TotalAmount, ROW_NUMBER() OVER (PARTITION BY Customers.CustomerID ORDER BY Orders.OrderDate DESC) AS RowNum FROM Customers INNER JOIN Orders ON Customers.CustomerID = Orders.CustomerID INNER JOIN OrderDetails ON Orders.OrderID = OrderDetails.OrderID) AS Subquery WHERE RowNum = 1;",
+                Some(
+                    "SELECT CustomerName, OrderDate, TotalAmount FROM (SELECT Customers.CustomerName, Orders.OrderDate, SUM(OrderDetails.Quantity * ?) OVER (PARTITION BY Customers.CustomerID),ROW_NUMBER() OVER (PARTITION BY Customers.CustomerID ORDER BY Orders.OrderDate DESC) FROM Customers INNER JOIN Orders ON Customers.CustomerID = ? INNER JOIN OrderDetails ON Orders.OrderID = ?) WHERE RowNum = ?;",
                 ),
-                (
-                    "SELECT * FROM table LIMIT 1 OFFSET 2;",
-                    Some("SELECT * FROM table LIMIT ? OFFSET ?;"),
-                ),
-                (
-                    "SELECT * FROM table123😊 WHERE id😊 = 123;",
-                    Some("SELECT * FROM table?😊 WHERE id😊 = ?;"),
-                ),
-                (
-                    "SELECT json_column ->'😊key' FROM ta123ble;",
-                    Some("SELECT json_column -> ? FROM ta?ble;"),
-                ),
-                (
-                    "SELECT * FROM table WHERE name ='Tom' OR name = \"Jerry\";",
-                    Some("SELECT * FROM table WHERE name = ? OR name = ?;"),
-                ),
-                (
-                    "SELECT * FROM table WHERE (age > 18 AND count < 10) OR (age <= 1 AND count >= 10) OR age != 100 OR count <> 100;",
-                    Some("SELECT * FROM table WHERE (age > ? AND count < ?) OR (age <= ? AND count >= ?) OR age <> ? OR count <> ?;"),
-                ),
-                (
-                    "SELECT * FROM table WHERE (id = 123 AND id NOT IN(1,2,3));",
-                    Some("SELECT * FROM table WHERE (id = ? AND id NOT IN (?));"),
-                ),
-                (
-                    "SELECT * FROM table where id = 1;-- some comment, 一些注释",
-                    Some("SELECT * FROM table WHERE id = ?;-- some comment, 一些注释"),
-                ),
-                (
-                    "SELECT * FROM table where id = 1;// some comment, 一些注释",
-                    Some("SELECT * FROM table WHERE id = ?;// some comment, 一些注释"),
-                ),
-                (
-                    r#"/* 这是一个多行注释*/ SELECT count(*) FROM table WHERE id = 100;"#,
-                    Some(r#"/* 这是一个多行注释*/ SELECT count(*) FROM table WHERE id = ?;"#),
-                ),
-                (
-                    "MERGE INTO Employees AS target USING EmployeeUpdates AS source ON (target.EmployeeID = source.EmployeeID) WHEN MATCHED THEN UPDATE SET target.Name = source.Name WHEN NOT MATCHED BY TARGET THEN INSERT (EmployeeID, Name) VALUES (source.EmployeeID, source.Name) WHEN NOT MATCHED BY SOURCE THEN DELETE OUTPUT $action, inserted.*, deleted.*;",
-                    Some("MERGE INTO Employees  USING EmployeeUpdates ON (target.EmployeeID = ?) WHEN MATCHED THEN UPDATE SET target.Name = ? WHEN NOT MATCHED BY TARGET THEN INSERT (EmployeeID,Name) VALUES (?) WHEN NOT MATCHED BY SOURCE THEN DELETE OUTPUT $action,inserted.*,deleted.*;"),
-                ),
-                (
-                    "SELECT CustomerID, CustomerName, City FROM Customers WHERE City = 'New York' UNION SELECT O.CustomerID, C.CustomerName, C.City FROM Orders O JOIN Customers C ON O.CustomerID = C.CustomerID WHERE C.City = 'New York';",
-                    Some("SELECT CustomerID, CustomerName, City FROM Customers WHERE City = ? UNION SELECT O.CustomerID,C.CustomerName,C.City FROM Orders O JOIN Customers C ON O.CustomerID = ? WHERE C.City = ?;"),
-                ),
-                (
-                    "SELECT CustomerID, CustomerName, City FROM Customers WHERE CustomerID IN (SELECT CustomerID FROM Orders WHERE CustomerID IN (SELECT CustomerID FROM Customers WHERE City = 'New York'));",
-                    Some("SELECT CustomerID, CustomerName, City FROM Customers WHERE CustomerID IN ( SELECT CustomerID FROM Orders WHERE CustomerID IN ( SELECT CustomerID FROM Customers WHERE City = ?));"),
-                ),
-                (
-                    "SELECT Orders.OrderID, Customers.CustomerName, Orders.OrderDate FROM Orders INNER JOIN Customers ON Orders.CustomerID = Customers.CustomerID WHERE Customers.Country = 'USA';",
-                    Some("SELECT Orders.OrderID, Customers.CustomerName, Orders.OrderDate FROM Orders INNER JOIN Customers ON Orders.CustomerID = ? WHERE Customers.Country = ?;"),
-                ),
-                (
-                    "SELECT Customers.CustomerName, Orders.OrderDate, (SELECT COUNT(*) FROM OrderDetails WHERE OrderDetails.OrderID = Orders.OrderID) AS TotalItems FROM Customers INNER JOIN Orders ON Customers.CustomerID = Orders.CustomerID WHERE Orders.OrderDate BETWEEN '2022-01-01' AND '2022-12-31';",
-                    Some("SELECT Customers.CustomerName, Orders.OrderDate, (SELECT COUNT(*) FROM OrderDetails WHERE OrderDetails.OrderID = ?) FROM Customers INNER JOIN Orders ON Customers.CustomerID = ? WHERE Orders.OrderDate BETWEEN '?-?-?' AND '?-?-?';"),
-                ),
-                (
-                    "SELECT CustomerName, OrderDate, TotalAmount FROM (SELECT Customers.CustomerName, Orders.OrderDate, SUM(OrderDetails.Quantity * OrderDetails.UnitPrice) OVER (PARTITION BY Customers.CustomerID) AS TotalAmount, ROW_NUMBER() OVER (PARTITION BY Customers.CustomerID ORDER BY Orders.OrderDate DESC) AS RowNum FROM Customers INNER JOIN Orders ON Customers.CustomerID = Orders.CustomerID INNER JOIN OrderDetails ON Orders.OrderID = OrderDetails.OrderID) AS Subquery WHERE RowNum = 1;",
-                    Some("SELECT CustomerName, OrderDate, TotalAmount FROM (SELECT Customers.CustomerName, Orders.OrderDate, SUM(OrderDetails.Quantity * ?) OVER (PARTITION BY Customers.CustomerID),ROW_NUMBER() OVER (PARTITION BY Customers.CustomerID ORDER BY Orders.OrderDate DESC) FROM Customers INNER JOIN Orders ON Customers.CustomerID = ? INNER JOIN OrderDetails ON Orders.OrderID = ?) WHERE RowNum = ?;"),
-                ),
-                // TODO: fix this test case
-                (
-                    "SELECT * FROM `process` WHERE `process`.`deleted_at` IS NULL",
-                    Some("SELECT * FROM `process` WHERE `process`.`deleted_at` IS ?"),
-                )
-            ];
+            ),
+            // TODO: fix this test case
+            (
+                "SELECT * FROM `process` WHERE `process`.`deleted_at` IS NULL",
+                Some("SELECT * FROM `process` WHERE `process`.`deleted_at` IS ?"),
+            ),
+        ];
         for (ti, tt) in test_cases.iter().enumerate() {
             let result = attempt_obfuscation(&obfuscate_cache, tt.0.as_bytes());
             assert_eq!(
                 result,
                 tt.1.map(|o| o.as_bytes().to_vec()),
                 "Test case {ti}, result is {:?}",
-                result
-                    .as_ref()
-                    .map(|r| std::str::from_utf8(&r).unwrap().to_owned())
+                result.as_ref().map(|r| std::str::from_utf8(&r).unwrap().to_owned())
             );
         }
     }

@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-use std::mem::swap;
-
-use serde::Serialize;
-
 use public::proto::metric;
+use serde::Serialize;
+use std::mem::swap;
 
 const FLOW_ID: u32 = 1;
 const USAGE_ID: u32 = 4;
@@ -456,9 +454,9 @@ impl AppMeter {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.traffic.is_empty()
-            && self.latency == AppLatency::default()
-            && self.anomaly == AppAnomaly::default()
+        self.traffic.is_empty() &&
+            self.latency == AppLatency::default() &&
+            self.anomaly == AppAnomaly::default()
     }
 }
 

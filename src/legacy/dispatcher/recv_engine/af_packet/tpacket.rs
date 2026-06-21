@@ -14,31 +14,31 @@
  * limitations under the License.
  */
 
-use std::fmt::{Debug, Formatter, Result as DebugResult};
-use std::io;
-use std::mem;
-use std::net::Shutdown;
-use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::process;
-
-use libc::{
-    c_int, c_uint, c_void, getsockopt, mmap, munmap, off_t, packet_mreq, poll, pollfd, setsockopt,
-    size_t, sockaddr, sockaddr_ll, socket, socklen_t, write, AF_PACKET, ETH_P_ALL, MAP_LOCKED,
-    MAP_NORESERVE, MAP_SHARED, PACKET_ADD_MEMBERSHIP, PACKET_DROP_MEMBERSHIP, PACKET_MR_PROMISC,
-    POLLERR, POLLIN, PROT_READ, PROT_WRITE, SOL_PACKET, SOL_SOCKET, SO_ATTACH_FILTER,
-};
-use log::{info, warn};
-use public::error::*;
-use public::packet::Packet;
-use socket2::Socket;
-
 use super::{bpf, header, options};
-
 #[cfg(feature = "extended_observability")]
 use crate::ebpf::set_socket_fanout_ebpf;
-use crate::utils::environment::is_kernel_available;
-use crate::utils::stats;
-use public::utils::net::{self, link_by_name};
+use crate::utils::{environment::is_kernel_available, stats};
+use libc::{
+    AF_PACKET, ETH_P_ALL, MAP_LOCKED, MAP_NORESERVE, MAP_SHARED, PACKET_ADD_MEMBERSHIP,
+    PACKET_DROP_MEMBERSHIP, PACKET_MR_PROMISC, POLLERR, POLLIN, PROT_READ, PROT_WRITE,
+    SO_ATTACH_FILTER, SOL_PACKET, SOL_SOCKET, c_int, c_uint, c_void, getsockopt, mmap, munmap,
+    off_t, packet_mreq, poll, pollfd, setsockopt, size_t, sockaddr, sockaddr_ll, socket, socklen_t,
+    write,
+};
+use log::{info, warn};
+use public::{
+    error::*,
+    packet::Packet,
+    utils::net::{self, link_by_name},
+};
+use socket2::Socket;
+use std::{
+    fmt::{Debug, Formatter, Result as DebugResult},
+    io, mem,
+    net::Shutdown,
+    os::unix::io::{AsRawFd, FromRawFd},
+    process,
+};
 
 const PACKET_VERSION: c_int = 10;
 const PACKET_RX_RING: c_int = 5;
@@ -174,20 +174,19 @@ impl Tpacket {
 
     fn set_version_internal(&mut self, tp_version: options::OptTpacketVersion) -> bool {
         // 设置af packet版本
-        self.setsockopt(SOL_PACKET, PACKET_VERSION, tp_version as c_int)
-            .is_ok()
+        self.setsockopt(SOL_PACKET, PACKET_VERSION, tp_version as c_int).is_ok()
     }
 
     fn set_version(&mut self) -> Result<()> {
-        if (self.tp_version == options::OptTpacketVersion::TpacketVersionHighestavailablet
-            || self.tp_version == options::OptTpacketVersion::TpacketVersion3)
-            && self.set_version_internal(options::OptTpacketVersion::TpacketVersion3)
+        if (self.tp_version == options::OptTpacketVersion::TpacketVersionHighestavailablet ||
+            self.tp_version == options::OptTpacketVersion::TpacketVersion3) &&
+            self.set_version_internal(options::OptTpacketVersion::TpacketVersion3)
         {
             self.tp_version = options::OptTpacketVersion::TpacketVersion3;
             Ok(())
-        } else if (self.tp_version == options::OptTpacketVersion::TpacketVersionHighestavailablet
-            || self.tp_version == options::OptTpacketVersion::TpacketVersion2)
-            && self.set_version_internal(options::OptTpacketVersion::TpacketVersion2)
+        } else if (self.tp_version == options::OptTpacketVersion::TpacketVersionHighestavailablet ||
+            self.tp_version == options::OptTpacketVersion::TpacketVersion2) &&
+            self.set_version_internal(options::OptTpacketVersion::TpacketVersion2)
         {
             self.tp_version = options::OptTpacketVersion::TpacketVersion2;
             Ok(())
@@ -258,7 +257,10 @@ impl Tpacket {
                 0 as off_t,
             ) as isize;
             if ret == -1 {
-                warn!("Afpacket mmap error: {:?}, maybe env lack permission, retry without MAP_LOCKED and MAP_NORESERVE.", io::Error::last_os_error());
+                warn!(
+                    "Afpacket mmap error: {:?}, maybe env lack permission, retry without MAP_LOCKED and MAP_NORESERVE.",
+                    io::Error::last_os_error()
+                );
                 ret = mmap(
                     std::ptr::null_mut(),
                     (self.opts.block_size * self.opts.num_blocks) as size_t,
@@ -288,20 +290,20 @@ impl Tpacket {
                 let position: *mut u8 =
                     (self.ring as usize + (self.opts.frame_size * self.offset) as usize) as *mut u8;
                 return Box::from(header::Tpacket2Hdr::from(position));
-            }
+            },
             options::OptTpacketVersion::TpacketVersion3 => {
                 // AF_PACKET 3
                 if self.offset >= self.opts.num_blocks {
                     self.offset = 0;
                 }
-                let position: *mut u8 = (self.ring as usize
-                    + (self.opts.frame_size * self.offset * self.opts.frames_per_block()) as usize)
+                let position: *mut u8 = (self.ring as usize +
+                    (self.opts.frame_size * self.offset * self.opts.frames_per_block()) as usize)
                     as *mut u8;
                 return Box::from(header::V3Wrapper::from(position));
-            }
+            },
             _ => {
                 panic!("Unknown af_packet version {:?}.", &self.tp_version);
-            }
+            },
         }
     }
 
@@ -333,9 +335,9 @@ impl Tpacket {
     // The data referenced in the packet points to Shared memory. The life cycle
     // of the packet cannot exceed the next call to the read function.
     pub unsafe fn read(&mut self) -> Option<Packet<'_>> {
-        if self.current.is_none()
-            || !self.header_next_needed
-            || !self.current.as_mut().unwrap().next()
+        if self.current.is_none() ||
+            !self.header_next_needed ||
+            !self.current.as_mut().unwrap().next()
         {
             if self.should_release_packet {
                 if let Some(x) = self.current.as_mut() {
@@ -427,10 +429,9 @@ impl Tpacket {
         tpacket.set_ring()?;
         tpacket.mmap_ring()?;
         tpacket.set_fanout()?;
-        tpacket.set_bpf(vec![bpf::BpfSyntax::RetConstant(bpf::RetConstant {
-            val: 0,
-        })
-        .to_instruction()])?;
+        tpacket.set_bpf(vec![
+            bpf::BpfSyntax::RetConstant(bpf::RetConstant { val: 0 }).to_instruction(),
+        ])?;
         Ok(tpacket)
     }
 }

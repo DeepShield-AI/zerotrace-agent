@@ -162,11 +162,11 @@ pub(super) fn trim_head_comment_and_get_first_word(
     let mut iteration = sql.iter().enumerate().peekable();
     let mut next = 0;
     while let Some(_) = iteration.peek() {
-        if !(sql[next..].starts_with(b"/*")
-            || sql[next..].starts_with(b" ")
-            || sql[next..].starts_with(b"\n")
-            || sql[next..].starts_with(b"\t")
-            || sql[next..].starts_with(b"\r"))
+        if !(sql[next..].starts_with(b"/*") ||
+            sql[next..].starts_with(b" ") ||
+            sql[next..].starts_with(b"\n") ||
+            sql[next..].starts_with(b"\t") ||
+            sql[next..].starts_with(b"\r"))
         {
             break;
         }

@@ -14,25 +14,22 @@
  * limitations under the License.
  */
 
-use std::net::{IpAddr, Ipv4Addr};
-
-use bitflags::bitflags;
-use num_enum::TryFromPrimitive;
-use prost::Message;
-use serde::Serialize;
-
 use super::meter::Meter;
-
 use crate::common::{
     enums::{CaptureNetworkType, IpProtocol},
     flow::{L7Protocol, SignalSource},
     tap_port::TapPort,
 };
+use bitflags::bitflags;
+use num_enum::TryFromPrimitive;
+use prost::Message;
 use public::{
     proto::{integration::opentelemetry::proto::trace::v1::span::SpanKind, metric},
     sender::{SendMessageType, Sendable},
     utils::net::MacAddr,
 };
+use serde::Serialize;
+use std::net::{IpAddr, Ipv4Addr};
 
 #[derive(Serialize, Debug)]
 pub struct Document {
@@ -203,7 +200,7 @@ impl Direction {
             Self::ServerProcessToClient => *self = Self::ClientProcessToServer,
             Self::ClientAppToServer => *self = Self::ServerAppToClient,
             Self::ServerAppToClient => *self = Self::ClientAppToServer,
-            _ => {}
+            _ => {},
         }
 
         *self
@@ -293,7 +290,7 @@ impl TapSide {
             Self::ServerProcess => *self = Self::ClientProcess,
             Self::ClientApp => *self = Self::ServerApp,
             Self::ServerApp => *self = Self::ClientApp,
-            _ => {}
+            _ => {},
         }
 
         *self
@@ -435,12 +432,10 @@ impl From<Tagger> for metric::MiniTag {
     fn from(t: Tagger) -> Self {
         let (ip_vec, ip1_vec) = if t.code.has_edge_tag() {
             match (t.ip, t.ip1) {
-                (IpAddr::V4(ip4), IpAddr::V4(ip41)) => {
-                    (ip4.octets().to_vec(), ip41.octets().to_vec())
-                }
-                (IpAddr::V6(ip6), IpAddr::V6(ip61)) => {
-                    (ip6.octets().to_vec(), ip61.octets().to_vec())
-                }
+                (IpAddr::V4(ip4), IpAddr::V4(ip41)) =>
+                    (ip4.octets().to_vec(), ip41.octets().to_vec()),
+                (IpAddr::V6(ip6), IpAddr::V6(ip61)) =>
+                    (ip6.octets().to_vec(), ip61.octets().to_vec()),
                 _ => panic!("{:?} ip, ip1 type mismatch", &t),
             }
         } else {

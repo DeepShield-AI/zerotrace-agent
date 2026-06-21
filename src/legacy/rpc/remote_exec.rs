@@ -17,10 +17,30 @@
 #[cfg(feature = "enterprise")]
 mod pcap_replay;
 
+use super::{RPC_RECONNECT_INTERVAL, RPC_RETRY_INTERVAL, Session};
+use crate::{
+    config::handler::{FlowAccess, LogParserAccess},
+    exception::ExceptionHandler,
+    trident::AgentId,
+};
+use futures::{TryFutureExt, future::BoxFuture, stream::Stream};
+use k8s_openapi::api::core::v1::{Event, Pod};
+use kube::{
+    Api, Client, Config as KubeConfig,
+    api::{ListParams, LogParams},
+};
+use log::{debug, info, trace, warn};
+use md5::{Digest, Md5};
+use parking_lot::RwLock;
+pub use public::rpc::remote_exec::*;
+use public::{
+    netns::{reset_netns, set_netns},
+    proto::agent as pb,
+};
 use std::{
     borrow::Cow,
     cell::OnceCell,
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
     fmt::{self, Write as _},
     fs::File,
     io::Write,
@@ -31,40 +51,17 @@ use std::{
     process::{self, Output},
     ptr,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll},
     time::{Duration, Instant},
 };
-
-use futures::{future::BoxFuture, stream::Stream, TryFutureExt};
-use k8s_openapi::api::core::v1::{Event, Pod};
-use kube::{
-    api::{ListParams, LogParams},
-    Api, Client, Config as KubeConfig,
-};
-use log::{debug, info, trace, warn};
-use md5::{Digest, Md5};
-use parking_lot::RwLock;
 use tokio::{
     process::Command as TokioCommand,
     runtime::Runtime,
     sync::mpsc::{self, Receiver},
     time::{self, Interval},
-};
-
-pub use public::rpc::remote_exec::*;
-use public::{
-    netns::{reset_netns, set_netns},
-    proto::agent as pb,
-};
-
-use super::{Session, RPC_RECONNECT_INTERVAL, RPC_RETRY_INTERVAL};
-use crate::{
-    config::handler::{FlowAccess, LogParserAccess},
-    exception::ExceptionHandler,
-    trident::AgentId,
 };
 cfg_if::cfg_if! {
     if #[cfg(feature = "enterprise")] {
@@ -281,7 +278,7 @@ impl Interior {
                 None => {
                     tokio::time::sleep(RPC_RETRY_INTERVAL).await;
                     continue;
-                }
+                },
             };
             let mut client = pb::synchronizer_client::SynchronizerClient::new(channel)
                 .max_decoding_message_size(rx_size);
@@ -296,7 +293,7 @@ impl Interior {
                     self.exc.set(pb::Exception::ControllerSocketError);
                     tokio::time::sleep(RPC_RETRY_INTERVAL).await;
                     continue;
-                }
+                },
             }
             .into_inner();
             trace!("remote_execute initial receive");
@@ -310,13 +307,13 @@ impl Interior {
                         debug!("server closed stream");
                         tokio::time::sleep(RPC_RECONNECT_INTERVAL).await;
                         break;
-                    }
+                    },
                     Err(e) => {
                         warn!("receiving server remote_execute rpc has error: {:?}", e);
                         self.exc.set(pb::Exception::ControllerSocketError);
                         tokio::time::sleep(RPC_RECONNECT_INTERVAL).await;
                         break;
-                    }
+                    },
                 };
                 if session_version != self.session.get_version() {
                     info!("grpc server or config changed");
@@ -334,7 +331,7 @@ impl Interior {
                             message.exec_type.unwrap()
                         );
                         continue;
-                    }
+                    },
                 }
                 if sender.send(message).await.is_err() {
                     debug!("responser channel closed");
@@ -477,7 +474,7 @@ impl PcapReplay {
                         "encoded {} bytes to buffer",
                         length + Self::LENGTH_FIELD_SIZE
                     );
-                }
+                },
                 Ok(None) | Err(pcap_replay::Error::RequireMoreData) => break,
                 Err(e) => return Err(Error::PcapParseFailed(e.to_string())),
             }
@@ -650,7 +647,7 @@ impl Responser {
                     } else {
                         return ControlFlow::Return(Some(pb::RemoteExecResponse {
                             agent_id: Some(self.agent_id.read().deref().into()),
-                            request_id: request_id,
+                            request_id,
                             command_result: Some(pb::DataChunk::default()),
                             ..Default::default()
                         }));
@@ -664,7 +661,7 @@ impl Responser {
                 r.total_len = r.output.len();
                 r.digest.reset();
                 ControlFlow::Continue
-            }
+            },
             Err(e) => ControlFlow::Return(self.command_failed_helper(
                 request_id,
                 None,
@@ -697,7 +694,7 @@ impl Responser {
                     linux_namespaces: namespaces,
                     ..Default::default()
                 }))
-            }
+            },
             Err(e) => {
                 warn!("list namespace failed: {}", e);
                 ControlFlow::Return(Some(pb::RemoteExecResponse {
@@ -706,7 +703,7 @@ impl Responser {
                     errmsg: Some(e.to_string()),
                     ..Default::default()
                 }))
-            }
+            },
         }
     }
 
@@ -751,18 +748,16 @@ impl Responser {
                             msg.request_id,
                             None,
                             format!("open namespace file {} failed: {}", path.display(), e),
-                        ))
-                    }
+                        ));
+                    },
                 }
-            }
+            },
             _ => None,
         };
 
         trace!(
             "pending run command '{}', ns_pid: {:?}, params: {:?}",
-            cmdline,
-            msg.linux_ns_pid,
-            params
+            cmdline, msg.linux_ns_pid, params
         );
 
         if let Some(f) = nsfile_fp.as_ref() {
@@ -802,9 +797,12 @@ impl Responser {
         trace!("received dry replay pcap message");
         match self.pcap_replay.as_mut() {
             Some(pcap_replay) if pcap_replay.request_id != msg.request_id => {
-                warn!("pcap replay request id mismatch: expected {:?}, got {:?}. old request terminated.", pcap_replay.request_id, msg.request_id);
+                warn!(
+                    "pcap replay request id mismatch: expected {:?}, got {:?}. old request terminated.",
+                    pcap_replay.request_id, msg.request_id
+                );
                 self.pcap_replay.take();
-            }
+            },
             Some(pcap_replay) => {
                 let Some(data) = msg.command_data else {
                     return ControlFlow::Return(self.command_failed_helper(
@@ -818,7 +816,7 @@ impl Responser {
                         trace!("received {} bytes of pcap data", content.len());
                         pcap_replay.input_digest.update(&content[..]);
                         pcap_replay.replayer.push_chunk(content);
-                    }
+                    },
                     _ => (),
                 }
                 if let Some(md5) = data.md5 {
@@ -838,7 +836,7 @@ impl Responser {
                     pcap_replay.end_of_stream = true;
                 }
                 return ControlFlow::Continue;
-            }
+            },
             _ => (),
         }
         // new replay request
@@ -861,10 +859,10 @@ impl Responser {
                             msg.request_id,
                             None,
                             format!("failed to create pcap replayer: {e}"),
-                        ))
-                    }
+                        ));
+                    },
                 }
-            }
+            },
             _ => return ControlFlow::Return(self.command_failed_helper(
                 msg.request_id,
                 None,
@@ -912,19 +910,19 @@ impl Responser {
                         commands,
                         ..Default::default()
                     }))
-                }
+                },
                 Ok(pb::ExecutionType::ListNamespace) => {
                     trace!("pending list namespace");
                     self.pending_lsns = Some((msg.request_id, Box::pin(ls_netns())));
                     ControlFlow::Continue
-                }
+                },
                 Ok(pb::ExecutionType::RunCommand) => self.handle_run_command_message(msg),
                 #[cfg(feature = "enterprise")]
                 Ok(pb::ExecutionType::DryReplayPcap) => self.handle_dry_replay_pcap_message(msg),
                 _ => {
                     warn!("unsupported execution type: {:?}", msg.exec_type.unwrap());
                     ControlFlow::Fallthrough
-                }
+                },
             },
             _ => ControlFlow::Fallthrough,
         }
@@ -1001,7 +999,7 @@ impl Stream for Responser {
                             }));
                         }
                         // no more data yet, fallthrough to poll recv queue for more data
-                    }
+                    },
                     Err(e) => {
                         let pcap_replay = self.pcap_replay.take().unwrap();
                         return Poll::Ready(self.command_failed_helper(
@@ -1009,7 +1007,7 @@ impl Stream for Responser {
                             None,
                             format!("failed to generate pcap replay batch: {e}"),
                         ));
-                    }
+                    },
                 }
             }
 
@@ -1039,7 +1037,7 @@ impl Stream for Responser {
                         agent_id: Some(self.agent_id.read().deref().into()),
                         ..Default::default()
                     }))
-                }
+                },
             };
         }
     }
@@ -1087,9 +1085,7 @@ fn username_by_uid(uid: u32) -> Result<String> {
         // SAFTY:
         // - p_passwd.pw_name points to nul terminated string in a single allocated `Vec<i8>` object.
         // - The memory referenced will not be mutated.
-        Ok(std::ffi::CStr::from_ptr(p_passwd.read().pw_name)
-            .to_string_lossy()
-            .to_string())
+        Ok(std::ffi::CStr::from_ptr(p_passwd.read().pw_name).to_string_lossy().to_string())
     }
 }
 
@@ -1106,9 +1102,9 @@ async fn get_proc_cmdline<P: AsRef<Path>>(pid_path: P) -> std::io::Result<String
                 Err(_) => {
                     pid_path.pop();
                     return Err(e);
-                }
+                },
             }
-        }
+        },
     };
 
     // remove trailling \0
@@ -1220,13 +1216,9 @@ pub async fn lsns() -> Result<Vec<Namespace>> {
             _ => {
                 debug!("skipped {}", proc.path().display());
                 continue;
-            }
+            },
         }
-        let Some(pid) = proc
-            .file_name()
-            .to_str()
-            .and_then(|s| s.parse::<u32>().ok())
-        else {
+        let Some(pid) = proc.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
             continue;
         };
         let mut path = proc.path();
@@ -1237,12 +1229,12 @@ pub async fn lsns() -> Result<Vec<Namespace>> {
                 Err(e) => {
                     debug!("get username for uid {} failed: {}", fp.uid(), e);
                     fp.uid().to_string()
-                }
+                },
             },
             Err(e) => {
                 debug!("get uid for process {} failed: {}", pid, e);
                 continue;
-            }
+            },
         };
 
         let cmdline = match get_proc_cmdline(&path).await {
@@ -1250,7 +1242,7 @@ pub async fn lsns() -> Result<Vec<Namespace>> {
             Err(e) => {
                 debug!("get_proc_cmdline for process {} failed: {}", pid, e);
                 continue;
-            }
+            },
         };
 
         path.push("ns");
@@ -1282,7 +1274,7 @@ pub async fn lsns() -> Result<Vec<Namespace>> {
                 Entry::Occupied(mut o) => o.get_mut().merge(ns),
                 Entry::Vacant(v) => {
                     v.insert(ns);
-                }
+                },
             }
         }
     }
@@ -1290,12 +1282,7 @@ pub async fn lsns() -> Result<Vec<Namespace>> {
 }
 
 pub fn write_namespace_table<W: Write>(mut w: W, table: &[Namespace]) -> Result<()> {
-    let name_width = table
-        .iter()
-        .map(|n| n.user.len())
-        .max()
-        .unwrap_or_default()
-        .max("USER".len());
+    let name_width = table.iter().map(|n| n.user.len()).max().unwrap_or_default().max("USER".len());
     write!(
         w,
         "        NS TYPE   NPROCS   PID {:<name_width$} COMMAND\n",
@@ -1349,16 +1336,12 @@ struct DescribePod {
 }
 
 async fn kubectl_describe_pod(namespace: String, pod_name: String) -> Result<Output> {
-    let mut config = KubeConfig::infer()
-        .map_err(|e| kube::Error::InferConfig(e))
-        .await?;
+    let mut config = KubeConfig::infer().map_err(|e| kube::Error::InferConfig(e)).await?;
     config.accept_invalid_certs = true;
     info!("api server url is: {}", config.cluster_url);
     let client = Client::try_from(config)?;
 
-    let pod = Api::<Pod>::namespaced(client.clone(), &namespace)
-        .get(&pod_name)
-        .await;
+    let pod = Api::<Pod>::namespaced(client.clone(), &namespace).get(&pod_name).await;
 
     let mut field_selector =
         format!("involvedObject.name={pod_name},involvedObject.namespace={namespace}");
@@ -1381,7 +1364,7 @@ async fn kubectl_describe_pod(namespace: String, pod_name: String) -> Result<Out
             },
             Err(_) => {
                 return Err(e.into());
-            }
+            },
         },
     };
 
@@ -1395,9 +1378,7 @@ async fn kubectl_describe_pod(namespace: String, pod_name: String) -> Result<Out
 const LOG_LINES: usize = 10000;
 
 async fn kubectl_log(namespace: String, pod: String, previous: bool) -> Result<Output> {
-    let mut config = KubeConfig::infer()
-        .map_err(|e| kube::Error::InferConfig(e))
-        .await?;
+    let mut config = KubeConfig::infer().map_err(|e| kube::Error::InferConfig(e)).await?;
     config.accept_invalid_certs = true;
     info!("api server url is: {}", config.cluster_url);
     let client = Client::try_from(config)?;

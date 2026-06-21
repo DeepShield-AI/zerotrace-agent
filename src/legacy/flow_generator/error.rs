@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-use std::{borrow::Cow, str::Utf8Error};
-
-use public::l7_protocol::L7Protocol;
-use thiserror::Error;
-
 use super::MetaAppProto;
-
 use crate::common::l7_protocol_info::L7ProtocolInfo;
+use public::l7_protocol::L7Protocol;
+use std::{borrow::Cow, str::Utf8Error};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {

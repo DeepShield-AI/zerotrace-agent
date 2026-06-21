@@ -14,15 +14,6 @@
  * limitations under the License.
  */
 
-use serde::Serialize;
-
-use enterprise_utils::l7::rpc::iso8583::{Iso8583ParseConfig, Iso8583Parser};
-use public::{
-    enums::PacketDirection,
-    l7_protocol::{L7Protocol, LogMessageType},
-};
-
-use crate::config::handler::LogParserConfig;
 use crate::{
     common::{
         flow::L7PerfStats,
@@ -30,18 +21,24 @@ use crate::{
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, LogCache, ParseParam},
         meta_packet::ApplicationFlags,
     },
+    config::handler::LogParserConfig,
     flow_generator::{
+        AppProtoHead, Error, Result,
         protocol_logs::{
-            estimate_rrt_us_by_beijing_mmss,
+            BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields, estimate_rrt_us_by_beijing_mmss,
             pb_adapter::{
                 ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, TraceInfo,
             },
-            set_captured_byte, swap_if, value_is_default, L7ResponseStatus, PrioFields,
-            BASE_FIELD_PRIORITY,
+            set_captured_byte, swap_if, value_is_default,
         },
-        AppProtoHead, Error, Result,
     },
 };
+use enterprise_utils::l7::rpc::iso8583::{Iso8583ParseConfig, Iso8583Parser};
+use public::{
+    enums::PacketDirection,
+    l7_protocol::{L7Protocol, LogMessageType},
+};
+use serde::Serialize;
 
 #[derive(Serialize, Debug, Default, Clone, PartialEq)]
 pub struct Iso8583Info {
@@ -108,8 +105,8 @@ impl Iso8583Info {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::Iso8583) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.mti)
-                || t.request_type.is_on_blacklist(&self.mti.as_str());
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.mti) ||
+                t.request_type.is_on_blacklist(&self.mti.as_str());
         }
     }
 }
@@ -291,11 +288,7 @@ impl L7ProtocolParserInterface for Iso8583Log {
                 };
                 set_captured_byte!(info, param);
 
-                if !param
-                    .iso8583_parse_conf
-                    .extract_fields
-                    .get(field.id as usize)
-                    .unwrap_or(false)
+                if !param.iso8583_parse_conf.extract_fields.get(field.id as usize).unwrap_or(false)
                 {
                     continue;
                 }
@@ -313,10 +306,10 @@ impl L7ProtocolParserInterface for Iso8583Log {
                 });
             }
 
-            if !info.f7.is_empty()
-                && !info.f11.is_empty()
-                && !info.f32.is_empty()
-                && !info.f33.is_empty()
+            if !info.f7.is_empty() &&
+                !info.f11.is_empty() &&
+                !info.f32.is_empty() &&
+                !info.f33.is_empty()
             {
                 info.trace_ids.merge_field(
                     BASE_FIELD_PRIORITY,
@@ -330,17 +323,15 @@ impl L7ProtocolParserInterface for Iso8583Log {
             info.is_async = true;
 
             match info.msg_type {
-                LogMessageType::Request => {
+                LogMessageType::Request =>
                     if param.direction == PacketDirection::ServerToClient {
                         info.is_reversed = true;
-                    }
-                }
-                LogMessageType::Response => {
+                    },
+                LogMessageType::Response =>
                     if param.direction == PacketDirection::ClientToServer {
                         info.is_reversed = true;
-                    }
-                }
-                _ => {}
+                    },
+                _ => {},
             }
 
             if param.parse_perf {
@@ -348,12 +339,12 @@ impl L7ProtocolParserInterface for Iso8583Log {
                 match info.response_status {
                     L7ResponseStatus::ServerError => perf_stat.inc_resp_err(),
                     L7ResponseStatus::ClientError => perf_stat.inc_req_err(),
-                    _ => {}
+                    _ => {},
                 }
                 match info.msg_type {
                     LogMessageType::Request => perf_stat.inc_req(),
                     LogMessageType::Response => perf_stat.inc_resp(),
-                    _ => {}
+                    _ => {},
                 }
                 // As the protocol is asynchronous and requests/responses are not correlated into a session,
                 // RRT cannot be measured using generic methods.
@@ -431,12 +422,12 @@ fn is_00x000(s: &str) -> bool {
     }
 
     // 00 x 000
-    b[0] == b'0'
-        && b[1] == b'0'
-        && b[2].is_ascii_digit()
-        && b[3] == b'0'
-        && b[4] == b'0'
-        && b[5] == b'0'
+    b[0] == b'0' &&
+        b[1] == b'0' &&
+        b[2].is_ascii_digit() &&
+        b[3] == b'0' &&
+        b[4] == b'0' &&
+        b[5] == b'0'
 }
 
 // preserve the first 6 and last 4 digits, mask the remaining characters with *

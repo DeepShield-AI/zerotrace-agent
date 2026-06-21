@@ -14,47 +14,52 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
-use std::fmt;
-use std::net::IpAddr;
-use std::rc::Rc;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use super::{
+    MetaPacket,
+    ebpf::EbpfType,
+    flow::{L7PerfStats, PacketDirection},
+    l7_protocol_info::L7ProtocolInfo,
 };
-use std::time::Duration;
-
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::plugin::c_ffi::SoPluginFunc;
+use crate::{
+    common::meta_packet::{IcmpData, ProtocolData},
+    config::{
+        OracleConfig,
+        config::{Iso8583ParseConfig, WebSphereMqParseConfig},
+        handler::LogParserConfig,
+    },
+    flow_generator::{
+        Result,
+        flow_map::FlowMapCounter,
+        protocol_logs::{
+            AmqpLog, BrpcLog, DnsLog, DubboLog, HttpLog, KafkaLog, L7ResponseStatus, MemcachedLog,
+            MongoDBLog, MqttLog, MysqlLog, NatsLog, OpenWireLog, PingLog, PostgresqlLog, PulsarLog,
+            RedisLog, RocketmqLog, SofaRpcLog, TarsLog, ZmtpLog,
+            fastcgi::FastCGILog,
+            plugin::{custom_wrap::CustomWrapLog, get_custom_log_parser},
+            sql::ObfuscateCache,
+        },
+    },
+    plugin::wasm::WasmVm,
+};
 use enum_dispatch::enum_dispatch;
 use log::debug;
 use lru::LruCache;
-
-use super::ebpf::EbpfType;
-use super::flow::{L7PerfStats, PacketDirection};
-use super::l7_protocol_info::L7ProtocolInfo;
-use super::MetaPacket;
-
-use crate::common::meta_packet::{IcmpData, ProtocolData};
-use crate::config::config::{Iso8583ParseConfig, WebSphereMqParseConfig};
-use crate::config::handler::LogParserConfig;
-use crate::config::OracleConfig;
-use crate::flow_generator::flow_map::FlowMapCounter;
-use crate::flow_generator::protocol_logs::{
-    fastcgi::FastCGILog,
-    plugin::{custom_wrap::CustomWrapLog, get_custom_log_parser},
-    sql::ObfuscateCache,
-    AmqpLog, BrpcLog, DnsLog, DubboLog, HttpLog, KafkaLog, L7ResponseStatus, MemcachedLog,
-    MongoDBLog, MqttLog, MysqlLog, NatsLog, OpenWireLog, PingLog, PostgresqlLog, PulsarLog,
-    RedisLog, RocketmqLog, SofaRpcLog, TarsLog, ZmtpLog,
+use public::{
+    enums::IpProtocol,
+    l7_protocol::{CustomProtocol, L7Protocol, L7ProtocolChecker, L7ProtocolEnum, LogMessageType},
 };
-
-use crate::flow_generator::Result;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use crate::plugin::c_ffi::SoPluginFunc;
-use crate::plugin::wasm::WasmVm;
-
-use public::enums::IpProtocol;
-use public::l7_protocol::{
-    CustomProtocol, L7Protocol, L7ProtocolChecker, L7ProtocolEnum, LogMessageType,
+use std::{
+    cell::RefCell,
+    fmt,
+    net::IpAddr,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
 };
 
 macro_rules! count {
@@ -349,15 +354,15 @@ pub struct LogCache {
 
 impl LogCache {
     pub fn is_request_of(&self, other: &Self) -> bool {
-        self.msg_type == LogMessageType::Request
-            && other.msg_type == LogMessageType::Response
-            && self.time < other.time
+        self.msg_type == LogMessageType::Request &&
+            other.msg_type == LogMessageType::Response &&
+            self.time < other.time
     }
 
     pub fn is_response_of(&self, other: &Self) -> bool {
-        self.msg_type == LogMessageType::Response
-            && other.msg_type == LogMessageType::Request
-            && self.time > other.time
+        self.msg_type == LogMessageType::Response &&
+            other.msg_type == LogMessageType::Request &&
+            self.time > other.time
     }
 }
 
@@ -406,16 +411,15 @@ impl LogCacheKey {
             if session id is none: flow id 64bit | is_reversed 1 bit | packet_seq 63bit
         */
         let key = match session_id {
-            Some(sid) => {
+            Some(sid) =>
                 if is_reversed {
                     ((param.flow_id as u128) << 64) | 1 << 63 | sid as u128
                 } else {
                     ((param.flow_id as u128) << 64) | sid as u128
-                }
-            }
+                },
             None => {
-                ((param.flow_id as u128) << 64)
-                    | (if param.ebpf_type != EbpfType::None {
+                ((param.flow_id as u128) << 64) |
+                    (if param.ebpf_type != EbpfType::None {
                         // NOTE:
                         //   In the request-log session aggregation process, for eBPF data, we require that requests and
                         // responses have consecutive cap_seq to ensure the correctness of session aggregation. However,
@@ -437,7 +441,7 @@ impl LogCacheKey {
                     } else {
                         0
                     }) as u128
-            }
+            },
         };
 
         Self(key)
@@ -483,11 +487,14 @@ impl RrtCache {
 
     pub fn put(&mut self, key: LogCacheKey, value: LogCache) -> Option<LogCache> {
         let now = value.time;
-        if self.logs.len() >= usize::from(self.logs.cap())
-            && self.last_log_time + Self::LOG_INTERVAL < now
+        if self.logs.len() >= usize::from(self.logs.cap()) &&
+            self.last_log_time + Self::LOG_INTERVAL < now
         {
             self.last_log_time = now;
-            debug!("The capacity({}) of the rrt table will be exceeded. please adjust the configuration", self.logs.cap());
+            debug!(
+                "The capacity({}) of the rrt table will be exceeded. please adjust the configuration",
+                self.logs.cap()
+            );
         }
 
         let keys = self.flows.get_or_insert_mut(key.flow_id(), || {
@@ -505,13 +512,12 @@ impl RrtCache {
                         Self::MAX_RRT_CACHE_PER_FLOW,
                     );
                 }
-            }
+            },
             _ => (),
         }
 
         let ret = self.logs.put(key, value);
-        self.cache_len
-            .store(self.logs.len() as u64, Ordering::Relaxed);
+        self.cache_len.store(self.logs.len() as u64, Ordering::Relaxed);
         ret
     }
 
@@ -524,8 +530,7 @@ impl RrtCache {
             }
         }
         let ret = self.logs.pop(key);
-        self.cache_len
-            .store(self.logs.len() as u64, Ordering::Relaxed);
+        self.cache_len.store(self.logs.len() as u64, Ordering::Relaxed);
         ret
     }
 
@@ -559,8 +564,7 @@ impl RrtCache {
                 self.logs.pop(&key);
             }
         }
-        self.cache_len
-            .store(self.logs.len() as u64, Ordering::Relaxed);
+        self.cache_len.store(self.logs.len() as u64, Ordering::Relaxed);
     }
 }
 
@@ -582,8 +586,7 @@ impl TimeoutCache {
         if flow_end {
             let v = entry.in_cache[index] + entry.timeout[index];
             self.flows.pop(&flow_id);
-            self.cache_len
-                .store(self.flows.len() as u64, Ordering::Relaxed);
+            self.cache_len.store(self.flows.len() as u64, Ordering::Relaxed);
 
             v
         } else {
@@ -595,17 +598,14 @@ impl TimeoutCache {
     }
 
     pub fn get_or_insert_mut(&mut self, flow_id: u64) -> &mut TimeoutCacheEntry {
-        self.flows
-            .get_or_insert_mut(flow_id, || TimeoutCacheEntry::default());
-        self.cache_len
-            .store(self.flows.len() as u64, Ordering::Relaxed);
+        self.flows.get_or_insert_mut(flow_id, || TimeoutCacheEntry::default());
+        self.cache_len.store(self.flows.len() as u64, Ordering::Relaxed);
         self.flows.get_mut(&flow_id).unwrap()
     }
 
     pub fn remove_flow(&mut self, flow_id: u64) {
         self.flows.pop(&flow_id);
-        self.cache_len
-            .store(self.flows.len() as u64, Ordering::Relaxed);
+        self.cache_len.store(self.flows.len() as u64, Ordering::Relaxed);
     }
 }
 
@@ -875,11 +875,11 @@ pub fn get_parse_bitmap(protocol: IpProtocol, l7_enabled: L7ProtocolBitmap) -> L
             match protocol {
                 IpProtocol::TCP if i.parsable_on_tcp() => {
                     bitmap.set_enabled(i.protocol());
-                }
+                },
                 IpProtocol::UDP if i.parsable_on_udp() => {
                     bitmap.set_enabled(i.protocol());
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }

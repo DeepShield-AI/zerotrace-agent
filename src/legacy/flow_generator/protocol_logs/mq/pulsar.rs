@@ -2,13 +2,6 @@
 #[rustfmt::skip]
 mod pulsar_proto;
 
-use prost::Message;
-use pulsar_proto::{
-    base_command::Type as CommandType, BaseCommand, BrokerEntryMetadata, MessageMetadata,
-};
-use serde::Serialize;
-use std::collections::HashMap;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -21,15 +14,20 @@ use crate::{
     flow_generator::{
         error::Result,
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
-            set_captured_byte, value_is_default, AppProtoHead, L7ResponseStatus, PrioFields,
-            BASE_FIELD_PRIORITY,
+            set_captured_byte, value_is_default,
         },
     },
     utils::bytes::read_u32_be,
 };
-
+use prost::Message;
 use public::l7_protocol::LogMessageType;
+use pulsar_proto::{
+    BaseCommand, BrokerEntryMetadata, MessageMetadata, base_command::Type as CommandType,
+};
+use serde::Serialize;
+use std::collections::HashMap;
 
 // ProtocolVersion in PulsarApi.proto
 const MAX_PROTOCOL_VERSION: i32 = 21;
@@ -235,7 +233,7 @@ impl PulsarInfo {
             CommandType::PartitionedMetadata => get_req!(command, partition_metadata),
             CommandType::PartitionedMetadataResponse => {
                 get_req!(command, partition_metadata_response)
-            }
+            },
 
             CommandType::GetSchema => get_req!(command, get_schema),
             CommandType::GetSchemaResponse => get_req!(command, get_schema_response),
@@ -246,12 +244,12 @@ impl PulsarInfo {
             CommandType::GetLastMessageId => get_req!(command, get_last_message_id),
             CommandType::GetLastMessageIdResponse => {
                 get_req!(command, get_last_message_id_response)
-            }
+            },
 
             CommandType::GetTopicsOfNamespace => get_req!(command, get_topics_of_namespace),
             CommandType::GetTopicsOfNamespaceResponse => {
                 get_req!(command, get_topics_of_namespace_response)
-            }
+            },
 
             CommandType::AuthChallenge => None,
             CommandType::AuthResponse => None,
@@ -259,7 +257,7 @@ impl PulsarInfo {
             CommandType::GetOrCreateSchema => get_req!(command, get_or_create_schema),
             CommandType::GetOrCreateSchemaResponse => {
                 get_req!(command, get_or_create_schema_response)
-            }
+            },
 
             CommandType::NewTxn => get_req!(command, new_txn),
             CommandType::NewTxnResponse => get_req!(command, new_txn_response),
@@ -267,12 +265,12 @@ impl PulsarInfo {
             CommandType::AddPartitionToTxn => get_req!(command, add_partition_to_txn),
             CommandType::AddPartitionToTxnResponse => {
                 get_req!(command, add_partition_to_txn_response)
-            }
+            },
 
             CommandType::AddSubscriptionToTxn => get_req!(command, add_subscription_to_txn),
             CommandType::AddSubscriptionToTxnResponse => {
                 get_req!(command, add_partition_to_txn_response)
-            }
+            },
 
             CommandType::EndTxn => get_req!(command, end_txn),
             CommandType::EndTxnResponse => get_req!(command, end_txn_response),
@@ -280,12 +278,12 @@ impl PulsarInfo {
             CommandType::EndTxnOnPartition => get_req!(command, end_txn_on_partition),
             CommandType::EndTxnOnPartitionResponse => {
                 get_req!(command, end_txn_on_partition_response)
-            }
+            },
 
             CommandType::EndTxnOnSubscription => get_req!(command, end_txn_on_subscription),
             CommandType::EndTxnOnSubscriptionResponse => {
                 get_req!(command, end_txn_on_subscription_response)
-            }
+            },
 
             CommandType::TcClientConnectRequest => get_req!(command, tc_client_connect_request),
             CommandType::TcClientConnectResponse => get_req!(command, tc_client_connect_response),
@@ -398,42 +396,42 @@ impl PulsarInfo {
                 let topic = self.get_topic()?;
                 consumer_topic.insert(consumer_id, topic.clone());
                 self.topic = Some(topic);
-            }
+            },
             CommandType::Producer => {
                 let producer_id = command.producer.as_ref()?.producer_id;
                 let topic = self.get_topic()?;
                 producer_topic.insert(producer_id, topic.clone());
                 self.topic = Some(topic);
-            }
+            },
 
             CommandType::Send => update_topic!(self, producer_topic, producer_id, send),
             CommandType::SendReceipt => {
                 update_topic!(self, producer_topic, producer_id, send_receipt)
-            }
+            },
             CommandType::SendError => update_topic!(self, producer_topic, producer_id, send_error),
             CommandType::CloseProducer => {
                 update_topic!(self, producer_topic, producer_id, close_producer)
-            }
+            },
 
             CommandType::Message => update_topic!(self, consumer_topic, consumer_id, message),
             CommandType::Ack => update_topic!(self, consumer_topic, consumer_id, ack),
             CommandType::AckResponse => {
                 update_topic!(self, consumer_topic, consumer_id, ack_response)
-            }
+            },
             CommandType::ActiveConsumerChange => {
                 update_topic!(self, consumer_topic, consumer_id, active_consumer_change)
-            }
+            },
             CommandType::Flow => update_topic!(self, consumer_topic, consumer_id, flow),
             CommandType::Unsubscribe => {
                 update_topic!(self, consumer_topic, consumer_id, unsubscribe)
-            }
+            },
             CommandType::Seek => update_topic!(self, consumer_topic, consumer_id, seek),
             CommandType::ReachedEndOfTopic => {
                 update_topic!(self, consumer_topic, consumer_id, reached_end_of_topic)
-            }
+            },
             CommandType::CloseConsumer => {
                 update_topic!(self, consumer_topic, consumer_id, close_consumer)
-            }
+            },
             CommandType::RedeliverUnacknowledgedMessages => update_topic!(
                 self,
                 consumer_topic,
@@ -442,9 +440,9 @@ impl PulsarInfo {
             ),
             CommandType::ConsumerStats => {
                 update_topic!(self, consumer_topic, consumer_id, consumer_stats)
-            }
+            },
 
-            _ => {}
+            _ => {},
         }
         Some(())
     }
@@ -542,17 +540,17 @@ impl PulsarInfo {
         let mut code = None;
         let mut msg = None;
         match self.command.r#type() {
-            CommandType::Connected
-            | CommandType::ProducerSuccess
-            | CommandType::SendReceipt
-            | CommandType::Pong
-            | CommandType::Success
-            | CommandType::GetLastMessageIdResponse
-            | CommandType::GetTopicsOfNamespaceResponse
-            | CommandType::AuthResponse => {
+            CommandType::Connected |
+            CommandType::ProducerSuccess |
+            CommandType::SendReceipt |
+            CommandType::Pong |
+            CommandType::Success |
+            CommandType::GetLastMessageIdResponse |
+            CommandType::GetTopicsOfNamespaceResponse |
+            CommandType::AuthResponse => {
                 is_success = true;
-            }
-            _ => {}
+            },
+            _ => {},
         }
         if let Some(x) = &self.command.send_error {
             code = Some(x.error);
@@ -611,7 +609,7 @@ impl PulsarInfo {
             CommandType::Message => check_exists!(command, message),
             CommandType::RedeliverUnacknowledgedMessages => {
                 check_exists!(command, redeliver_unacknowledged_messages)
-            }
+            },
             CommandType::ReachedEndOfTopic => check_exists!(command, reached_end_of_topic),
             CommandType::ActiveConsumerChange => check_exists!(command, active_consumer_change),
             CommandType::AckResponse => check_exists!(command, ack_response),
@@ -640,7 +638,7 @@ impl PulsarInfo {
             CommandType::PartitionedMetadata => check_exists!(command, partition_metadata),
             CommandType::PartitionedMetadataResponse => {
                 check_exists!(command, partition_metadata_response)
-            }
+            },
 
             CommandType::GetSchema => check_exists!(command, get_schema),
             CommandType::GetSchemaResponse => check_exists!(command, get_schema_response),
@@ -651,12 +649,12 @@ impl PulsarInfo {
             CommandType::GetLastMessageId => check_exists!(command, get_last_message_id),
             CommandType::GetLastMessageIdResponse => {
                 check_exists!(command, get_last_message_id_response)
-            }
+            },
 
             CommandType::GetTopicsOfNamespace => check_exists!(command, get_topics_of_namespace),
             CommandType::GetTopicsOfNamespaceResponse => {
                 check_exists!(command, get_topics_of_namespace_response)
-            }
+            },
 
             CommandType::AuthChallenge => check_exists!(command, auth_challenge),
             CommandType::AuthResponse => check_exists!(command, auth_response),
@@ -664,7 +662,7 @@ impl PulsarInfo {
             CommandType::GetOrCreateSchema => check_exists!(command, get_or_create_schema),
             CommandType::GetOrCreateSchemaResponse => {
                 check_exists!(command, get_or_create_schema_response)
-            }
+            },
 
             CommandType::NewTxn => check_exists!(command, new_txn),
             CommandType::NewTxnResponse => check_exists!(command, new_txn_response),
@@ -672,12 +670,12 @@ impl PulsarInfo {
             CommandType::AddPartitionToTxn => check_exists!(command, add_partition_to_txn),
             CommandType::AddPartitionToTxnResponse => {
                 check_exists!(command, add_partition_to_txn_response)
-            }
+            },
 
             CommandType::AddSubscriptionToTxn => check_exists!(command, add_subscription_to_txn),
             CommandType::AddSubscriptionToTxnResponse => {
                 check_exists!(command, add_partition_to_txn_response)
-            }
+            },
 
             CommandType::EndTxn => check_exists!(command, end_txn),
             CommandType::EndTxnResponse => check_exists!(command, end_txn_response),
@@ -685,19 +683,19 @@ impl PulsarInfo {
             CommandType::EndTxnOnPartition => check_exists!(command, end_txn_on_partition),
             CommandType::EndTxnOnPartitionResponse => {
                 check_exists!(command, end_txn_on_partition_response)
-            }
+            },
 
             CommandType::EndTxnOnSubscription => check_exists!(command, end_txn_on_subscription),
             CommandType::EndTxnOnSubscriptionResponse => {
                 check_exists!(command, end_txn_on_subscription_response)
-            }
+            },
 
             CommandType::TcClientConnectRequest => {
                 check_exists!(command, tc_client_connect_request)
-            }
+            },
             CommandType::TcClientConnectResponse => {
                 check_exists!(command, tc_client_connect_response)
-            }
+            },
 
             CommandType::Subscribe => check_exists!(command, subscribe),
             CommandType::Unsubscribe => check_exists!(command, unsubscribe),
@@ -737,7 +735,7 @@ impl PulsarInfo {
             LogMessageType::Response => {
                 info.resp_len = Some(total_size as u32);
                 info.update_response_info();
-            }
+            },
             _ => info.req_len = Some(total_size as u32),
         }
         Some((payload, info))
@@ -747,14 +745,12 @@ impl PulsarInfo {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::Pulsar) {
             self.is_on_blacklist = t
                 .request_type
-                .is_on_blacklist(self.command.r#type().as_str_name())
-                || self
-                    .topic
+                .is_on_blacklist(self.command.r#type().as_str_name()) ||
+                self.topic
                     .as_ref()
                     .map(|p| t.request_resource.is_on_blacklist(p) || t.endpoint.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .domain
+                    .unwrap_or_default() ||
+                self.domain
                     .as_ref()
                     .map(|p| t.request_domain.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -890,9 +886,7 @@ impl L7ProtocolParserInterface for PulsarLog {
         self.perf_stats.clear();
         while let Some((tmp, mut info)) = PulsarInfo::parse(payload, param) {
             payload = tmp;
-            self.version = self
-                .version
-                .min(info.version.unwrap_or(MAX_PROTOCOL_VERSION));
+            self.version = self.version.min(info.version.unwrap_or(MAX_PROTOCOL_VERSION));
             self.domain = info.domain.clone().or(self.domain.clone());
             info.update_topic(&mut self.producer_topic, &mut self.consumer_topic);
             info.version = Some(self.version);
@@ -950,19 +944,15 @@ impl L7ProtocolParserInterface for PulsarLog {
 
 #[cfg(test)]
 mod tests {
-    use serde_json;
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use serde_json;
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/pulsar";
 
@@ -1023,16 +1013,15 @@ mod tests {
                     L7ParseResult::Single(s) => {
                         output.push_str(&serde_json::to_string(&s).unwrap());
                         output.push_str("\n");
-                    }
-                    L7ParseResult::Multi(m) => {
+                    },
+                    L7ParseResult::Multi(m) =>
                         for i in m {
                             output.push_str(&serde_json::to_string(&i).unwrap());
                             output.push_str("\n");
-                        }
-                    }
+                        },
                     L7ParseResult::None => {
                         output.push_str("None\n");
-                    }
+                    },
                 }
             } else {
                 output.push_str(&format!("{:?}\n", PulsarInfo::default()));

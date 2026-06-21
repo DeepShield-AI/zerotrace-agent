@@ -14,17 +14,14 @@
  * limitations under the License.
  */
 
-use std::hash::Hasher;
-
-use ahash::AHasher;
-use log::{debug, trace};
-
 use crate::{
     config::handler::PlatformConfig,
     utils::command::{get_hostname, get_ip_address},
 };
-
+use ahash::AHasher;
+use log::{debug, trace};
 use public::proto::agent as pb;
+use std::hash::Hasher;
 
 pub struct Querier {
     override_os_hostname: Option<String>,
@@ -90,15 +87,14 @@ impl Querier {
                 hasher.write(hostname.as_bytes());
                 trace!("digest={:016x}", hasher.finish());
                 self.raw_hostname = Some(hostname);
-            }
+            },
             Err(e) => debug!("get_hostname failed: {}", e),
         }
     }
 
     fn update_raw_ip_addr(&mut self, hasher: &mut AHasher) {
-        let raw_host_ip_addr = get_ip_address()
-            .map_err(|err| debug!("get_ip_address error:{}", err))
-            .ok();
+        let raw_host_ip_addr =
+            get_ip_address().map_err(|err| debug!("get_ip_address error:{}", err)).ok();
         if let Some(ip_addr) = raw_host_ip_addr.as_ref() {
             for line in ip_addr.lines() {
                 // 忽略可能变化的行避免version频繁更新

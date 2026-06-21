@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::sync::atomic::AtomicU64;
-
 use public::counter::{CounterType, CounterValue, RefCountable};
+use std::sync::atomic::AtomicU64;
 
 #[derive(Debug, Default)]
 pub struct WasmCounter {
@@ -37,8 +36,7 @@ impl RefCountable for WasmCounter {
                 "execute_duration",
                 CounterType::Gauged,
                 CounterValue::Unsigned(
-                    self.exe_duration
-                        .swap(0, std::sync::atomic::Ordering::Relaxed),
+                    self.exe_duration.swap(0, std::sync::atomic::Ordering::Relaxed),
                 ),
             ),
             (

@@ -14,11 +14,18 @@
  * limitations under the License.
  */
 
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
-use std::vec;
-
+use crate::{
+    common::{
+        ERSPAN_HEADER_SIZE, ETH_HEADER_SIZE, GRE_HEADER_SIZE, IPV4_HEADER_SIZE, IPV6_HEADER_SIZE,
+        TCP_PACKET_SIZE, TCP6_PACKET_SIZE, UDP_HEADER_SIZE, VLAN_HEADER_SIZE, VXLAN_HEADER_SIZE,
+        erspan, vxlan,
+    },
+    config::NpbConfig,
+    sender::npb_sender::{NpbArpTable, NpbPacketSender},
+    utils::stats::{self, QueueStats, StatsOption},
+};
 use log::info;
+use npb_handler::{NOT_SUPPORT, NpbHandler, NpbHandlerCounter, NpbHeader, StatsNpbHandlerCounter};
 use npb_pcap_policy::NpbTunnelType;
 use pnet::packet::{
     ethernet::{EtherTypes, MutableEthernetPacket},
@@ -29,24 +36,19 @@ use pnet::packet::{
     udp::MutableUdpPacket,
     vlan::{ClassesOfService, MutableVlanPacket},
 };
-use public::enums::IpProtocol;
-
-use crate::common::{
-    erspan, vxlan, ERSPAN_HEADER_SIZE, ETH_HEADER_SIZE, GRE_HEADER_SIZE, IPV4_HEADER_SIZE,
-    IPV6_HEADER_SIZE, TCP6_PACKET_SIZE, TCP_PACKET_SIZE, UDP_HEADER_SIZE, VLAN_HEADER_SIZE,
-    VXLAN_HEADER_SIZE,
-};
-use crate::config::NpbConfig;
-use crate::sender::npb_sender::{NpbArpTable, NpbPacketSender};
-use crate::utils::stats::{self, QueueStats, StatsOption};
-use npb_handler::{NpbHandler, NpbHandlerCounter, NpbHeader, StatsNpbHandlerCounter, NOT_SUPPORT};
 use public::{
     counter::Countable,
     debug::QueueDebugger,
+    enums::IpProtocol,
     leaky_bucket::LeakyBucket,
     proto::agent::VlanMode,
-    queue::{bounded_with_debug, DebugSender},
+    queue::{DebugSender, bounded_with_debug},
     utils::net::MacAddr,
+};
+use std::{
+    sync::{Arc, Mutex},
+    thread::{self, JoinHandle},
+    vec,
 };
 
 struct NpbStats {
@@ -348,8 +350,8 @@ impl NpbBuilder {
     }
 
     pub fn notify_stop(&self) -> Option<JoinHandle<()>> {
-        if self.npb_packet_sender.is_none()
-            || !self.npb_packet_sender.as_ref().unwrap().is_running()
+        if self.npb_packet_sender.is_none() ||
+            !self.npb_packet_sender.as_ref().unwrap().is_running()
         {
             return None;
         }
@@ -360,8 +362,8 @@ impl NpbBuilder {
     }
 
     pub fn stop(&self) {
-        if self.npb_packet_sender.is_none()
-            || !self.npb_packet_sender.as_ref().unwrap().is_running()
+        if self.npb_packet_sender.is_none() ||
+            !self.npb_packet_sender.as_ref().unwrap().is_running()
         {
             return;
         }

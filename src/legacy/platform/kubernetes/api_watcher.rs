@@ -14,6 +14,28 @@
  * limitations under the License.
  */
 
+use super::resource_watcher::{
+    GenericResourceWatcher, GroupVersion, Resource, ResourceWatcherFactory, SelectedGv, Watcher,
+    WatcherConfig, default_resources, supported_resources,
+};
+use crate::{
+    config::{ApiResources, handler::PlatformAccess},
+    error::{Error, Result},
+    exception::ExceptionHandler,
+    rpc::Session,
+    trident::AgentId,
+    utils::{
+        environment::{KubeWatchPolicy, running_in_container},
+        stats,
+    },
+};
+use arc_swap::access::Access;
+use flate2::{Compression, write::ZlibEncoder};
+use k8s_openapi::apimachinery::pkg::version::Info;
+use kube::{Client, Config};
+use log::{Level, debug, error, info, log_enabled, warn};
+use parking_lot::RwLock;
+use public::proto::agent::{Exception, KubernetesApiInfo, KubernetesApiSyncRequest};
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -21,37 +43,13 @@ use std::{
     mem,
     ops::Deref,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc, Condvar, Mutex,
+        atomic::{AtomicU64, Ordering},
     },
     thread,
     time::{Duration, SystemTime},
 };
-
-use arc_swap::access::Access;
-use flate2::{write::ZlibEncoder, Compression};
-use k8s_openapi::apimachinery::pkg::version::Info;
-use kube::{Client, Config};
-use log::{debug, error, info, log_enabled, warn, Level};
-use parking_lot::RwLock;
 use tokio::{runtime::Runtime, task::JoinHandle};
-
-use super::resource_watcher::{
-    default_resources, supported_resources, GenericResourceWatcher, GroupVersion, Resource,
-    ResourceWatcherFactory, SelectedGv, Watcher, WatcherConfig,
-};
-use crate::{
-    config::{handler::PlatformAccess, ApiResources},
-    error::{Error, Result},
-    exception::ExceptionHandler,
-    rpc::Session,
-    trident::AgentId,
-    utils::{
-        environment::{running_in_container, KubeWatchPolicy},
-        stats,
-    },
-};
-use public::proto::agent::{Exception, KubernetesApiInfo, KubernetesApiSyncRequest};
 
 /*
  * K8s API同步功能
@@ -110,10 +108,7 @@ impl ApiWatcher {
             context: Arc::new(Context {
                 config,
                 version: AtomicU64::new(
-                    SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
+                    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
                 ),
                 runtime,
             }),
@@ -203,7 +198,7 @@ impl ApiWatcher {
                     warn!("kubernetes watcher is enabled but K8S_WATCH_POLICY=watch-disabled");
                 }
                 false
-            }
+            },
         };
         if !enabled || !running_in_container() {
             return;
@@ -275,8 +270,8 @@ impl ApiWatcher {
 
         // remove disabled or overridden entries
         resources.retain(|r| {
-            !(disabled_resources.contains(&r.name as &str)
-                || overridden_resources.contains(&r.name as &str))
+            !(disabled_resources.contains(&r.name as &str) ||
+                overridden_resources.contains(&r.name as &str))
         });
 
         // add overridden entries
@@ -284,10 +279,7 @@ impl ApiWatcher {
             if r.disabled {
                 continue;
             }
-            let Some(index) = supported_resources
-                .iter()
-                .position(|sr| &sr.name == &r.name)
-            else {
+            let Some(index) = supported_resources.iter().position(|sr| &sr.name == &r.name) else {
                 warn!("resource {} not supported", r.name);
                 continue;
             };
@@ -359,8 +351,8 @@ impl ApiWatcher {
             .map_err(|e| Error::KubernetesApiWatcher(format!("{}", e)))?;
         for api_resource in core_resources.resources {
             let Some(index) = resources.iter().position(|r| {
-                &r.name == &api_resource.name
-                    && r.group_versions.iter().any(|gv| gv.group == "core")
+                &r.name == &api_resource.name &&
+                    r.group_versions.iter().any(|gv| gv.group == "core")
             }) else {
                 continue;
             };
@@ -409,9 +401,8 @@ impl ApiWatcher {
                             debug!("skipped invalid version {}", version.version);
                             continue;
                         }
-                        let mut api_resources = client
-                            .list_api_group_resources(&version.group_version)
-                            .await;
+                        let mut api_resources =
+                            client.list_api_group_resources(&version.group_version).await;
                         if api_resources.is_err() {
                             debug!(
                                 "failed to get api resources from {}: {}",
@@ -419,9 +410,8 @@ impl ApiWatcher {
                                 api_resources.unwrap_err()
                             );
                             // try one more time
-                            api_resources = client
-                                .list_api_group_resources(&version.group_version)
-                                .await;
+                            api_resources =
+                                client.list_api_group_resources(&version.group_version).await;
                             if api_resources.is_err() {
                                 continue;
                             }
@@ -431,8 +421,8 @@ impl ApiWatcher {
                         for api_resource in api_resources.unwrap().resources {
                             let resource_name = api_resource.name;
                             let Some(index) = resources.iter().position(|r| {
-                                &r.name == &resource_name
-                                    && r.group_versions.iter().any(|gv| gv.group == &group.name)
+                                &r.name == &resource_name &&
+                                    r.group_versions.iter().any(|gv| gv.group == &group.name)
                             }) else {
                                 continue;
                             };
@@ -454,9 +444,8 @@ impl ApiWatcher {
                                 resource_name, version.group_version
                             );
                             match &resource.selected_gv {
-                                SelectedGv::None => {
-                                    resource.selected_gv = SelectedGv::Inferred(*gv)
-                                }
+                                SelectedGv::None =>
+                                    resource.selected_gv = SelectedGv::Inferred(*gv),
                                 SelectedGv::Inferred(selected) if gv != selected => {
                                     // must exist
                                     let prev_index = resource
@@ -469,20 +458,20 @@ impl ApiWatcher {
                                         debug!("use more suitable {} api in {}", resource_name, gv);
                                         resource.selected_gv = SelectedGv::Inferred(*gv);
                                     }
-                                }
+                                },
                                 // do nothing if a group version is specified in agent config
                                 _ => (),
                             }
                         }
                     }
                 }
-            }
+            },
             Err(err) => {
                 // 检查支持的api列表，如果查不到就用默认的
                 let err_msg = format!("get server resources failed: {}, use defaults", err);
                 warn!("{}", err_msg);
                 err_msgs.lock().unwrap().push(err_msg);
-            }
+            },
         }
 
         // check required resources
@@ -527,24 +516,24 @@ impl ApiWatcher {
             Err(e) => {
                 let err_msg = format!("failed to create kubernetes client: {}", e);
                 return Err(Error::KubernetesApiWatcher(err_msg));
-            }
+            },
         };
 
         match client.apiserver_version().await {
             Ok(info) => {
                 *apiserver_version.lock().unwrap() = info;
-            }
+            },
             Err(err) => {
                 let err_msg = format!("failed to get server version: {}", err);
                 return Err(Error::KubernetesApiWatcher(err_msg));
-            }
+            },
         }
 
         let resources = match Self::discover_resources(&client, resource_config, err_msgs).await {
             Ok(r) => r,
             Err(e) => {
                 return Err(Error::KubernetesApiWatcher(e.to_string()));
-            }
+            },
         };
 
         let (mut watchers, mut task_handles) = (HashMap::new(), vec![]);
@@ -665,13 +654,7 @@ impl ApiWatcher {
                 source_ip: Some(id.ipmac.ip.to_string()),
                 team_id: Some(id.team_id.clone()),
                 error_msg: Some(
-                    err_msgs
-                        .lock()
-                        .unwrap()
-                        .drain(..)
-                        .collect::<Vec<_>>()
-                        .as_slice()
-                        .join(";"),
+                    err_msgs.lock().unwrap().drain(..).collect::<Vec<_>>().as_slice().join(";"),
                 ),
                 entries: total_entries,
             }
@@ -696,14 +679,14 @@ impl ApiWatcher {
                     // 接收端返回之前的version，如果相等，不需要全量同步
                     return;
                 }
-            }
+            },
             Err(e) => {
                 let err = format!("kubernetes_api_sync grpc call failed: {}", e);
                 exception_handler.set(Exception::ControllerSocketError);
                 error!("{}", err);
                 err_msgs.lock().unwrap().push(err);
                 return;
-            }
+            },
         }
 
         // 发送一次全量
@@ -731,9 +714,7 @@ impl ApiWatcher {
             Self::debug_k8s_request(&msg, true);
         }
 
-        if let Err(e) = context
-            .runtime
-            .block_on(session.grpc_kubernetes_api_sync_with_statsd(msg))
+        if let Err(e) = context.runtime.block_on(session.grpc_kubernetes_api_sync_with_statsd(msg))
         {
             let err = format!("kubernetes_api_sync grpc call failed: {}", e);
             exception_handler.set(Exception::ControllerSocketError);
@@ -801,13 +782,12 @@ impl ApiWatcher {
                             entries: vec![],
                         }
                     };
-                    if let Err(e) = context
-                        .runtime
-                        .block_on(session.grpc_kubernetes_api_sync_with_statsd(msg))
+                    if let Err(e) =
+                        context.runtime.block_on(session.grpc_kubernetes_api_sync_with_statsd(msg))
                     {
                         debug!("kubernetes_api_sync grpc call failed: {}", e);
                     }
-                }
+                },
             }
 
             // 等待下一次timeout

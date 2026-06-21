@@ -14,24 +14,30 @@
  * limitations under the License.
  */
 
-use std::net::IpAddr;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc, RwLock,
+use super::{
+    Error as PError, Result as PResult,
+    fast_path::{EndpointTableType, FastPath},
 };
-
+use crate::{
+    common::{
+        endpoint::{EndpointData, FeatureFlags},
+        lookup_key::LookupKey,
+        matched_field::{MatchedField, MatchedFieldN, MatchedFieldv4, MatchedFieldv6},
+        platform_data::PlatformData,
+        policy::{Acl, Cidr, Fieldv4, Fieldv6, IpGroupData, IpSegment},
+    },
+    utils::process::get_memory_rss,
+};
 use ahash::AHashMap;
 use log::{info, warn};
-
-use super::fast_path::{EndpointTableType, FastPath};
-use super::{Error as PError, Result as PResult};
-use crate::common::endpoint::{EndpointData, FeatureFlags};
-use crate::common::lookup_key::LookupKey;
-use crate::common::matched_field::{MatchedField, MatchedFieldN, MatchedFieldv4, MatchedFieldv6};
-use crate::common::platform_data::PlatformData;
-use crate::common::policy::{Acl, Cidr, Fieldv4, Fieldv6, IpGroupData, IpSegment};
-use crate::utils::process::get_memory_rss;
-use npb_pcap_policy::{DirectionType, PolicyData, NOT_SUPPORT};
+use npb_pcap_policy::{DirectionType, NOT_SUPPORT, PolicyData};
+use std::{
+    net::IpAddr,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 struct Vector<const N: usize> {
     min_bit: usize,
@@ -101,11 +107,7 @@ impl<const N: usize> Vector<N> {
     // | 1         | 9         | 10   | 8      |
     // -----------------------------------------
     fn abs_diff(a: usize, b: usize) -> usize {
-        if a > b {
-            a - b
-        } else {
-            b - a
-        }
+        if a > b { a - b } else { b - a }
     }
 
     fn calc_index(matched_0: usize, matched_1: usize, base: usize) -> usize {
@@ -128,9 +130,8 @@ impl<const N: usize> Vector<N> {
     }
 
     fn generate_sort_table4(&self, acls: &Vec<Acl>, base: usize) -> Vec<Vec<usize>> {
-        let mut table: Vec<Vec<usize>> = std::iter::repeat(Vec::new())
-            .take(u16::MAX as usize)
-            .collect();
+        let mut table: Vec<Vec<usize>> =
+            std::iter::repeat(Vec::new()).take(u16::MAX as usize).collect();
         for i in 0..self.mask.bit_size() {
             let mut matched_0 = 0;
             let mut matched_1 = 0;
@@ -155,9 +156,8 @@ impl<const N: usize> Vector<N> {
     }
 
     fn generate_sort_table6(&self, acls: &Vec<Acl>, base: usize) -> Vec<Vec<usize>> {
-        let mut table: Vec<Vec<usize>> = std::iter::repeat(Vec::new())
-            .take(u16::MAX as usize)
-            .collect();
+        let mut table: Vec<Vec<usize>> =
+            std::iter::repeat(Vec::new()).take(u16::MAX as usize).collect();
         for i in 0..self.mask.bit_size() {
             let mut matched_0 = 0;
             let mut matched_1 = 0;
@@ -344,25 +344,13 @@ impl FirstPath {
         }
 
         for group in &acl.src_groups {
-            if self
-                .group_ip_map
-                .as_ref()
-                .unwrap()
-                .get(&(*group as u16))
-                .is_none()
-            {
+            if self.group_ip_map.as_ref().unwrap().get(&(*group as u16)).is_none() {
                 return true;
             }
         }
 
         for group in &acl.dst_groups {
-            if self
-                .group_ip_map
-                .as_ref()
-                .unwrap()
-                .get(&(*group as u16))
-                .is_none()
-            {
+            if self.group_ip_map.as_ref().unwrap().get(&(*group as u16)).is_none() {
                 return true;
             }
         }
@@ -383,7 +371,9 @@ impl FirstPath {
             return true;
         }
         if current >= memory_limit {
-            warn!("The current memory usage is greater than the memory threshold, Please reconfigure the memory threshold.");
+            warn!(
+                "The current memory usage is greater than the memory threshold, Please reconfigure the memory threshold."
+            );
             return false;
         }
 
@@ -397,23 +387,13 @@ impl FirstPath {
             let mut dst_ips = Vec::new();
 
             for group in &acl.src_groups {
-                for ip_segment in self
-                    .group_ip_map
-                    .as_ref()
-                    .unwrap()
-                    .get(&(*group as u16))
-                    .unwrap()
+                for ip_segment in self.group_ip_map.as_ref().unwrap().get(&(*group as u16)).unwrap()
                 {
                     src_ips.push(ip_segment.clone());
                 }
             }
             for group in &acl.dst_groups {
-                for ip_segment in self
-                    .group_ip_map
-                    .as_ref()
-                    .unwrap()
-                    .get(&(*group as u16))
-                    .unwrap()
+                for ip_segment in self.group_ip_map.as_ref().unwrap().get(&(*group as u16)).unwrap()
                 {
                     dst_ips.push(ip_segment.clone());
                 }
@@ -442,16 +422,16 @@ impl FirstPath {
                     dst_ipv4_count += 1;
                 }
             }
-            let mut need_memory = Fieldv4::SIZE
-                * src_ipv4_count
-                * dst_ipv4_count
-                * acl.src_port_ranges.len().max(1)
-                * acl.dst_port_ranges.len().max(1);
-            need_memory += Fieldv6::SIZE
-                * src_ipv6_count
-                * dst_ipv6_count
-                * acl.src_port_ranges.len().max(1)
-                * acl.dst_port_ranges.len().max(1);
+            let mut need_memory = Fieldv4::SIZE *
+                src_ipv4_count *
+                dst_ipv4_count *
+                acl.src_port_ranges.len().max(1) *
+                acl.dst_port_ranges.len().max(1);
+            need_memory += Fieldv6::SIZE *
+                src_ipv6_count *
+                dst_ipv6_count *
+                acl.src_port_ranges.len().max(1) *
+                acl.dst_port_ranges.len().max(1);
             if !self.memory_check(need_memory as u64, false) {
                 warn!(
                     "Memory will exceed limit {} bytes, policy {} probably need memory {} bytes.",
@@ -471,8 +451,7 @@ impl FirstPath {
 
     fn vector_size(&mut self, acls: &Vec<Acl>, memory_exceeded: bool) -> usize {
         let mut sum = 0;
-        acls.iter()
-            .for_each(|x| sum += x.match_field.len() + x.match_field6.len());
+        acls.iter().for_each(|x| sum += x.match_field.len() + x.match_field6.len());
 
         let mut limit = Self::POLICY_LIMIT;
         let memory_limit = self.memory_limit.load(Ordering::Relaxed);
@@ -566,8 +545,16 @@ impl FirstPath {
             acls.iter()
                 .for_each(|x| policy_count += x.match_field.len() + x.match_field6.len());
             let item_count = vector_4.count + vector_6.count;
-            info!("Policy memory level {}, policy count {}, item count {} + {} = {}, vector size {}, probably need memory {}B bytes.",
-                self.current_level, policy_count, vector_4.count, vector_6.count, item_count, vector_size, need_memory + acl_memory);
+            info!(
+                "Policy memory level {}, policy count {}, item count {} + {} = {}, vector size {}, probably need memory {}B bytes.",
+                self.current_level,
+                policy_count,
+                vector_4.count,
+                vector_6.count,
+                item_count,
+                vector_size,
+                need_memory + acl_memory
+            );
             ok = self.memory_check(need_memory, acls.is_empty());
             if !ok {
                 if self.current_level < Self::LEVEL_MAX && item_count > policy_count {
@@ -692,11 +679,11 @@ impl FirstPath {
             (MatchedField::V4(forward), MatchedField::V4(backward)) => {
                 self.get_policy_from_table4(forward, DirectionType::FORWARD, policy);
                 self.get_policy_from_table4(backward, DirectionType::BACKWARD, policy);
-            }
+            },
             (MatchedField::V6(forward), MatchedField::V6(backward)) => {
                 self.get_policy_from_table6(forward, DirectionType::FORWARD, policy);
                 self.get_policy_from_table6(backward, DirectionType::BACKWARD, policy);
-            }
+            },
             _ => panic!("LookupKey({:?}) MatchedField version error.", key),
         }
     }
@@ -806,14 +793,10 @@ impl FirstPath {
 
 #[cfg(test)]
 mod tests {
-    use std::net::IpAddr;
-
     use super::*;
-    use crate::common::endpoint::EndpointInfo;
-    use crate::common::enums::CaptureNetworkType;
-    use crate::common::port_range::PortRange;
-
+    use crate::common::{endpoint::EndpointInfo, enums::CaptureNetworkType, port_range::PortRange};
     use npb_pcap_policy::{NpbAction, NpbTunnelType, TapSide};
+    use std::net::IpAddr;
 
     fn update_ip_group(first: &mut FirstPath, groups: &Vec<Arc<IpGroupData>>) {
         first.generate_group_ip_map(groups);

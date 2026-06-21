@@ -14,37 +14,38 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::{
-    atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-    Arc,
+use super::consts::*;
+use crate::{
+    collector::types::U16Set,
+    common::{
+        Timestamp,
+        enums::CaptureNetworkType,
+        flow::{CloseType, HeartbeatAggrKey, PacketDirection},
+        tagged_flow::{BoxedTaggedFlow, TaggedFlow},
+    },
+    config::handler::{CollectorAccess, CollectorConfig},
+    rpc::get_timestamp,
+    utils::stats::{Counter, CounterType, CounterValue, RefCountable},
 };
-use std::thread;
-use std::time::Duration;
-use thread::JoinHandle;
-
 use arc_swap::access::Access;
 use log::{debug, info, warn};
 use npb_pcap_policy::NpbTunnelType;
-use rand::prelude::{Rng, SeedableRng, SmallRng};
-
-use super::consts::*;
-
-use crate::collector::types::U16Set;
-use crate::common::Timestamp;
-use crate::common::{
-    enums::CaptureNetworkType,
-    flow::{CloseType, HeartbeatAggrKey, PacketDirection},
-    tagged_flow::{BoxedTaggedFlow, TaggedFlow},
-};
-use crate::config::handler::{CollectorAccess, CollectorConfig};
-use crate::rpc::get_timestamp;
-use crate::utils::stats::{Counter, CounterType, CounterValue, RefCountable};
 use public::{
     buffer::BatchedBox,
     chrono_map::ChronoMap,
     queue::{DebugSender, Error, Receiver},
 };
+use rand::prelude::{Rng, SeedableRng, SmallRng};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread,
+    time::Duration,
+};
+use thread::JoinHandle;
 
 const TIMESTAMP_SLOT_COUNT: usize = SECONDS_IN_MINUTE as usize;
 const QUEUE_READ_TIMEOUT: Duration = Duration::from_secs(1); // Must be less than or equal to FLUSH_TIMEOUT
@@ -217,10 +218,13 @@ impl FlowAggr {
         let f = f.as_ref();
         let flow_time = Timestamp::from_secs(f.flow.start_time_in_minute());
         if flow_time < self.slot_start_time {
-            debug!("flow drop before slot start time. flow stat time: {:?}, slot start time is {:?}, delay is {:?}", flow_time, self.slot_start_time, self.slot_start_time - flow_time);
-            self.metrics
-                .drop_before_window
-                .fetch_add(1, Ordering::Relaxed);
+            debug!(
+                "flow drop before slot start time. flow stat time: {:?}, slot start time is {:?}, delay is {:?}",
+                flow_time,
+                self.slot_start_time,
+                self.slot_start_time - flow_time
+            );
+            self.metrics.drop_before_window.fetch_add(1, Ordering::Relaxed);
             return;
         }
 
@@ -253,12 +257,9 @@ impl FlowAggr {
                         hb_flow.flow.flow_key.port_src = 0;
                         hb_flow.flow.flow_metrics_peers[PacketDirection::ClientToServer as usize]
                             .nat_real_port = 0;
-                        self.metrics
-                            .heartbeat_aggred
-                            .fetch_add(1, Ordering::Relaxed);
+                        self.metrics.heartbeat_aggred.fetch_add(1, Ordering::Relaxed);
                     } else {
-                        self.heartbeat_flow_stash
-                            .insert(flow_time, key, new_hb_flow);
+                        self.heartbeat_flow_stash.insert(flow_time, key, new_hb_flow);
                     }
                 }
             } else if close_type != CloseType::ForcedReport {
@@ -267,8 +268,8 @@ impl FlowAggr {
                 }
             }
         } else {
-            if config.aggregate_health_check_l4_flow_log
-                && f.flow.close_type == CloseType::TcpFinClientRst
+            if config.aggregate_health_check_l4_flow_log &&
+                f.flow.close_type == CloseType::TcpFinClientRst
             {
                 self.heartbeat_flow_stash.insert(
                     flow_time,
@@ -319,11 +320,10 @@ impl FlowAggr {
             );
         }
         if config.aggregate_health_check_l4_flow_log {
-            self.heartbeat_flow_stash
-                .forward_time(self.slot_start_time.into(), |item| {
-                    self.sender.send_flow(item.clone());
-                    None
-                });
+            self.heartbeat_flow_stash.forward_time(self.slot_start_time.into(), |item| {
+                self.sender.send_flow(item.clone());
+                None
+            });
         }
     }
 
@@ -346,22 +346,22 @@ impl FlowAggr {
                 Ok(_) => {
                     let config = self.config.load();
                     for tagged_flow in batch.drain(..) {
-                        if config.l4_log_ignore_tap_sides[tagged_flow.flow.tap_side as usize]
-                            && !tagged_flow.flow.need_to_store
+                        if config.l4_log_ignore_tap_sides[tagged_flow.flow.tap_side as usize] &&
+                            !tagged_flow.flow.need_to_store
                         {
                             continue;
                         }
                         if config.l4_log_store_tap_types
-                            [u16::from(CaptureNetworkType::Any) as usize]
-                            || config.l4_log_store_tap_types
-                                [u16::from(tagged_flow.flow.flow_key.tap_type) as usize]
-                            || tagged_flow.flow.need_to_store
+                            [u16::from(CaptureNetworkType::Any) as usize] ||
+                            config.l4_log_store_tap_types
+                                [u16::from(tagged_flow.flow.flow_key.tap_type) as usize] ||
+                            tagged_flow.flow.need_to_store
                         {
                             self.minute_merge(&config, tagged_flow);
                         }
                     }
                     self.calc_stash_counters();
-                }
+                },
                 Err(Error::Timeout) => {
                     let now = get_timestamp(self.ntp_diff.load(Ordering::Relaxed));
                     self.sender.output.flush_cache_with_throttling(&now);
@@ -369,10 +369,10 @@ impl FlowAggr {
                     if now > self.last_flush_time + self.flush_timeout {
                         self.flush_front_slot_and_rotate();
                     }
-                }
+                },
                 Err(Error::Terminated(..)) => {
                     break;
-                }
+                },
                 Err(Error::BatchTooLarge(_)) => unreachable!(),
             }
         }
@@ -489,9 +489,7 @@ impl Sender {
             self.output.send_without_throttling(f);
         } else {
             if !self.output.send_with_throttling(f) {
-                self.metrics
-                    .drop_in_throttle
-                    .fetch_add(1, Ordering::Relaxed);
+                self.metrics.drop_in_throttle.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -538,8 +536,8 @@ impl ThrottlingQueue {
     }
 
     fn flush_cache_with_throttling(&mut self, now: &Duration) {
-        if now.as_secs() >> Self::THROTTLE_BUCKET_BITS
-            != self.last_flush_cache_with_throttling_time.as_secs() >> Self::THROTTLE_BUCKET_BITS
+        if now.as_secs() >> Self::THROTTLE_BUCKET_BITS !=
+            self.last_flush_cache_with_throttling_time.as_secs() >> Self::THROTTLE_BUCKET_BITS
         {
             self.update_throttle();
             if let Err(e) = self.output.send_all(&mut self.cache_with_throttling) {
@@ -570,10 +568,10 @@ impl ThrottlingQueue {
     }
 
     fn flush_cache_without_throttling(&mut self, now: &Duration) {
-        if self.cache_without_throttling.len() >= Self::CACHE_WITHOUT_THROTTLING_SIZE
-            || now.as_secs() >> Self::THROTTLE_BUCKET_BITS
-                != self.last_flush_cache_without_throttling_time.as_secs()
-                    >> Self::THROTTLE_BUCKET_BITS
+        if self.cache_without_throttling.len() >= Self::CACHE_WITHOUT_THROTTLING_SIZE ||
+            now.as_secs() >> Self::THROTTLE_BUCKET_BITS !=
+                self.last_flush_cache_without_throttling_time.as_secs() >>
+                    Self::THROTTLE_BUCKET_BITS
         {
             if let Err(e) = self.output.send_all(&mut self.cache_without_throttling) {
                 debug!(
@@ -593,8 +591,8 @@ impl ThrottlingQueue {
 
     pub fn update_throttle(&mut self) {
         let new = self.config.load().l4_log_collect_nps_threshold;
-        if new < Self::MIN_L4_LOG_COLLECT_NPS_THRESHOLD
-            || new > Self::MAX_L4_LOG_COLLECT_NPS_THRESHOLD
+        if new < Self::MIN_L4_LOG_COLLECT_NPS_THRESHOLD ||
+            new > Self::MAX_L4_LOG_COLLECT_NPS_THRESHOLD
         {
             debug!(
                 "l4 flow throttle {} is invalid, must in range[{}, {}]",

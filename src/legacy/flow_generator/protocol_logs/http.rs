@@ -14,31 +14,14 @@
  * limitations under the License.
  */
 
-use std::{
-    borrow::{Borrow, Cow},
-    cell::OnceCell,
-    collections::{HashMap, HashSet},
-    mem, str,
-    sync::Arc,
-};
-
-use hpack::Decoder;
-use nom::{AsBytes, ParseTo};
-use serde::Serialize;
-
-use public::l7_protocol::{
-    Field, FieldSetter, L7Log, L7LogAttribute, L7ProtocolChecker, LogMessageType,
-};
-use public_derive::L7Log;
-
 use super::{
+    AppProtoHead, L7ResponseStatus, PrioField,
     consts::*,
     pb_adapter::{
         ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, MetricKeyVal, TraceInfo,
     },
-    value_is_default, AppProtoHead, L7ResponseStatus, PrioField,
+    value_is_default,
 };
-
 #[cfg(feature = "libtrace")]
 use crate::utils::bytes::read_u32_le;
 use crate::{
@@ -53,12 +36,28 @@ use crate::{
         meta_packet::ApplicationFlags,
     },
     config::handler::{L7LogDynamicConfig, LogParserConfig},
-    flow_generator::error::{Error, Result},
-    flow_generator::protocol_logs::{
-        set_captured_byte, L7ProtoRawDataType, BASE_FIELD_PRIORITY, PLUGIN_FIELD_PRIORITY,
+    flow_generator::{
+        error::{Error, Result},
+        protocol_logs::{
+            BASE_FIELD_PRIORITY, L7ProtoRawDataType, PLUGIN_FIELD_PRIORITY, set_captured_byte,
+        },
     },
     plugin::CustomInfo,
     utils::bytes::read_u32_be,
+};
+use hpack::Decoder;
+use nom::{AsBytes, ParseTo};
+use public::l7_protocol::{
+    Field, FieldSetter, L7Log, L7LogAttribute, L7ProtocolChecker, LogMessageType,
+};
+use public_derive::L7Log;
+use serde::Serialize;
+use std::{
+    borrow::{Borrow, Cow},
+    cell::OnceCell,
+    collections::{HashMap, HashSet},
+    mem, str,
+    sync::Arc,
 };
 
 cfg_if::cfg_if! {
@@ -164,36 +163,28 @@ impl Method {
 impl Method {
     fn from_frame_type(value: u8, direction: PacketDirection) -> Self {
         match value {
-            HTTPV2_FRAME_DATA_TYPE if direction == PacketDirection::ClientToServer => {
-                Method::_RequestData
-            }
-            HTTPV2_FRAME_DATA_TYPE if direction == PacketDirection::ServerToClient => {
-                Method::_ResponseData
-            }
-            HTTPV2_FRAME_HEADERS_TYPE if direction == PacketDirection::ClientToServer => {
-                Method::_RequestHeader
-            }
-            HTTPV2_FRAME_HEADERS_TYPE if direction == PacketDirection::ServerToClient => {
-                Method::_ResponseHeader
-            }
+            HTTPV2_FRAME_DATA_TYPE if direction == PacketDirection::ClientToServer =>
+                Method::_RequestData,
+            HTTPV2_FRAME_DATA_TYPE if direction == PacketDirection::ServerToClient =>
+                Method::_ResponseData,
+            HTTPV2_FRAME_HEADERS_TYPE if direction == PacketDirection::ClientToServer =>
+                Method::_RequestHeader,
+            HTTPV2_FRAME_HEADERS_TYPE if direction == PacketDirection::ServerToClient =>
+                Method::_ResponseHeader,
             _ => Self::None,
         }
     }
 
     fn from_ebpf_type(value: EbpfType, direction: PacketDirection) -> Self {
         match value {
-            EbpfType::GoHttp2UprobeData if direction == PacketDirection::ClientToServer => {
-                Method::_RequestData
-            }
-            EbpfType::GoHttp2UprobeData if direction == PacketDirection::ServerToClient => {
-                Method::_ResponseData
-            }
-            EbpfType::GoHttp2Uprobe if direction == PacketDirection::ClientToServer => {
-                Method::_RequestHeader
-            }
-            EbpfType::GoHttp2Uprobe if direction == PacketDirection::ServerToClient => {
-                Method::_ResponseHeader
-            }
+            EbpfType::GoHttp2UprobeData if direction == PacketDirection::ClientToServer =>
+                Method::_RequestData,
+            EbpfType::GoHttp2UprobeData if direction == PacketDirection::ServerToClient =>
+                Method::_ResponseData,
+            EbpfType::GoHttp2Uprobe if direction == PacketDirection::ClientToServer =>
+                Method::_RequestHeader,
+            EbpfType::GoHttp2Uprobe if direction == PacketDirection::ServerToClient =>
+                Method::_ResponseHeader,
             _ => Self::None,
         }
     }
@@ -444,9 +435,9 @@ impl HttpInfo {
     }
 
     fn is_invalid(&self) -> bool {
-        (self.msg_type == LogMessageType::Request && self.method.is_none())
-            || (self.msg_type == LogMessageType::Response && self.is_invalid_status_code())
-            || self.msg_type == LogMessageType::Other
+        (self.msg_type == LogMessageType::Request && self.method.is_none()) ||
+            (self.msg_type == LogMessageType::Response && self.is_invalid_status_code()) ||
+            self.msg_type == LogMessageType::Other
     }
 
     pub fn merge_custom_to_http(&mut self, custom: CustomInfo, dir: PacketDirection) {
@@ -578,7 +569,7 @@ impl HttpInfo {
                     self.response_payload = None;
                 }
                 self.captured_request_byte += other.captured_request_byte;
-            }
+            },
             // merge with response
             LogMessageType::Response => {
                 if other.status != L7ResponseStatus::default() {
@@ -610,8 +601,8 @@ impl HttpInfo {
                     self.request_header = None;
                     self.request_payload = None;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         if other_is_grpc {
@@ -643,10 +634,10 @@ impl HttpInfo {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.host.is_empty()
-            && self.method.is_none()
-            && self.path.is_empty()
-            && self.status_code.is_none()
+        self.host.is_empty() &&
+            self.method.is_none() &&
+            self.path.is_empty() &&
+            self.status_code.is_none()
     }
 
     pub fn is_req_resp_end(&self) -> (bool, bool) {
@@ -719,13 +710,12 @@ impl HttpInfo {
 
     fn set_version(&mut self, version: FieldSetter) {
         match version.into_inner() {
-            Field::Str(s) => {
+            Field::Str(s) =>
                 if self.proto == L7Protocol::Triple {
                     self.dubbo_service_version = s.as_ref().to_string();
                 } else {
                     self.version = Version::try_from(s.borrow()).unwrap_or_default();
-                }
-            }
+                },
             _ => self.version = Version::Unknown,
         }
     }
@@ -759,20 +749,18 @@ impl HttpInfo {
     fn set_endpoint(&mut self, endpoint: FieldSetter) {
         match endpoint.into_inner() {
             Field::Int(_) => return,
-            Field::Str(s) if !s.is_empty() => {
+            Field::Str(s) if !s.is_empty() =>
                 if self.is_grpc() {
                     self.path = s.into_owned();
                 } else {
                     self.endpoint = Some(s.into_owned());
-                }
-            }
-            _ => {
+                },
+            _ =>
                 if self.is_grpc() {
                     self.path = String::new();
                 } else {
                     self.endpoint = None;
-                }
-            }
+                },
         }
     }
 
@@ -785,7 +773,7 @@ impl HttpInfo {
         match trace_id {
             Field::Str(s) => {
                 self.trace_ids.merge_field(prio, s.into_owned());
-            }
+            },
             _ => return,
         }
     }
@@ -873,22 +861,20 @@ impl From<HttpInfo> for L7ProtocolSendLog {
             resp: L7Response {
                 status: f.status,
                 code: match f.proto {
-                    L7Protocol::Grpc => {
+                    L7Protocol::Grpc =>
                         if let Some(code) = f.grpc_status_code {
                             Some(code as i32)
                         } else if let Some(code) = f.status_code {
                             Some(code as i32)
                         } else {
                             None
-                        }
-                    }
-                    _ => {
+                        },
+                    _ =>
                         if let Some(code) = f.status_code {
                             Some(code as i32)
                         } else {
                             None
-                        }
-                    }
+                        },
                 },
                 exception: if f.status != L7ResponseStatus::Ok {
                     f.custom_exception.unwrap_or_default()
@@ -987,9 +973,9 @@ impl L7ProtocolParserInterface for HttpLog {
                 }
                 match param.ebpf_type {
                     #[cfg(feature = "libtrace")]
-                    EbpfType::GoHttp2Uprobe
-                    | EbpfType::GoHttp2UprobeData
-                    | EbpfType::UnixSocket => {
+                    EbpfType::GoHttp2Uprobe |
+                    EbpfType::GoHttp2UprobeData |
+                    EbpfType::UnixSocket => {
                         if param.direction == PacketDirection::ServerToClient {
                             return None;
                         }
@@ -1008,7 +994,7 @@ impl L7ProtocolParserInterface for HttpLog {
                         } else {
                             None
                         }
-                    }
+                    },
                     _ => {
                         if self
                             .check_http_v2(
@@ -1018,16 +1004,16 @@ impl L7ProtocolParserInterface for HttpLog {
                                 #[cfg(feature = "enterprise")]
                                 None,
                             )
-                            .is_ok()
-                            && info.msg_type != LogMessageType::Other
+                            .is_ok() &&
+                            info.msg_type != LogMessageType::Other
                         {
                             Some(LogMessageType::Request)
                         } else {
                             None
                         }
-                    }
+                    },
                 }
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -1075,7 +1061,7 @@ impl L7ProtocolParserInterface for HttpLog {
                 } else {
                     Ok(L7ParseResult::None)
                 }
-            }
+            },
             L7Protocol::Http2 | L7Protocol::Grpc | L7Protocol::Triple => {
                 let mut infos = vec![];
                 let mut offset = 0;
@@ -1119,7 +1105,7 @@ impl L7ProtocolParserInterface for HttpLog {
                         Err(e) => {
                             last_error = Err(e);
                             break;
-                        }
+                        },
                         Ok(n) => n,
                     };
                     self.set_info_by_config(
@@ -1132,9 +1118,9 @@ impl L7ProtocolParserInterface for HttpLog {
                         custom_policies,
                     );
 
-                    if !info.is_invalid()
-                        || info.proto == L7Protocol::Grpc
-                        || info.proto == L7Protocol::Triple
+                    if !info.is_invalid() ||
+                        info.proto == L7Protocol::Grpc ||
+                        info.proto == L7Protocol::Triple
                     {
                         if let Some(h) = info.headers_offset.as_mut() {
                             *h += offset as u32;
@@ -1154,7 +1140,7 @@ impl L7ProtocolParserInterface for HttpLog {
                 } else {
                     Ok(L7ParseResult::None)
                 }
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -1231,12 +1217,8 @@ impl HttpLog {
         info: &mut HttpInfo,
         #[cfg(feature = "enterprise")] custom_policies: Option<PolicySlice>,
     ) {
-        if config
-            .obfuscate_enabled_protocols
-            .is_enabled(L7Protocol::Http1)
-            || config
-                .obfuscate_enabled_protocols
-                .is_enabled(L7Protocol::Http2)
+        if config.obfuscate_enabled_protocols.is_enabled(L7Protocol::Http1) ||
+            config.obfuscate_enabled_protocols.is_enabled(L7Protocol::Http2)
         {
             if let Some(index) = info.path.find('?') {
                 info.path.truncate(index + 1); // retain `?`
@@ -1273,9 +1255,8 @@ impl HttpLog {
                         }
                     }
                     if l7_dynamic_config.error_response_payload > 0 {
-                        let error_response_payload = l7_payload
-                            .len()
-                            .min(l7_dynamic_config.error_response_payload);
+                        let error_response_payload =
+                            l7_payload.len().min(l7_dynamic_config.error_response_payload);
                         if error_response_payload > 0 {
                             info.response_payload =
                                 Some(l7_payload[..error_response_payload].to_vec());
@@ -1296,9 +1277,8 @@ impl HttpLog {
                 }
 
                 if l7_dynamic_config.error_request_payload > 0 {
-                    let error_request_payload = l7_payload
-                        .len()
-                        .min(l7_dynamic_config.error_request_payload);
+                    let error_request_payload =
+                        l7_payload.len().min(l7_dynamic_config.error_request_payload);
                     if error_request_payload > 0 {
                         info.request_payload = Some(l7_payload[..error_request_payload].to_vec());
                     }
@@ -1360,27 +1340,27 @@ impl HttpLog {
     fn set_grpc_status(&mut self, status_code: u16, info: &mut HttpInfo) {
         match status_code {
             GRPC_STATUS_OK => info.status = L7ResponseStatus::Ok,
-            GRPC_STATUS_CANCELLED
-            | GRPC_STATUS_INVALID_ARGUMENT
-            | GRPC_STATUS_FAILED_PRECONDITION
-            | GRPC_STATUS_OUT_OF_RANGE
-            | GRPC_STATUS_UNAUTHENTICATED
-            | GRPC_STATUS_NOT_FOUND..=GRPC_STATUS_PERMISSION_DENIED => {
+            GRPC_STATUS_CANCELLED |
+            GRPC_STATUS_INVALID_ARGUMENT |
+            GRPC_STATUS_FAILED_PRECONDITION |
+            GRPC_STATUS_OUT_OF_RANGE |
+            GRPC_STATUS_UNAUTHENTICATED |
+            GRPC_STATUS_NOT_FOUND..=GRPC_STATUS_PERMISSION_DENIED => {
                 info.status = L7ResponseStatus::ClientError;
-            }
+            },
             _ => {
                 info.status = L7ResponseStatus::ServerError;
-            }
+            },
         }
     }
 
     fn set_status(&mut self, status_code: u16, info: &mut HttpInfo) {
-        if status_code >= HTTP_STATUS_CLIENT_ERROR_MIN
-            && status_code <= HTTP_STATUS_CLIENT_ERROR_MAX
+        if status_code >= HTTP_STATUS_CLIENT_ERROR_MIN &&
+            status_code <= HTTP_STATUS_CLIENT_ERROR_MAX
         {
             info.status = L7ResponseStatus::ClientError;
-        } else if status_code >= HTTP_STATUS_SERVER_ERROR_MIN
-            && status_code <= HTTP_STATUS_SERVER_ERROR_MAX
+        } else if status_code >= HTTP_STATUS_SERVER_ERROR_MIN &&
+            status_code <= HTTP_STATUS_SERVER_ERROR_MAX
         {
             info.status = L7ResponseStatus::ServerError;
         } else {
@@ -1550,9 +1530,9 @@ impl HttpLog {
             let (version, status_code) = get_http_resp_info(first_line)?;
             // reference https://developer.mozilla.org/en-US/docs/Web/HTTP/Status the 100 102 103 status code should be ignore
             // because it will have the actually response after the send the full request
-            if status_code == HTTP_STATUS_CODE_CONTINUE
-                || status_code == HTTP_STATUS_CODE_PROCESSING
-                || status_code == HTTP_STATUS_CODE_EARLY_HINTS
+            if status_code == HTTP_STATUS_CODE_CONTINUE ||
+                status_code == HTTP_STATUS_CODE_PROCESSING ||
+                status_code == HTTP_STATUS_CODE_EARLY_HINTS
             {
                 return Err(Error::HttpHeaderParseFailed);
             }
@@ -1673,7 +1653,7 @@ impl HttpLog {
                     if content_length.is_some() {
                         info.req_content_length = content_length;
                     }
-                }
+                },
                 (PacketDirection::ServerToClient, Method::_ResponseData) => {
                     if !grpc_streaming_data_enabled {
                         return Err(Error::HttpHeaderParseFailed);
@@ -1682,7 +1662,7 @@ impl HttpLog {
                     if content_length.is_some() {
                         info.resp_content_length = content_length;
                     }
-                }
+                },
                 (PacketDirection::ServerToClient, Method::_ResponseHeader) => {
                     if info.grpc_status_code.is_none() {
                         match info.status_code {
@@ -1698,19 +1678,17 @@ impl HttpLog {
                     if content_length.is_some() {
                         info.resp_content_length = content_length;
                     }
-                }
-                (PacketDirection::ClientToServer, _) => {
+                },
+                (PacketDirection::ClientToServer, _) =>
                     if content_length.is_some() {
                         info.req_content_length = content_length;
-                    }
-                }
-                (PacketDirection::ServerToClient, _) => {
+                    },
+                (PacketDirection::ServerToClient, _) =>
                     if content_length.is_some() {
                         info.resp_content_length = content_length;
-                    }
-                }
+                    },
             },
-            _ => {
+            _ =>
                 if direction == PacketDirection::ClientToServer {
                     if content_length.is_some() {
                         info.req_content_length = content_length;
@@ -1719,8 +1697,7 @@ impl HttpLog {
                     if content_length.is_some() {
                         info.resp_content_length = content_length;
                     }
-                }
-            }
+                },
         }
         Ok(0)
     }
@@ -1767,8 +1744,8 @@ impl HttpLog {
             if httpv2_header.stream_id == 0 {
                 // Headers和Data帧的StreamId不为0
                 // 参考协议：https://tools.ietf.org/html/rfc7540#section-6.2
-                if httpv2_header.frame_length as usize + HTTPV2_FRAME_HEADER_LENGTH
-                    >= frame_payload.len()
+                if httpv2_header.frame_length as usize + HTTPV2_FRAME_HEADER_LENGTH >=
+                    frame_payload.len()
                 {
                     break;
                 }
@@ -1798,8 +1775,8 @@ impl HttpLog {
                 if httpv2_header.flags & FLAG_HEADERS_PRIORITY != 0 {
                     l_offset += 5;
                 }
-                if l_offset >= httpv2_header.frame_length
-                    || httpv2_header.frame_length > frame_payload.len() as u32
+                if l_offset >= httpv2_header.frame_length ||
+                    httpv2_header.frame_length > frame_payload.len() as u32
                 {
                     break;
                 }
@@ -1866,10 +1843,10 @@ impl HttpLog {
                     is_httpv2 = true;
                     break;
                 }
-            } else if (header_frame_parsed
-                || self.proto == L7Protocol::Grpc
-                || self.proto == L7Protocol::Triple)
-                && httpv2_header.frame_type == HTTPV2_FRAME_DATA_TYPE
+            } else if (header_frame_parsed ||
+                self.proto == L7Protocol::Grpc ||
+                self.proto == L7Protocol::Triple) &&
+                httpv2_header.frame_type == HTTPV2_FRAME_DATA_TYPE
             {
                 // HTTPv2协议中存在可以通过Headers帧中携带“Content-Length”字段，即可直接进行解析
                 // 若未在Headers帧中携带，则去解析Headers帧后的Data帧的数据长度以进行“Content-Length”解析
@@ -1970,36 +1947,36 @@ impl HttpLog {
             ":method" => {
                 info.msg_type = LogMessageType::Request;
                 info.method = Method::try_from(String::from_utf8_lossy(val).as_ref())?;
-            }
+            },
             ":status" => {
                 info.msg_type = LogMessageType::Response;
                 let code: u16 = val.parse_to().unwrap_or_default();
                 info.status_code = Some(code);
-            }
+            },
             "host" | ":authority" => info.host = String::from_utf8_lossy(val).into_owned(),
             ":path" if info.path.is_empty() => {
                 info.path = String::from_utf8_lossy(val).into_owned();
-            }
+            },
             "grpc-status" if config.grpc_streaming_data_enabled => {
                 info.msg_type = LogMessageType::Response;
                 let code = val.parse_to().unwrap_or_default();
                 info.grpc_status_code = Some(code);
-            }
+            },
             "tri-service-version" => {
                 // change to triple protocol
                 self.proto = L7Protocol::Triple;
                 info.proto = L7Protocol::Triple;
                 info.method = Method::Post;
                 info.dubbo_service_version = String::from_utf8_lossy(val).into_owned();
-            }
+            },
             "content-type" if self.proto != L7Protocol::Triple => {
                 // change to grpc protocol
                 if val.starts_with(b"application/grpc") {
                     self.proto = L7Protocol::Grpc;
                     info.proto = L7Protocol::Grpc;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         if !key.is_ascii() {
@@ -2086,9 +2063,8 @@ impl HttpLog {
         ) {
             let field_iter = match info.proto {
                 L7Protocol::Http1 => config.extra_log_fields.http.iter(),
-                L7Protocol::Http2 | L7Protocol::Grpc | L7Protocol::Triple => {
-                    config.extra_log_fields.http2.iter()
-                }
+                L7Protocol::Http2 | L7Protocol::Grpc | L7Protocol::Triple =>
+                    config.extra_log_fields.http2.iter(),
                 _ => return,
             };
 
@@ -2142,11 +2118,10 @@ impl HttpLog {
                 Op::RewriteNativeTag(tag, value) => {
                     match tag {
                         // req
-                        NativeTag::RequestType => {
+                        NativeTag::RequestType =>
                             if info.method.is_none() {
                                 info.method = Method::try_from(value.as_str()).unwrap_or_default();
-                            }
-                        }
+                            },
                         // trace
                         NativeTag::SpanId => {
                             if CUSTOM_FIELD_POLICY_PRIORITY <= info.span_id.prio() {
@@ -2161,16 +2136,16 @@ impl HttpLog {
                                     });
                                 }
                             }
-                        }
+                        },
                         _ => auto_merge_custom_field(op, info),
                     }
-                }
+                },
                 Op::AddMetric(key, value) => {
                     info.metrics.push(MetricKeyVal {
                         key: key.to_string(),
                         val: *value,
                     });
-                }
+                },
                 Op::SaveHeader(key) => {
                     let header = headers.get_or_insert_with(|| V1Structure::new(payload).headers);
                     if !header.is_empty() {
@@ -2179,15 +2154,14 @@ impl HttpLog {
                             val: String::from_utf8_lossy(header).to_string(),
                         });
                     }
-                }
-                Op::SavePayload(key) => {
+                },
+                Op::SavePayload(key) =>
                     if let Some(l7_payload) = l7_payload {
                         info.attributes.push(KeyVal {
                             key: key.to_string(),
                             val: String::from_utf8_lossy(l7_payload).to_string(),
                         });
-                    }
-                }
+                    },
                 _ => auto_merge_custom_field(op, info),
             }
         }
@@ -2298,10 +2272,7 @@ pub fn is_http_v1_payload(buf: &[u8]) -> bool {
     if buf.starts_with(RESPONSE_PREFIX.as_bytes()) {
         return true;
     }
-    HTTP_METHODS
-        .iter()
-        .position(|m| has_prefix(buf, m.as_bytes()))
-        .is_some()
+    HTTP_METHODS.iter().position(|m| has_prefix(buf, m.as_bytes())).is_some()
 }
 
 // check first line is http request line
@@ -2327,9 +2298,8 @@ pub fn is_http_req_line(line: &str) -> bool {
 // 参考：https://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html
 pub fn check_http_method(method: &str) -> Result<()> {
     match method {
-        "OPTIONS" | "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "TRACE" | "CONNECT" | "PATCH" => {
-            Ok(())
-        }
+        "OPTIONS" | "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "TRACE" | "CONNECT" | "PATCH" =>
+            Ok(()),
         _ => Err(Error::HttpHeaderParseFailed),
     }
 }
@@ -2405,12 +2375,12 @@ impl<'a> Iterator for V1HeaderIterator<'a> {
                 Ok(s) => {
                     self.0 = &self.0[end + 2..];
                     return Some(s);
-                }
+                },
                 _ => (),
             },
             Some(end) if end == 0 => {
                 self.0 = &self.0[end + 2..];
-            }
+            },
             _ => (),
         }
         None
@@ -2486,26 +2456,24 @@ pub fn handle_endpoint(config: &LogParserConfig, path: &String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(feature = "libtrace")]
-    use std::net::{IpAddr, Ipv4Addr};
-    use std::{cell::RefCell, collections::HashSet, fmt, fs, path::Path, rc::Rc, time::Duration};
-
     #[cfg(feature = "libtrace")]
     use crate::config::{
-        config::{Iso8583ParseConfig, WebSphereMqParseConfig},
         OracleConfig,
+        config::{Iso8583ParseConfig, WebSphereMqParseConfig},
     };
     use crate::{
-        common::{l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, l7_protocol_log::L7PerfCache},
         config::{
+            HttpEndpoint, HttpEndpointMatchRule, HttpEndpointTrie,
             config::TagFilterOperator,
             handler::{BlacklistTrie, L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
-            HttpEndpoint, HttpEndpointMatchRule, HttpEndpointTrie,
         },
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    #[cfg(feature = "libtrace")]
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::{cell::RefCell, collections::HashSet, fmt, fs, path::Path, rc::Rc, time::Duration};
 
     const FILE_DIR: &str = "resources/test/flow_generator/http";
 
@@ -2611,12 +2579,12 @@ mod tests {
                 L7ProtocolInfo::HttpInfo(mut h) => {
                     h.rrt = 0;
                     h
-                }
+                },
                 _ => unreachable!(),
             };
 
             match protocol {
-                L7Protocol::Http1 => {
+                L7Protocol::Http1 =>
                     if let Ok(info) = http1.parse_payload(payload, param) {
                         output.push_str(&format!(
                             "{} is_http: {}\n",
@@ -2627,20 +2595,18 @@ mod tests {
                         let mut info = HttpInfo::default();
                         info.proto = protocol;
                         output.push_str(&format!("{} is_http: {}\n", ValidateInfo(&info), false));
-                    }
-                }
+                    },
                 L7Protocol::Http2 | L7Protocol::Grpc => {
                     if let Ok(info) = http2.parse_payload(payload, param) {
                         match info {
-                            L7ParseResult::Multi(m) => {
+                            L7ParseResult::Multi(m) =>
                                 for i in m {
                                     output.push_str(&format!(
                                         "{} is_http: {}\n",
                                         ValidateInfo(&get_http_info(i)),
                                         true
                                     ))
-                                }
-                            }
+                                },
                             L7ParseResult::Single(s) => output.push_str(&format!(
                                 "{} is_http: {}\n",
                                 ValidateInfo(&get_http_info(s)),
@@ -2653,8 +2619,8 @@ mod tests {
                         info.proto = protocol;
                         output.push_str(&format!("{} is_http: {}\n", ValidateInfo(&info), false));
                     }
-                }
-                _ => {
+                },
+                _ =>
                     if let Ok(info) = http1.parse_payload(payload, param) {
                         protocol = L7Protocol::Http1;
                         output.push_str(&format!(
@@ -2665,15 +2631,14 @@ mod tests {
                     } else if let Ok(info) = http2.parse_payload(payload, param) {
                         protocol = L7Protocol::Http2;
                         match info {
-                            L7ParseResult::Multi(m) => {
+                            L7ParseResult::Multi(m) =>
                                 for i in m {
                                     output.push_str(&format!(
                                         "{} is_http: {}\n",
                                         ValidateInfo(&get_http_info(i)),
                                         true
                                     ))
-                                }
-                            }
+                                },
                             L7ParseResult::Single(s) => output.push_str(&format!(
                                 "{} is_http: {}\n",
                                 ValidateInfo(&get_http_info(s)),
@@ -2685,8 +2650,7 @@ mod tests {
                         let mut info = HttpInfo::default();
                         info.proto = protocol;
                         output.push_str(&format!("{} is_http: {}\n", ValidateInfo(&info), false));
-                    }
-                }
+                    },
             }
         }
         output
@@ -3353,14 +3317,14 @@ mod tests {
         param.l4_protocol = IpProtocol::TCP;
 
         let mut parser = HttpLog::new_v1();
-        assert!(parser
-            .check_payload(
-                concat!(r#"POST","name":"一些中文""#, "\r\nblablabla\r\n").as_bytes(),
-                &param
-            )
-            .is_none());
-        assert!(parser
-            .check_payload("GET / HTTP/1.1\r\n\r\n".as_bytes(), &param)
-            .is_some());
+        assert!(
+            parser
+                .check_payload(
+                    concat!(r#"POST","name":"一些中文""#, "\r\nblablabla\r\n").as_bytes(),
+                    &param
+                )
+                .is_none()
+        );
+        assert!(parser.check_payload("GET / HTTP/1.1\r\n\r\n".as_bytes(), &param).is_some());
     }
 }

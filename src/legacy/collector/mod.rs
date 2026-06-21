@@ -21,23 +21,20 @@ pub(crate) mod l7_quadruple_generator;
 pub(crate) mod quadruple_generator;
 pub(crate) mod types;
 
-use std::net::IpAddr;
-use std::thread::JoinHandle;
-use std::time::Duration;
-
-pub use collector::{Collector, L7Collector};
-
-use bitflags::bitflags;
-use log::info;
-
+use self::{
+    flow_aggr::FlowAggrThread,
+    l7_quadruple_generator::L7QuadrupleGeneratorThread,
+    quadruple_generator::QuadrupleGeneratorThread,
+    types::{MiniFlow, PeerInfo},
+};
 use crate::{
     common::endpoint::EPC_INTERNET,
     utils::{possible_host::PossibleHost, stats},
 };
-
-use self::l7_quadruple_generator::L7QuadrupleGeneratorThread;
-use self::types::{MiniFlow, PeerInfo};
-use self::{flow_aggr::FlowAggrThread, quadruple_generator::QuadrupleGeneratorThread};
+use bitflags::bitflags;
+pub use collector::{Collector, L7Collector};
+use log::info;
+use std::{net::IpAddr, thread::JoinHandle, time::Duration};
 
 const SECONDS_IN_MINUTE: u64 = 60;
 

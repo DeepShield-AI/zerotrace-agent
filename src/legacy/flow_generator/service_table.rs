@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-use std::hash::{Hash, Hasher};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
+use crate::common::{enums::TcpFlags, flow::PacketDirection};
 use ahash::{HashSet, HashSetExt};
 use lru::LruCache;
-
-use crate::common::enums::TcpFlags;
-use crate::common::flow::PacketDirection;
+use std::{
+    hash::{Hash, Hasher},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum ServiceKey {
@@ -66,9 +65,9 @@ impl Ipv6Key {
 
 impl Hash for Ipv4Key {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let key = (u32::from_le_bytes(self.addr.octets()) as u64) << 32
-            | (self.port as u64) << 16
-            | self.epc_id as u16 as u64;
+        let key = (u32::from_le_bytes(self.addr.octets()) as u64) << 32 |
+            (self.port as u64) << 16 |
+            self.epc_id as u16 as u64;
         key.hash(state);
     }
 }
@@ -119,14 +118,14 @@ impl ServiceTable {
                     flow_dst_key,
                     Self::MIN_SCORE + Self::SCORE_DIFF_THRESHOLD + 1,
                 );
-            }
+            },
             (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                 self.ipv6.put(flow_src_key, Self::MIN_SCORE);
                 self.ipv6.put(
                     flow_dst_key,
                     Self::MIN_SCORE + Self::SCORE_DIFF_THRESHOLD + 1,
                 );
-            }
+            },
             _ => unimplemented!(),
         }
     }
@@ -155,11 +154,11 @@ impl ServiceTable {
                 (ServiceKey::V4(flow_src_key), ServiceKey::V4(flow_dst_key)) => {
                     self.ipv4.put(flow_src_key, flow_src_score);
                     self.ipv4.pop(&flow_dst_key);
-                }
+                },
                 (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                     self.ipv6.put(flow_src_key, flow_src_score);
                     self.ipv6.pop(&flow_dst_key);
-                }
+                },
                 _ => unimplemented!(),
             }
             (flow_src_score, flow_dst_score)
@@ -178,7 +177,7 @@ impl ServiceTable {
                         flow_dst_score += 1;
                         self.ipv4.put(flow_dst_key, flow_dst_score);
                     }
-                }
+                },
                 (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                     self.ipv6.pop(&flow_src_key);
 
@@ -189,7 +188,7 @@ impl ServiceTable {
                         flow_dst_score += 1;
                         self.ipv6.put(flow_dst_key, flow_dst_score);
                     }
-                }
+                },
                 _ => unimplemented!(),
             }
 
@@ -205,15 +204,15 @@ impl ServiceTable {
                         (ServiceKey::V4(flow_src_key), ServiceKey::V4(flow_dst_key)) => {
                             self.ipv4.put(flow_src_key, flow_src_score);
                             self.ipv4.pop(&flow_dst_key);
-                        }
+                        },
                         (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                             self.ipv6.put(flow_src_key, flow_src_score);
                             self.ipv6.pop(&flow_dst_key);
-                        }
+                        },
                         _ => unimplemented!(),
                     }
                     (flow_src_score, flow_dst_score)
-                }
+                },
                 PacketDirection::ServerToClient => {
                     flow_src_score = Self::MIN_SCORE;
                     flow_dst_score = Self::MAX_SCORE;
@@ -221,15 +220,15 @@ impl ServiceTable {
                         (ServiceKey::V4(flow_src_key), ServiceKey::V4(flow_dst_key)) => {
                             self.ipv4.put(flow_src_key, flow_src_score);
                             self.ipv4.pop(&flow_dst_key);
-                        }
+                        },
                         (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                             self.ipv6.put(flow_src_key, flow_src_score);
                             self.ipv6.pop(&flow_dst_key);
-                        }
+                        },
                         _ => unimplemented!(),
                     }
                     (flow_src_score, flow_dst_score)
-                }
+                },
             }
         } else {
             match (flow_src_key, flow_dst_key) {
@@ -247,7 +246,7 @@ impl ServiceTable {
                         flow_src_score,
                         flow_dst_score,
                     )
-                }
+                },
                 (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                     if let Some(score) = self.ipv6.get(&flow_src_key) {
                         flow_src_score = *score;
@@ -257,7 +256,7 @@ impl ServiceTable {
                     }
 
                     (flow_src_score, flow_dst_score)
-                }
+                },
                 _ => unimplemented!(),
             }
         }
@@ -283,11 +282,11 @@ impl ServiceTable {
                         PacketDirection::ClientToServer => {
                             flow_src_score = Self::MAX_SCORE;
                             self.ipv4.put(flow_src_key, flow_src_score);
-                        }
+                        },
                         PacketDirection::ServerToClient => {
                             flow_dst_score = Self::MAX_SCORE;
                             self.ipv4.put(flow_dst_key, flow_dst_score);
-                        }
+                        },
                     }
                     return (flow_src_score, flow_dst_score);
                 }
@@ -305,18 +304,18 @@ impl ServiceTable {
                     flow_src_score,
                     flow_dst_score,
                 )
-            }
+            },
             (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                 if need_reverse_flow {
                     match direction {
                         PacketDirection::ClientToServer => {
                             flow_src_score = Self::MAX_SCORE;
                             self.ipv6.put(flow_src_key, flow_src_score);
-                        }
+                        },
                         PacketDirection::ServerToClient => {
                             flow_dst_score = Self::MAX_SCORE;
                             self.ipv6.put(flow_dst_key, flow_dst_score);
-                        }
+                        },
                     }
                     return (flow_src_score, flow_dst_score);
                 }
@@ -329,7 +328,7 @@ impl ServiceTable {
                 }
 
                 (flow_src_score, flow_dst_score)
-            }
+            },
             _ => unimplemented!(),
         }
     }
@@ -357,23 +356,23 @@ impl ServiceTable {
                         flow_dst_score = *score;
                     }
                     flow_dst_score > 0
-                }
+                },
                 ServiceKey::V6(flow_dst_key) => {
                     let mut flow_dst_score = 0;
                     if let Some(score) = self.ipv6.get(&flow_dst_key) {
                         flow_dst_score = *score;
                     }
                     flow_dst_score > 0
-                }
+                },
             };
         } else {
             match flow_src_key {
                 ServiceKey::V4(flow_src_key) => {
                     self.ipv4.put(flow_src_key, 1);
-                }
+                },
                 ServiceKey::V6(flow_src_key) => {
                     self.ipv6.put(flow_src_key, 1);
-                }
+                },
             }
             return true;
         }
@@ -423,7 +422,7 @@ impl ServiceTable {
                     flow_src_score,
                     flow_dst_score,
                 )
-            }
+            },
             (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                 if self.port_map.contains(&flow_src_key.port) {
                     flow_src_score = Self::MAX_SCORE_FROM_CONFIG;
@@ -455,7 +454,7 @@ impl ServiceTable {
                 }
 
                 (flow_src_score, flow_dst_score)
-            }
+            },
             _ => unimplemented!(),
         }
     }
@@ -541,7 +540,7 @@ impl ServiceTable {
                     need_reverse = source_score > dest_score;
                     score = source_score.max(dest_score);
                 }
-            }
+            },
             (ServiceKey::V6(flow_src_key), ServiceKey::V6(flow_dst_key)) => {
                 if socket_role == 1 && l2_end_0 {
                     self.ipv6.put(flow_dst_key, Self::MAX_SCORE);
@@ -581,7 +580,7 @@ impl ServiceTable {
                     need_reverse = source_score > dest_score;
                     score = source_score.max(dest_score);
                 }
-            }
+            },
             _ => unimplemented!(),
         }
         (score, need_reverse)
@@ -590,13 +589,12 @@ impl ServiceTable {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::common::endpoint::EPC_ZEROTRACE;
     use std::{
         net::{Ipv4Addr, Ipv6Addr},
         str::FromStr,
     };
-
-    use super::*;
-    use crate::common::endpoint::EPC_ZEROTRACE;
 
     #[test]
     fn service_key() {
@@ -621,16 +619,12 @@ mod tests {
         let key_pairs = vec![
             (
                 ServiceKey::new(
-                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee")
-                        .unwrap()
-                        .into(),
+                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee").unwrap().into(),
                     EPC_ZEROTRACE as i16,
                     1234,
                 ),
                 ServiceKey::new(
-                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee")
-                        .unwrap()
-                        .into(),
+                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee").unwrap().into(),
                     EPC_ZEROTRACE as i16,
                     80,
                 ),
@@ -776,16 +770,12 @@ mod tests {
         let key_pairs = vec![
             (
                 ServiceKey::new(
-                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee")
-                        .unwrap()
-                        .into(),
+                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee").unwrap().into(),
                     EPC_ZEROTRACE as i16,
                     1234,
                 ),
                 ServiceKey::new(
-                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee")
-                        .unwrap()
-                        .into(),
+                    Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee").unwrap().into(),
                     EPC_ZEROTRACE as i16,
                     53,
                 ),
@@ -847,16 +837,12 @@ mod tests {
         let server_port = vec![80];
         let mut table = ServiceTable::new(10, 10, &server_port);
         let flow_src_key = ServiceKey::new(
-            Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee")
-                .unwrap()
-                .into(),
+            Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee").unwrap().into(),
             EPC_ZEROTRACE as i16,
             80,
         );
         let flow_dst_key = ServiceKey::new(
-            Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee")
-                .unwrap()
-                .into(),
+            Ipv6Addr::from_str("1002:1003:4421:5566:7788:99aa:bbcc:ddee").unwrap().into(),
             EPC_ZEROTRACE as i16,
             53,
         );

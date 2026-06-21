@@ -19,53 +19,50 @@ mod stats;
 pub mod tcp;
 pub(crate) mod udp;
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::slice;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
-
-use enum_dispatch::enum_dispatch;
-use public::bitmap::Bitmap;
-use public::l7_protocol::{
-    L7ProtocolChecker as L7ProtocolCheckerBitmap, L7ProtocolEnum, LogMessageType,
-};
-
-use super::protocol_logs::sql::ObfuscateCache;
 use super::{
     app_table::AppTable,
     error::{Error, Result},
     flow_map::FlowMapCounter,
     pool::MemoryPool,
-    protocol_logs::AppProtoHead,
-};
-
-use crate::common::l7_protocol_log::L7PerfCache;
-use crate::common::{
-    flow::{Flow, L7PerfStats},
-    l7_protocol_log::L7ParseResult,
+    protocol_logs::{AppProtoHead, sql::ObfuscateCache},
 };
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::plugin::c_ffi::SoPluginFunc;
-use crate::plugin::wasm::WasmVm;
-use crate::rpc::get_timestamp;
 use crate::{
     common::{
-        flow::{FlowPerfStats, L4Protocol, L7Protocol, PacketDirection, SignalSource},
+        Timestamp,
+        flow::{
+            Flow, FlowPerfStats, L4Protocol, L7PerfStats, L7Protocol, PacketDirection, SignalSource,
+        },
         l7_protocol_log::{
-            get_all_protocol, get_parser, L7ProtocolBitmap, L7ProtocolParser,
-            L7ProtocolParserInterface, ParseParam,
+            L7ParseResult, L7PerfCache, L7ProtocolBitmap, L7ProtocolParser,
+            L7ProtocolParserInterface, ParseParam, get_all_protocol, get_parser,
         },
         meta_packet::MetaPacket,
-        Timestamp,
     },
-    config::{handler::LogParserConfig, FlowConfig},
+    config::{FlowConfig, handler::LogParserConfig},
+    plugin::wasm::WasmVm,
+    rpc::get_timestamp,
 };
-
-use {icmp::IcmpPerf, tcp::TcpPerf, udp::UdpPerf};
-
+use enum_dispatch::enum_dispatch;
+use icmp::IcmpPerf;
+use public::{
+    bitmap::Bitmap,
+    l7_protocol::{L7ProtocolChecker as L7ProtocolCheckerBitmap, L7ProtocolEnum, LogMessageType},
+};
 pub use stats::FlowPerfCounter;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    slice,
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+};
+use tcp::TcpPerf;
+use udp::UdpPerf;
 
 const ART_MAX: Timestamp = Timestamp::from_secs(30);
 
@@ -247,8 +244,8 @@ impl FlowLog {
     fn check_fail_recover(&mut self) {
         if self.skip_l7_protocol_inference {
             let now = get_timestamp(self.ntp_diff.load(Ordering::Relaxed));
-            if now.as_secs()
-                > self.start_of_skip_l7_protocol_inference.unwrap() + self.l7_protocol_inference_ttl
+            if now.as_secs() >
+                self.start_of_skip_l7_protocol_inference.unwrap() + self.l7_protocol_inference_ttl
             {
                 self.start_of_skip_l7_protocol_inference = None;
                 self.skip_l7_protocol_inference = false;
@@ -313,9 +310,8 @@ impl FlowLog {
             );
 
             let mut cache_proto = |proto: L7ProtocolEnum| match packet.signal_source {
-                SignalSource::EBPF => {
-                    app_table.set_protocol_from_ebpf(packet, proto, local_epc, remote_epc)
-                }
+                SignalSource::EBPF =>
+                    app_table.set_protocol_from_ebpf(packet, proto, local_epc, remote_epc),
                 _ => app_table.set_protocol(packet, proto),
             };
 
@@ -398,10 +394,7 @@ impl FlowLog {
                 let Some(mut parser) = get_parser(L7ProtocolEnum::L7Protocol(*protocol)) else {
                     continue;
                 };
-                if log_parser_config
-                    .obfuscate_enabled_protocols
-                    .is_enabled(*protocol)
-                {
+                if log_parser_config.obfuscate_enabled_protocols.is_enabled(*protocol) {
                     parser.set_obfuscate_cache(self.obfuscate_cache.as_ref().map(|o| o.clone()));
                 }
                 if let Some(message_type) = parser.check_payload(cut_payload, &param) {
@@ -412,8 +405,8 @@ impl FlowLog {
                         let host = packet.get_redis_server_addr();
                         let server_ip = host.0;
                         self.server_port = host.1;
-                        if packet.lookup_key.dst_port != self.server_port
-                            || packet.lookup_key.dst_ip != server_ip
+                        if packet.lookup_key.dst_port != self.server_port ||
+                            packet.lookup_key.dst_ip != server_ip
                         {
                             packet.lookup_key.direction = PacketDirection::ServerToClient;
                         } else {
@@ -556,9 +549,7 @@ impl FlowLog {
         let l4 = if l4_enabled {
             match l4_proto {
                 L4Protocol::Tcp => Some(L4FlowPerfTable::Tcp(
-                    tcp_perf_pool
-                        .get()
-                        .unwrap_or_else(|| Box::new(TcpPerf::new(counter))),
+                    tcp_perf_pool.get().unwrap_or_else(|| Box::new(TcpPerf::new(counter))),
                 )),
                 L4Protocol::Udp => Some(L4FlowPerfTable::Udp(UdpPerf::new())),
                 L4Protocol::Icmp => Some(L4FlowPerfTable::Icmp(IcmpPerf::new())),
@@ -573,7 +564,7 @@ impl FlowLog {
             l7_protocol_log_parser: get_parser(l7_protocol_enum.clone()).map(|o| Box::new(o)),
             perf_cache,
             l7_protocol_enum,
-            server_port: server_port,
+            server_port,
             l7_protocol_inference_succeed: false,
             skip_l7_protocol_inference: is_skip,
             wasm_vm,
@@ -679,10 +670,7 @@ impl FlowLog {
     }
 
     pub fn copy_and_reset_l7_perf_data(&mut self) -> (Vec<L7PerfStats>, L7Protocol) {
-        let l7_perf = self
-            .l7_protocol_log_parser
-            .as_mut()
-            .map_or(vec![], |l| l.perf_stats());
+        let l7_perf = self.l7_protocol_log_parser.as_mut().map_or(vec![], |l| l.perf_stats());
 
         (l7_perf, self.l7_protocol_enum.get_l7_protocol())
     }

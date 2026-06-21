@@ -14,54 +14,54 @@
  * limitations under the License.
  */
 
-use std::sync::Arc;
-
-use bincode::{Decode, Encode};
-use parking_lot::RwLock;
-use tokio::runtime::Runtime;
-
 use crate::{
     exception::ExceptionHandler,
     rpc::{Session, StaticConfig, Status, Synchronizer},
     trident::AgentId,
 };
-use public::debug::{Error, Result};
-use public::proto::agent;
+use bincode::{Decode, Encode};
+use parking_lot::RwLock;
+use public::{
+    debug::{Error, Result},
+    proto::agent,
+};
+use std::sync::Arc;
+use tokio::runtime::Runtime;
 
 /// RPC 模块调试器，用于获取 Agent 与 Controller 同步的数据
 pub struct RpcDebugger {
-    session: Arc<Session>,            // gRPC 会话接口
-    status: Arc<RwLock<Status>>,      // Agent 状态信息
-    config: Arc<StaticConfig>,        // 静态配置
-    agent_id: Arc<RwLock<AgentId>>,   // Agent ID 包装器
-    runtime: Arc<Runtime>,            // Tokio 运行时
+    session: Arc<Session>,          // gRPC 会话接口
+    status: Arc<RwLock<Status>>,    // Agent 状态信息
+    config: Arc<StaticConfig>,      // 静态配置
+    agent_id: Arc<RwLock<AgentId>>, // Agent ID 包装器
+    runtime: Arc<Runtime>,          // Tokio 运行时
 }
 
 /// 基础配置命令的响应结构
 #[derive(PartialEq, Debug)]
 pub struct ConfigResp {
-    status: i32,                      // 响应状态
-    version_platform_data: u64,       // 平台数据版本
-    version_acls: u64,                // ACL 版本
-    version_groups: u64,              // 组数据版本
-    revision: String,                 // 配置修订版本
-    config: String,                   // 用户配置内容
-    self_update_url: String,          // 自更新 URL
+    status: i32,                // 响应状态
+    version_platform_data: u64, // 平台数据版本
+    version_acls: u64,          // ACL 版本
+    version_groups: u64,        // 组数据版本
+    revision: String,           // 配置修订版本
+    config: String,             // 用户配置内容
+    self_update_url: String,    // 自更新 URL
 }
 
 /// RPC 调试消息枚举
 #[derive(PartialEq, Debug, Encode, Decode)]
 pub enum RpcMessage {
-    Config(Option<String>),               // 配置消息
-    PlatformData(Option<String>),         // 平台数据消息
-    CaptureNetworkTypes(Option<String>),  // 采集网络类型消息
-    Cidr(Option<String>),                 // CIDR 消息
-    Groups(Option<String>),               // IP 组消息
-    Acls(Option<String>),                 // ACL 消息
-    Segments(Option<String>),             // 本地网段消息
-    Version(Option<String>),              // 版本消息
-    Err(String),                          // 错误消息
-    Fin,                                  // 结束消息
+    Config(Option<String>),              // 配置消息
+    PlatformData(Option<String>),        // 平台数据消息
+    CaptureNetworkTypes(Option<String>), // 采集网络类型消息
+    Cidr(Option<String>),                // CIDR 消息
+    Groups(Option<String>),              // IP 组消息
+    Acls(Option<String>),                // ACL 消息
+    Segments(Option<String>),            // 本地网段消息
+    Version(Option<String>),             // 版本消息
+    Err(String),                         // 错误消息
+    Fin,                                 // 结束消息
 }
 
 impl RpcDebugger {
@@ -181,7 +181,7 @@ impl RpcDebugger {
         // 获取 status 写锁以更新平台数据
         let mut sg = self.status.write();
         sg.get_platform_data(&resp, false);
-        
+
         // 收集 CIDR 到 RpcMessage::Cidr
         let mut res = sg
             .cidrs
@@ -213,17 +213,13 @@ impl RpcDebugger {
         // 获取 status 写锁以更新平台数据
         let mut sg = self.status.write();
         sg.get_platform_data(&resp, false);
-        
+
         // 收集接口和对等端信息到 RpcMessage::PlatformData
         let mut res = sg
             .interfaces
             .iter()
             .map(|p| RpcMessage::PlatformData(Some(format!("{:?}", p))))
-            .chain(
-                sg.peers
-                    .iter()
-                    .map(|p| RpcMessage::PlatformData(Some(format!("{:?}", p)))),
-            )
+            .chain(sg.peers.iter().map(|p| RpcMessage::PlatformData(Some(format!("{:?}", p)))))
             .collect::<Vec<_>>();
 
         // 追加 Fin 结束消息
@@ -250,7 +246,7 @@ impl RpcDebugger {
         // 获取 status 写锁以更新 IP 组
         let mut sg = self.status.write();
         sg.get_ip_groups(&resp, false);
-        
+
         // 收集 IP 组信息到 RpcMessage::Groups
         let mut res = sg
             .ip_groups
@@ -282,7 +278,7 @@ impl RpcDebugger {
         // 获取 status 写锁以更新 Flow ACL
         let mut sg = self.status.write();
         sg.get_flow_acls(&resp, false);
-        
+
         // 收集 ACL 信息到 RpcMessage::Acls
         let mut res = sg
             .acls
@@ -329,7 +325,7 @@ impl RpcDebugger {
     pub(super) fn current_version(&self) -> Result<Vec<RpcMessage>> {
         // 获取 status 读锁
         let status = self.status.read();
-        
+
         // 格式化包含不同数据类型版本的版本字符串
         let version = format!(
             "platformData version: {}\n groups version: {}\nflowAcls version: {}",

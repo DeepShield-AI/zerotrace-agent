@@ -14,21 +14,21 @@
  * limitations under the License.
  */
 
-use std::mem::ManuallyDrop;
-use std::net::IpAddr;
-
-use crate::common::ebpf::EbpfType;
-use crate::common::flow::PacketDirection;
-use crate::common::l7_protocol_log::ParseParam;
-use crate::flow_generator::protocol_logs::{HttpInfo, L7ResponseStatus};
-use crate::flow_generator::{Error, Result};
-use crate::plugin::wasm::host::WasmData;
-use crate::plugin::CustomInfo;
-use crate::wasm_error;
-
+use crate::{
+    common::{ebpf::EbpfType, flow::PacketDirection, l7_protocol_log::ParseParam},
+    flow_generator::{
+        Error, Result,
+        protocol_logs::{HttpInfo, L7ResponseStatus},
+    },
+    plugin::{CustomInfo, wasm::host::WasmData},
+    wasm_error,
+};
 use log::error;
-use public::bytes::{write_u16_be, write_u32_be, write_u64_be};
-use public::enums::IpProtocol;
+use public::{
+    bytes::{write_u16_be, write_u32_be, write_u64_be},
+    enums::IpProtocol,
+};
+use std::{mem::ManuallyDrop, net::IpAddr};
 
 // result of the vm export function after serialize
 #[derive(Debug)]
@@ -86,7 +86,7 @@ impl VmParseCtx {
                     "parse payload result with unexpect type",
                 );
                 None
-            }
+            },
         })
     }
 
@@ -96,7 +96,7 @@ impl VmParseCtx {
             _ => {
                 wasm_error!(self.get_ins_name(), "str result with unexpect type",);
                 None
-            }
+            },
         })
     }
 
@@ -223,9 +223,9 @@ impl VmCtxBase {
         buf_size:    2 bytes, the config of l7_log_packet_size
     */
     fn serialize_to_bytes(&self, buf: &mut [u8]) -> Result<usize> {
-        let serialize_len = if self.ip_src.is_ipv6() { 32 } else { 8 }
-            + 28
-            + if let Some(proc_name) = self.process_kname.as_ref() {
+        let serialize_len = if self.ip_src.is_ipv6() { 32 } else { 8 } +
+            28 +
+            if let Some(proc_name) = self.process_kname.as_ref() {
                 proc_name.len()
             } else {
                 0
@@ -245,22 +245,22 @@ impl VmCtxBase {
             IpAddr::V4(v4) => {
                 buf[1..5].copy_from_slice(v4.octets().as_slice());
                 off += 5;
-            }
+            },
             IpAddr::V6(v6) => {
                 buf[1..17].copy_from_slice(v6.octets().as_slice());
                 off += 17;
-            }
+            },
         }
 
         match self.ip_dst {
             IpAddr::V4(v4) => {
                 buf[off..off + 4].copy_from_slice(v4.octets().as_slice());
                 off += 4;
-            }
+            },
             IpAddr::V6(v6) => {
                 buf[off..off + 16].copy_from_slice(v6.octets().as_slice());
                 off += 16;
-            }
+            },
         }
 
         write_u16_be(&mut buf[off..off + 2], self.port_src);
@@ -375,10 +375,7 @@ impl From<(&ParseParam<'_>, &HttpInfo, &[u8])> for VmHttpReqCtx {
             base_ctx: VmCtxBase::from((param, info.proto as u8, payload)),
             path: info.path.clone(),
             host: info.host.clone(),
-            user_agent: info
-                .user_agent
-                .as_ref()
-                .map_or("".to_string(), |s| s.clone()),
+            user_agent: info.user_agent.as_ref().map_or("".to_string(), |s| s.clone()),
             referer: info.referer.as_ref().map_or("".to_string(), |s| s.clone()),
         }
     }

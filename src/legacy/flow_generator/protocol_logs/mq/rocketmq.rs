@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-use serde::{Deserialize, Serialize};
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -28,15 +26,15 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
-            set_captured_byte, swap_if, value_is_default, value_is_negative, AppProtoHead,
-            L7ResponseStatus, PrioFields, BASE_FIELD_PRIORITY,
+            set_captured_byte, swap_if, value_is_default, value_is_negative,
         },
     },
     utils::bytes,
 };
-
 use public::l7_protocol::LogMessageType;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, Default, Clone)]
 pub struct RocketmqInfo {
@@ -116,26 +114,23 @@ fn parse_trace_info_from_properties(
             match key {
                 "KEY" | "UNIQ_KEY" => {
                     msg_key = Some(value.to_string());
-                }
+                },
                 "traceparent" => {
                     // OpenTelemetry W3C trace context format: 00-TRACEID-SPANID-01
                     TraceType::TraceParent
                         .decode_trace_id(value)
                         .map(|cow| trace_ids.merge_field(BASE_FIELD_PRIORITY, cow.into_owned()));
-                    span_id = TraceType::TraceParent
-                        .decode_span_id(value)
-                        .map(|cow| cow.into_owned());
-                }
+                    span_id =
+                        TraceType::TraceParent.decode_span_id(value).map(|cow| cow.into_owned());
+                },
                 "sw8" => {
                     // SkyWalking format: 1-TRACEID-SEGMENTID-3-...
                     TraceType::Sw8.decode_trace_id(value).map(|cow| {
                         trace_ids.merge_field(BASE_FIELD_PRIORITY + 1, cow.into_owned())
                     });
-                    span_id = TraceType::Sw8
-                        .decode_span_id(value)
-                        .map(|cow| cow.into_owned());
-                }
-                _ => {}
+                    span_id = TraceType::Sw8.decode_span_id(value).map(|cow| cow.into_owned());
+                },
+                _ => {},
             }
         }
     }
@@ -208,11 +203,10 @@ impl RocketmqInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::RocketMQ) {
-            self.is_on_blacklist = t.request_type.is_on_blacklist(&self.req_code_name)
-                || t.request_domain.is_on_blacklist(&self.ext_group)
-                || t.request_resource.is_on_blacklist(&self.ext_topic)
-                || self
-                    .endpoint
+            self.is_on_blacklist = t.request_type.is_on_blacklist(&self.req_code_name) ||
+                t.request_domain.is_on_blacklist(&self.ext_group) ||
+                t.request_resource.is_on_blacklist(&self.ext_topic) ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -379,18 +373,14 @@ impl RocketmqLog {
             match header.header_data.code {
                 // SEND_BATCH_MESSAGE, SEND_MESSAGE, SEND_MESSAGE_V2
                 320 | 10 | 310 => {
-                    info.ext_group = header_data_ext_fields
-                        .producer_group
-                        .take()
-                        .unwrap_or_default();
-                }
+                    info.ext_group =
+                        header_data_ext_fields.producer_group.take().unwrap_or_default();
+                },
                 // TODO: there are some different but necessary keys corresponding to request code
                 _ => {
-                    info.ext_group = header_data_ext_fields
-                        .consumer_group
-                        .take()
-                        .unwrap_or_default();
-                }
+                    info.ext_group =
+                        header_data_ext_fields.consumer_group.take().unwrap_or_default();
+                },
             }
             //  handle oneway requests expecting no response in particular
             if header.is_oneway_request() {
@@ -545,14 +535,14 @@ impl RocketmqHeader {
                 if self.header_length >= 89 && self.decode_for_json_type(header_data) > 0 {
                     return self.header_length as isize + 8;
                 }
-            }
+            },
             Some(RocketmqSerializeType::RocketMQ) => {
                 // there must be code(2B), language(1B), version(2B), opaque(4B) and flag(4B)
                 // in header data at least, total: 2 + 1 + 2 + 4 + 4 = 13B
                 if self.header_length >= 13 && self.decode_for_rocketmq_type(header_data) > 0 {
                     return self.header_length as isize + 8;
                 }
-            }
+            },
             _ => (),
         }
         -1
@@ -654,23 +644,23 @@ impl RocketmqHeader {
                 b"consumerGroup" => {
                     ext_fields.consumer_group = Some(String::from_utf8_lossy(value).into_owned());
                     flags |= 0b0001;
-                }
+                },
                 b"producerGroup" | b"a" => {
                     ext_fields.producer_group = Some(String::from_utf8_lossy(value).into_owned());
                     flags |= 0b0001;
-                }
+                },
                 b"topic" | b"b" => {
                     ext_fields.topic = Some(String::from_utf8_lossy(value).into_owned());
                     flags |= 0b0010;
-                }
+                },
                 b"queueId" | b"e" => {
                     ext_fields.queue_id = Some(String::from_utf8_lossy(value).into_owned());
                     flags |= 0b0100;
-                }
+                },
                 b"properties" | b"i" => {
                     ext_fields.properties = Some(String::from_utf8_lossy(value).into_owned());
                     flags |= 0b1000;
-                }
+                },
                 _ => (),
             }
             if flags == 0b1111 {
@@ -1727,17 +1717,13 @@ impl RocketmqBody {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/rocketmq";
 
@@ -1780,7 +1766,7 @@ mod tests {
                 match info.unwrap_single() {
                     L7ProtocolInfo::RocketmqInfo(i) => {
                         output.push_str(&format!("{:?} is_rocketmq: {}\n", i, is_rocketmq));
-                    }
+                    },
                     _ => unreachable!(),
                 }
             } else {

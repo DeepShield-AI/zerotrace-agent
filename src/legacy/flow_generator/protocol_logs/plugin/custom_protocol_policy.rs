@@ -14,21 +14,6 @@
  * limitations under the License.
  */
 
-use std::{borrow::Cow, sync::Arc};
-
-use log::trace;
-
-use enterprise_utils::l7::custom_policy::{
-    custom_field_policy::{
-        enums::{Op, PayloadType, Source},
-        Store,
-    },
-    custom_protocol_policy::ExtraProtocolCharacters,
-    enums::TrafficDirection,
-};
-use public::l7_protocol::{CustomProtocol, L7Log, L7LogAttribute, L7Protocol, LogMessageType};
-use public_derive::L7Log;
-
 use crate::{
     common::{
         flow::{L7PerfStats, PacketDirection},
@@ -36,15 +21,27 @@ use crate::{
         l7_protocol_log::{L7ParseResult, L7ProtocolParser, L7ProtocolParserInterface, ParseParam},
     },
     flow_generator::{
-        protocol_logs::{
-            auto_merge_custom_field,
-            pb_adapter::{KeyVal, MetricKeyVal},
-            set_captured_byte, IpProtocol, L7ResponseStatus,
-        },
         Error, Result,
+        protocol_logs::{
+            IpProtocol, L7ResponseStatus, auto_merge_custom_field,
+            pb_adapter::{KeyVal, MetricKeyVal},
+            set_captured_byte,
+        },
     },
     plugin::{CustomInfo, CustomInfoRequest, CustomInfoResp, CustomInfoTrace},
 };
+use enterprise_utils::l7::custom_policy::{
+    custom_field_policy::{
+        Store,
+        enums::{Op, PayloadType, Source},
+    },
+    custom_protocol_policy::ExtraProtocolCharacters,
+    enums::TrafficDirection,
+};
+use log::trace;
+use public::l7_protocol::{CustomProtocol, L7Log, L7LogAttribute, L7Protocol, LogMessageType};
+use public_derive::L7Log;
+use std::{borrow::Cow, sync::Arc};
 
 #[derive(Default)]
 pub struct CustomPolicyLog {
@@ -87,8 +84,8 @@ impl L7ProtocolParserInterface for CustomPolicyLog {
             };
             if let Some(p) = parser.as_mut() {
                 // can only check l7 request now
-                if direction == TrafficDirection::RESPONSE
-                    || p.check_payload(payload, param).is_none()
+                if direction == TrafficDirection::RESPONSE ||
+                    p.check_payload(payload, param).is_none()
                 {
                     continue;
                 }
@@ -101,7 +98,7 @@ impl L7ProtocolParserInterface for CustomPolicyLog {
                     self.l7_parser = parser.map(|p| Box::new(p));
                     self.biz_protocol = Some(Arc::new(policy.biz_protocol().to_string()));
                     return Some(msg_type);
-                }
+                },
             }
         }
 
@@ -158,12 +155,12 @@ impl L7ProtocolParserInterface for CustomPolicyLog {
                         key: key.to_string(),
                         val: value,
                     });
-                }
+                },
                 Op::SaveHeader(_) | Op::SavePayload(_) => (),
                 _ => {
                     n_ops += 1;
                     auto_merge_custom_field(op, &mut info);
-                }
+                },
             }
         }
         trace!("apply biz decode policies to {biz_protocol} success with {n_ops} ops");
@@ -179,11 +176,11 @@ impl L7ProtocolParserInterface for CustomPolicyLog {
         match info.msg_type {
             LogMessageType::Request => {
                 info.req_len = Some(payload.len() as u32);
-            }
+            },
             LogMessageType::Response => {
                 info.resp_len = Some(payload.len() as u32);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         info.set_is_on_blacklist(config);

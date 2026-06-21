@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::ops;
+use std::{
+    fmt, net,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    ops,
+};
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
@@ -98,12 +99,10 @@ impl MatchedField {
         vector_bits: &Vec<usize>,
     ) -> Vec<u16> {
         match (self, mask_vector, mask) {
-            (Self::V4(f), Self::V4(mv), Self::V4(m)) => {
-                f.get_all_table_index(mv, m, min, max, vector_bits)
-            }
-            (Self::V6(f), Self::V6(mv), Self::V6(m)) => {
-                f.get_all_table_index(mv, m, min, max, vector_bits)
-            }
+            (Self::V4(f), Self::V4(mv), Self::V4(m)) =>
+                f.get_all_table_index(mv, m, min, max, vector_bits),
+            (Self::V6(f), Self::V6(mv), Self::V6(m)) =>
+                f.get_all_table_index(mv, m, min, max, vector_bits),
             _ => panic!(
                 "{:?}, {:?} and {:?} type mismatch.",
                 self, mask_vector, mask
@@ -185,12 +184,11 @@ impl<const N: usize> MatchedFieldN<N> {
     pub fn get(&self, flag: MatchedFlag) -> u16 {
         let offset = Self::offset_of(flag);
         match flag {
-            MatchedFlag::SrcEpc
-            | MatchedFlag::DstEpc
-            | MatchedFlag::SrcPort
-            | MatchedFlag::DstPort => {
-                u16::from_le_bytes(*<&[u8; 2]>::try_from(&self.others[offset..offset + 2]).unwrap())
-            }
+            MatchedFlag::SrcEpc |
+            MatchedFlag::DstEpc |
+            MatchedFlag::SrcPort |
+            MatchedFlag::DstPort =>
+                u16::from_le_bytes(*<&[u8; 2]>::try_from(&self.others[offset..offset + 2]).unwrap()),
             MatchedFlag::Proto | MatchedFlag::CaptureNetworkType => self.others[offset] as u16,
             _ => unimplemented!(),
         }
@@ -199,15 +197,13 @@ impl<const N: usize> MatchedFieldN<N> {
     pub fn set(&mut self, flag: MatchedFlag, value: u16) {
         let offset = Self::offset_of(flag);
         match flag {
-            MatchedFlag::SrcEpc
-            | MatchedFlag::DstEpc
-            | MatchedFlag::SrcPort
-            | MatchedFlag::DstPort => {
-                self.others[offset..offset + 2].copy_from_slice(value.to_le_bytes().as_slice())
-            }
-            MatchedFlag::Proto | MatchedFlag::CaptureNetworkType => {
-                self.others[offset] = value as u8
-            }
+            MatchedFlag::SrcEpc |
+            MatchedFlag::DstEpc |
+            MatchedFlag::SrcPort |
+            MatchedFlag::DstPort =>
+                self.others[offset..offset + 2].copy_from_slice(value.to_le_bytes().as_slice()),
+            MatchedFlag::Proto | MatchedFlag::CaptureNetworkType =>
+                self.others[offset] = value as u8,
             _ => unimplemented!(),
         }
     }
@@ -389,9 +385,8 @@ impl MatchedFieldv6 {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
     use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     fn new_matched_field(
         tap_type: u16,

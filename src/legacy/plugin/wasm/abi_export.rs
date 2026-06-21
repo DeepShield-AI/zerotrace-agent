@@ -14,19 +14,10 @@
  * limitations under the License.
  */
 
-use std::sync::{Arc, Weak};
-
-use public::l7_protocol::LogMessageType;
-
-use wasmtime::{
-    AsContextMut, Instance, Linker, Memory, Module, Store, TypedFunc, WasmParams, WasmResults,
-};
-
 use super::{
-    HookPointBitmap, StoreDataType, WasmCounter, EXPORT_FUNC_CHECK_PAYLOAD,
-    EXPORT_FUNC_GET_CUSTOM_MESSAGE_HOOK, EXPORT_FUNC_GET_HOOK_BITMAP,
+    EXPORT_FUNC_CHECK_PAYLOAD, EXPORT_FUNC_GET_CUSTOM_MESSAGE_HOOK, EXPORT_FUNC_GET_HOOK_BITMAP,
     EXPORT_FUNC_ON_CUSTOM_MESSAGE, EXPORT_FUNC_ON_HTTP_REQ, EXPORT_FUNC_ON_HTTP_RESP,
-    EXPORT_FUNC_PARSE_PAYLOAD,
+    EXPORT_FUNC_PARSE_PAYLOAD, HookPointBitmap, StoreDataType, WasmCounter,
 };
 use crate::{
     flow_generator::{
@@ -36,8 +27,13 @@ use crate::{
     plugin::PluginCounterInfo,
 };
 use public::{
-    bytes::{read_u128_be, read_u64_be},
+    bytes::{read_u64_be, read_u128_be},
     counter::{Countable, RefCountable},
+    l7_protocol::LogMessageType,
+};
+use std::sync::{Arc, Weak};
+use wasmtime::{
+    AsContextMut, Instance, Linker, Memory, Module, Store, TypedFunc, WasmParams, WasmResults,
 };
 
 pub(super) trait VmParser {
@@ -132,15 +128,12 @@ pub(super) struct InstanceWrap {
 
 impl VmParser for InstanceWrap {
     fn check_payload(&self, store: &mut Store<StoreDataType>) -> Result<(u8, LogMessageType)> {
-        let proto = self
-            .vm_func_check_payload
-            .call(&mut *store, ())
-            .map_err(|e| {
-                WasmVmError(format!(
-                    "vm call {} fail: {:?}",
-                    EXPORT_FUNC_CHECK_PAYLOAD, e
-                ))
-            })?;
+        let proto = self.vm_func_check_payload.call(&mut *store, ()).map_err(|e| {
+            WasmVmError(format!(
+                "vm call {} fail: {:?}",
+                EXPORT_FUNC_CHECK_PAYLOAD, e
+            ))
+        })?;
 
         match proto {
             0 => Ok((0, LogMessageType::Other)),
@@ -159,20 +152,17 @@ impl VmParser for InstanceWrap {
                         v
                     ))),
                 }
-            }
+            },
         }
     }
 
     fn parse_payload(&self, store: &mut Store<StoreDataType>) -> Result<bool> {
-        let res = self
-            .vm_func_parse_payload
-            .call(&mut *store, ())
-            .map_err(|e| {
-                WasmVmError(format!(
-                    "vm call {} fail: {:?}",
-                    EXPORT_FUNC_PARSE_PAYLOAD, e
-                ))
-            })?;
+        let res = self.vm_func_parse_payload.call(&mut *store, ()).map_err(|e| {
+            WasmVmError(format!(
+                "vm call {} fail: {:?}",
+                EXPORT_FUNC_PARSE_PAYLOAD, e
+            ))
+        })?;
 
         match res {
             0 => Ok(false),
@@ -185,12 +175,9 @@ impl VmParser for InstanceWrap {
     }
 
     fn on_http_req(&self, store: &mut Store<StoreDataType>) -> Result<bool> {
-        let res = self
-            .vm_func_on_http_req
-            .call(&mut *store, ())
-            .map_err(|e| {
-                WasmVmError(format!("vm call {} fail: {:?}", EXPORT_FUNC_ON_HTTP_REQ, e))
-            })?;
+        let res = self.vm_func_on_http_req.call(&mut *store, ()).map_err(|e| {
+            WasmVmError(format!("vm call {} fail: {:?}", EXPORT_FUNC_ON_HTTP_REQ, e))
+        })?;
 
         match res {
             0 => Ok(false),
@@ -203,15 +190,12 @@ impl VmParser for InstanceWrap {
     }
 
     fn on_http_resp(&self, store: &mut Store<StoreDataType>) -> Result<bool> {
-        let res = self
-            .vm_func_on_http_resp
-            .call(&mut *store, ())
-            .map_err(|e| {
-                WasmVmError(format!(
-                    "vm call {} fail: {:?}",
-                    EXPORT_FUNC_ON_HTTP_RESP, e
-                ))
-            })?;
+        let res = self.vm_func_on_http_resp.call(&mut *store, ()).map_err(|e| {
+            WasmVmError(format!(
+                "vm call {} fail: {:?}",
+                EXPORT_FUNC_ON_HTTP_RESP, e
+            ))
+        })?;
 
         match res {
             0 => Ok(false),
@@ -231,14 +215,12 @@ impl VmParser for InstanceWrap {
                     EXPORT_FUNC_ON_CUSTOM_MESSAGE
                 ))
             })?;
-        let res = vm_func_on_custom_message
-            .call(&mut *store, ())
-            .map_err(|e| {
-                WasmVmError(format!(
-                    "vm call {} fail: {:?}",
-                    EXPORT_FUNC_ON_CUSTOM_MESSAGE, e
-                ))
-            })?;
+        let res = vm_func_on_custom_message.call(&mut *store, ()).map_err(|e| {
+            WasmVmError(format!(
+                "vm call {} fail: {:?}",
+                EXPORT_FUNC_ON_CUSTOM_MESSAGE, e
+            ))
+        })?;
 
         match res {
             0 => Ok(false),
@@ -251,15 +233,12 @@ impl VmParser for InstanceWrap {
     }
 
     fn get_hook_bitmap(&self, store: &mut Store<StoreDataType>) -> Result<HookPointBitmap> {
-        let bitmap_ptr = self
-            .vm_func_get_hook_bitmap
-            .call(&mut *store, ())
-            .map_err(|e| {
-                WasmVmError(format!(
-                    "vm call {} fail: {:?}",
-                    EXPORT_FUNC_GET_HOOK_BITMAP, e
-                ))
-            })? as usize;
+        let bitmap_ptr = self.vm_func_get_hook_bitmap.call(&mut *store, ()).map_err(|e| {
+            WasmVmError(format!(
+                "vm call {} fail: {:?}",
+                EXPORT_FUNC_GET_HOOK_BITMAP, e
+            ))
+        })? as usize;
 
         if bitmap_ptr == 0 {
             return Ok(HookPointBitmap(0));
@@ -385,12 +364,7 @@ impl InstanceWrap {
 
     // linear memory size
     pub fn get_mem_size(&self, store: &mut Store<StoreDataType>) -> usize {
-        let mem = self
-            .ins
-            .get_export(&mut *store, "memory")
-            .unwrap()
-            .into_memory()
-            .unwrap();
+        let mem = self.ins.get_export(&mut *store, "memory").unwrap().into_memory().unwrap();
         mem.data_size(store)
     }
 

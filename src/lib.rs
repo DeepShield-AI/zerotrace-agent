@@ -17,11 +17,11 @@
 #![allow(dead_code)]
 
 // ── New architecture (ZeroTrace) ─────────────────────────────────────
+pub mod bundles;
 pub mod collectors;
+pub mod extensions;
 pub mod processors;
 pub mod reporters;
-pub mod bundles;
-pub mod extensions;
 
 // ── Shared modules (used by both old and new code) ───────────────────
 pub mod common;
@@ -36,30 +36,20 @@ pub mod legacy;
 
 // Re-exports: keep old crate:: paths working during migration.
 // Remove these when deleting src/legacy/ at M4.
-pub use crate::legacy::collector;
-pub use crate::legacy::dispatcher;
-pub use crate::legacy::flow_generator;
-pub use crate::legacy::handler;
-pub use crate::legacy::integration_collector;
-pub use crate::legacy::metric;
-pub use crate::legacy::monitor;
-pub use crate::legacy::platform;
-pub use crate::legacy::plugin;
-pub use crate::legacy::policy;
-pub use crate::legacy::rpc;
-pub use crate::legacy::sender;
-pub use crate::legacy::trident;
-#[cfg(all(unix, feature = "libtrace"))]
-pub use crate::legacy::ebpf_dispatcher;
-
 // Re-export legacy ebpf at the old crate::ebpf path
 #[cfg(all(unix, feature = "libtrace"))]
 pub use crate::collectors::ebpf::legacy as ebpf;
-
+#[cfg(all(unix, feature = "libtrace"))]
+pub use crate::legacy::ebpf_dispatcher;
+pub use crate::legacy::{
+    collector, dispatcher, flow_generator, handler, integration_collector, metric, monitor,
+    platform, plugin, policy, rpc, sender, trident,
+};
 // for benchmarks
 #[doc(hidden)]
 pub use {
     common::{
+        Timestamp as _Timestamp,
         endpoint::{
             EndpointData as _EndpointData, EndpointInfo as _EndpointInfo,
             FeatureFlags as _FeatureFlags,
@@ -75,27 +65,26 @@ pub use {
             Acl as _Acl, Cidr as _Cidr, Container as _Container, IpGroupData as _IpGroupData,
         },
         port_range::PortRange as _PortRange,
-        Timestamp as _Timestamp,
-    },
-    legacy::flow_generator::flow_map::{
-        Config as _FlowMapConfig, _new_flow_map_and_receiver, _new_meta_packet,
-        _reverse_meta_packet,
-    },
-    legacy::flow_generator::perf::{
-        tcp::{
-            TcpPerf as _TcpPerf, _benchmark_report, _benchmark_session_peer_seq_no_assert,
-            _meta_flow_perf_update,
-        },
-        FlowPerfCounter as _FlowPerfCounter, L7FlowPerf as _L7FlowPerf,
     },
     legacy::flow_generator::HttpLog,
-    npb_pcap_policy::{
-        DirectionType as _DirectionType, NpbAction as _NpbAction, NpbTunnelType as _NpbTunnelType,
-        TapSide as _TapSide,
+    legacy::flow_generator::flow_map::{
+        _new_flow_map_and_receiver, _new_meta_packet, _reverse_meta_packet,
+        Config as _FlowMapConfig,
+    },
+    legacy::flow_generator::perf::{
+        FlowPerfCounter as _FlowPerfCounter, L7FlowPerf as _L7FlowPerf,
+        tcp::{
+            _benchmark_report, _benchmark_session_peer_seq_no_assert, _meta_flow_perf_update,
+            TcpPerf as _TcpPerf,
+        },
     },
     legacy::policy::fast_path::EndpointTableType as _EndpointTableType,
     legacy::policy::first_path::FirstPath as _FirstPath,
     legacy::policy::labeler::Labeler as _Labeler,
+    npb_pcap_policy::{
+        DirectionType as _DirectionType, NpbAction as _NpbAction, NpbTunnelType as _NpbTunnelType,
+        TapSide as _TapSide,
+    },
 };
 
 #[allow(unused)]

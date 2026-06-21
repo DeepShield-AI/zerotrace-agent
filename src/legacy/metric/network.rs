@@ -14,11 +14,8 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fs;
-use std::io;
-
 use bincode::{Decode, Encode};
+use std::{fmt, fs, io};
 
 /// Network interface statistics from /proc/net/dev
 #[derive(Debug, Default, Clone, Encode, Decode, PartialEq)]
@@ -50,8 +47,14 @@ impl fmt::Display for NetDevStat {
             f,
             "{}: rx_bytes={} rx_packets={} rx_errors={} rx_dropped={} tx_bytes={} tx_packets={} tx_errors={} tx_dropped={}",
             self.name,
-            self.rx_bytes, self.rx_packets, self.rx_errors, self.rx_dropped,
-            self.tx_bytes, self.tx_packets, self.tx_errors, self.tx_dropped,
+            self.rx_bytes,
+            self.rx_packets,
+            self.rx_errors,
+            self.rx_dropped,
+            self.tx_bytes,
+            self.tx_packets,
+            self.tx_errors,
+            self.tx_dropped,
         )
     }
 }

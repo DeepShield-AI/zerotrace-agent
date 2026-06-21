@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::mem::swap;
-use std::net::{IpAddr, Ipv4Addr};
-
-use super::TapPort;
 use super::{
+    TapPort, Timestamp,
     endpoint::FeatureFlags,
     enums::{CaptureNetworkType, EthernetType, IpProtocol},
     flow::PacketDirection,
     matched_field::{MatchedField, MatchedFieldv4, MatchedFieldv6, MatchedFlag},
-    Timestamp,
 };
-
 use npb_pcap_policy::{DedupOperator, TapSide};
 use public::utils::net::MacAddr;
+use std::{
+    fmt,
+    mem::swap,
+    net::{IpAddr, Ipv4Addr},
+};
 
 #[derive(Clone, Debug)]
 pub struct LookupKey {
@@ -147,11 +146,11 @@ impl LookupKey {
             IpAddr::V4(_) => {
                 self.forward_matched = Some(MatchedField::V4(MatchedFieldv4::default()));
                 self.backward_matched = Some(MatchedField::V4(MatchedFieldv4::default()));
-            }
+            },
             IpAddr::V6(_) => {
                 self.forward_matched = Some(MatchedField::V6(MatchedFieldv6::default()));
                 self.backward_matched = Some(MatchedField::V6(MatchedFieldv6::default()));
-            }
+            },
         }
         Self::set_matched_field(
             self.forward_matched.as_mut().unwrap(),

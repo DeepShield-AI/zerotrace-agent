@@ -14,39 +14,39 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::{
-    atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-    Arc, Weak,
-};
-use std::thread;
-use std::time::Duration;
-
-use arc_swap::access::Access;
-use log::{debug, info, warn};
-use thread::JoinHandle;
-
 use super::{
-    check_active,
+    MetricsType, QgStats, check_active,
     consts::*,
     reset_delay_seconds, round_to_minute,
     types::{AppMeterWithFlow, MiniFlow},
-    MetricsType, QgStats,
 };
-
-use crate::common::flow::{CloseType, L7Protocol, L7Stats, SignalSource};
-use crate::config::handler::{CollectorAccess, CollectorConfig};
-use crate::metric::meter::{AppAnomaly, AppLatency, AppMeter, AppTraffic};
-use crate::rpc::get_timestamp;
-use crate::utils::{
-    possible_host::PossibleHost,
-    stats::{Collector, Countable, Counter, CounterType, CounterValue, RefCountable},
+use crate::{
+    common::flow::{CloseType, L7Protocol, L7Stats, SignalSource},
+    config::handler::{CollectorAccess, CollectorConfig},
+    metric::meter::{AppAnomaly, AppLatency, AppMeter, AppTraffic},
+    rpc::get_timestamp,
+    utils::{
+        possible_host::PossibleHost,
+        stats::{Collector, Countable, Counter, CounterType, CounterValue, RefCountable},
+    },
 };
+use arc_swap::access::Access;
+use log::{debug, info, warn};
 use public::{
     buffer::BatchedBox,
     queue::{DebugSender, Error, Receiver},
     utils::hash::hash_to_u64,
 };
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread,
+    time::Duration,
+};
+use thread::JoinHandle;
 
 const FLOW_ID_LEN: usize = 8;
 
@@ -149,23 +149,19 @@ impl SubQuadGen {
     // return false if flow out of window
     fn move_window(&mut self, time_in_second: Duration) -> bool {
         if time_in_second < self.window_start {
-            self.counter
-                .drop_before_window
-                .fetch_add(1, Ordering::Relaxed);
+            self.counter.drop_before_window.fetch_add(1, Ordering::Relaxed);
             return false;
         }
 
         let ts = get_timestamp(self.ntp_diff.load(Ordering::Relaxed));
         while time_in_second.as_secs() >= self.window_start.as_secs() + self.delay_seconds {
             let delay = ts.as_nanos() as i64 - self.window_start.as_nanos() as i64;
-            self.counter
-                .window_delay
-                .fetch_max(delay, Ordering::Relaxed);
+            self.counter.window_delay.fetch_max(delay, Ordering::Relaxed);
 
             let slots_to_shift =
-                (time_in_second.as_secs() - self.window_start.as_secs() - self.delay_seconds)
-                    / self.slot_interval
-                    + 1;
+                (time_in_second.as_secs() - self.window_start.as_secs() - self.delay_seconds) /
+                    self.slot_interval +
+                    1;
             if slots_to_shift >= self.number_of_slots {
                 for i in 0..self.stashs.len() {
                     self.flush_stats(i);
@@ -199,8 +195,7 @@ impl SubQuadGen {
 
         self.batch_buffer.clear();
         while stash.meters.len() >= QUEUE_BATCH_SIZE {
-            self.batch_buffer
-                .extend(stash.meters.drain(..QUEUE_BATCH_SIZE));
+            self.batch_buffer.extend(stash.meters.drain(..QUEUE_BATCH_SIZE));
             if let Err(e) = self.l7_output.send_all(&mut self.batch_buffer) {
                 debug!("l7 qg push l7 stats to queue failed: {}", e);
                 self.batch_buffer.clear();
@@ -226,12 +221,8 @@ impl SubQuadGen {
             len += s.l7_stats.len();
             cap += s.l7_stats.capacity();
         }
-        self.counter
-            .stash_total_len
-            .store(len as u64, Ordering::Relaxed);
-        self.counter
-            .stash_total_capacity
-            .store(cap as u64, Ordering::Relaxed);
+        self.counter.stash_total_len.store(len as u64, Ordering::Relaxed);
+        self.counter.stash_total_capacity.store(cap as u64, Ordering::Relaxed);
     }
 
     fn push_closed_app_meter(
@@ -260,9 +251,7 @@ impl SubQuadGen {
         possible_host: &mut Option<PossibleHost>,
     ) {
         if time_in_second < self.window_start {
-            self.counter
-                .drop_before_window
-                .fetch_add(1, Ordering::Relaxed);
+            self.counter.drop_before_window.fetch_add(1, Ordering::Relaxed);
             return;
         }
         let slot = (((time_in_second - self.window_start).as_secs() / self.slot_interval) as usize)
@@ -276,11 +265,11 @@ impl SubQuadGen {
 
         if let Some(meters) = value {
             if let Some(meter) = meters.iter_mut().find(|m| {
-                m.endpoint == l7_stats.endpoint
-                    && m.biz_type == l7_stats.biz_type
-                    && m.time_span == time_span
-                    && m.is_reversed == l7_stats.is_reversed
-                    && m.l7_protocol == l7_stats.l7_protocol
+                m.endpoint == l7_stats.endpoint &&
+                    m.biz_type == l7_stats.biz_type &&
+                    m.time_span == time_span &&
+                    m.is_reversed == l7_stats.is_reversed &&
+                    m.l7_protocol == l7_stats.l7_protocol
             }) {
                 meter.app_meter.sequential_merge(app_meter);
             } else {
@@ -528,15 +517,23 @@ impl L7QuadrupleGenerator {
         stats: Arc<Collector>,
     ) -> Self {
         let collector_config = config.load();
-        info!("new l7 quadruple_generator id: {}, second_delay: {}, minute_delay: {}, l7_metrics_enabled: {}, vtap_flow_1s_enabled: {} collector_enabled: {}", id, second_delay_seconds, minute_delay_seconds, collector_config.l7_metrics_enabled, collector_config.vtap_flow_1s_enabled, collector_config.enabled);
+        info!(
+            "new l7 quadruple_generator id: {}, second_delay: {}, minute_delay: {}, l7_metrics_enabled: {}, vtap_flow_1s_enabled: {} collector_enabled: {}",
+            id,
+            second_delay_seconds,
+            minute_delay_seconds,
+            collector_config.l7_metrics_enabled,
+            collector_config.vtap_flow_1s_enabled,
+            collector_config.enabled
+        );
         let minute_delay_seconds = reset_delay_seconds(minute_delay_seconds);
 
         let second_slots = second_delay_seconds as usize;
         let minute_slots = 2 as usize;
         let mut second_quad_gen = None;
         let mut minute_quad_gen = None;
-        let window_start = round_to_minute(get_timestamp(ntp_diff.load(Ordering::Relaxed)))
-            - Duration::from_secs(2 * SECONDS_IN_MINUTE);
+        let window_start = round_to_minute(get_timestamp(ntp_diff.load(Ordering::Relaxed))) -
+            Duration::from_secs(2 * SECONDS_IN_MINUTE);
 
         if metrics_type.contains(MetricsType::SECOND) {
             let mut quad_gen = SubQuadGen {
@@ -694,12 +691,12 @@ impl L7QuadrupleGenerator {
                     },
                     ..Default::default()
                 }
-            }
+            },
             (_, _) => AppMeter {
                 traffic: AppTraffic {
                     request: stats.request_count,
                     response: stats.response_count,
-                    direction_score: direction_score,
+                    direction_score,
                 },
                 latency: AppLatency {
                     rrt_max: stats.rrt_max,
@@ -719,10 +716,7 @@ impl L7QuadrupleGenerator {
         let mut l7_recv_batch = Vec::with_capacity(QUEUE_BATCH_SIZE);
         while self.running.load(Ordering::Relaxed) {
             let config = self.config.load();
-            match self
-                .l7_stats_input
-                .recv_all(&mut l7_recv_batch, Some(RCV_TIMEOUT))
-            {
+            match self.l7_stats_input.recv_all(&mut l7_recv_batch, Some(RCV_TIMEOUT)) {
                 Ok(_) => {
                     if config.enabled {
                         for l7_stat in l7_recv_batch.drain(..) {
@@ -731,13 +725,19 @@ impl L7QuadrupleGenerator {
                         }
                         if let Some(q) = self.second_quad_gen.as_mut() {
                             if let Err(e) = q.l7_output.send_all(&mut q.closed_app_meters) {
-                                warn!("second_quad_gen queue failed to send l7 Document data, because {:?}", e);
+                                warn!(
+                                    "second_quad_gen queue failed to send l7 Document data, because {:?}",
+                                    e
+                                );
                                 q.closed_app_meters.clear();
                             }
                         }
                         if let Some(q) = self.minute_quad_gen.as_mut() {
                             if let Err(e) = q.l7_output.send_all(&mut q.closed_app_meters) {
-                                warn!("minute_quad_gen queue failed to send l7 Document data, because {:?}", e);
+                                warn!(
+                                    "minute_quad_gen queue failed to send l7 Document data, because {:?}",
+                                    e
+                                );
                                 q.closed_app_meters.clear();
                             }
                         }
@@ -750,7 +750,7 @@ impl L7QuadrupleGenerator {
                     if let Some(g) = self.minute_quad_gen.as_mut() {
                         g.calc_stash_counters();
                     }
-                }
+                },
                 Err(Error::Timeout) => {
                     self.handle(
                         &config,
@@ -759,17 +759,23 @@ impl L7QuadrupleGenerator {
                     );
                     if let Some(q) = self.second_quad_gen.as_mut() {
                         if let Err(e) = q.l7_output.send_all(&mut q.closed_app_meters) {
-                            warn!("second_quad_gen queue failed to send l7 Document data, because {:?}", e);
+                            warn!(
+                                "second_quad_gen queue failed to send l7 Document data, because {:?}",
+                                e
+                            );
                             q.closed_app_meters.clear();
                         }
                     }
                     if let Some(q) = self.minute_quad_gen.as_mut() {
                         if let Err(e) = q.l7_output.send_all(&mut q.closed_app_meters) {
-                            warn!("minute_quad_gen queue failed to send l7 Document data, because {:?}", e);
+                            warn!(
+                                "minute_quad_gen queue failed to send l7 Document data, because {:?}",
+                                e
+                            );
                             q.closed_app_meters.clear();
                         }
                     }
-                }
+                },
                 Err(Error::Terminated(_, _)) => {
                     if let Some(g) = self.second_quad_gen.as_mut() {
                         g.flush_all_stats();
@@ -778,7 +784,7 @@ impl L7QuadrupleGenerator {
                         g.flush_all_stats();
                     }
                     break;
-                }
+                },
                 Err(Error::BatchTooLarge(_)) => unreachable!(),
             }
         }

@@ -14,22 +14,20 @@
  * limitations under the License.
  */
 
-use std::{collections::HashMap, fmt, net::IpAddr};
-
 use super::quadruple_generator::QgKey;
-
 use crate::{
     common::{
+        Timestamp,
         enums::EthernetType,
         flow::{CloseType, Flow, FlowKey, FlowMetricsPeer, L7Protocol, SignalSource},
         tagged_flow::TaggedFlow,
-        Timestamp,
     },
     metric::{
         document::Direction,
         meter::{AppMeter, FlowMeter},
     },
 };
+use std::{collections::HashMap, fmt, net::IpAddr};
 
 #[derive(Clone, Debug)]
 pub struct MiniFlow {
@@ -113,8 +111,13 @@ impl fmt::Display for FlowMeterWithFlow {
         let peer1 = &self.flow.peers[1];
         write!(
             f,
-            "FlowMeterWithFlow: time: {:?}, flow_meter: {:?}, nat_real_ip_0: {:?}, nat_real_ip_1: {:?}, nat_real_port_0: {}, nat_real_port_1: {}", 
-            self.time_in_second, &self.flow_meter, &peer0.nat_real_ip, &peer1.nat_real_ip,  &peer0.nat_real_port, &peer1.nat_real_port,
+            "FlowMeterWithFlow: time: {:?}, flow_meter: {:?}, nat_real_ip_0: {:?}, nat_real_ip_1: {:?}, nat_real_port_0: {}, nat_real_port_1: {}",
+            self.time_in_second,
+            &self.flow_meter,
+            &peer0.nat_real_ip,
+            &peer1.nat_real_ip,
+            &peer0.nat_real_port,
+            &peer1.nat_real_port,
         )
     }
 }
@@ -135,8 +138,8 @@ impl FlowMeterWithFlow {
     ) {
         self.time_in_second = time_in_second;
         // Only flow whose signal_source is Packet or XFlow has flow_meter
-        if tagged_flow.flow.signal_source == SignalSource::Packet
-            || tagged_flow.flow.signal_source == SignalSource::XFlow
+        if tagged_flow.flow.signal_source == SignalSource::Packet ||
+            tagged_flow.flow.signal_source == SignalSource::XFlow
         {
             self.flow_meter.sequential_merge(flow_meter);
             for i in 0..2 {

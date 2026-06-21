@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::mem::forget;
-
 use enum_dispatch::enum_dispatch;
 use num_enum::IntoPrimitive;
 use pcap_sys::bpf_insn;
+use std::{fmt, mem::forget};
 
 #[enum_dispatch]
 #[derive(Clone)]
@@ -186,7 +184,7 @@ impl fmt::Display for LoadAbsolute {
                     panic!("Use LoadExtension.");
                 }
                 write!(f, "ld [{}]", self.off)
-            }
+            },
             _ => panic!("Invalid size."),
         }
     }
@@ -413,26 +411,22 @@ fn jump_to_string(
     match cond {
         JumpTest::JumpEqual => conditional_jump(f, operand, skip_true, skip_false, "jeq", "jneq"),
         // write!(f, "jneq {},{}", operand, skip_true),
-        JumpTest::JumpNotEqual => {
-            conditional_jump(f, operand, skip_true, skip_false, "jneq", "jeq")
-        }
-        JumpTest::JumpGreaterThan => {
-            conditional_jump(f, operand, skip_true, skip_false, "jgt", "jle")
-        }
+        JumpTest::JumpNotEqual =>
+            conditional_jump(f, operand, skip_true, skip_false, "jneq", "jeq"),
+        JumpTest::JumpGreaterThan =>
+            conditional_jump(f, operand, skip_true, skip_false, "jgt", "jle"),
         JumpTest::JumpLessThan => write!(f, "jlt {},{}", operand, skip_true),
-        JumpTest::JumpGreaterOrEqual => {
-            conditional_jump(f, operand, skip_true, skip_false, "jge", "jlt")
-        }
+        JumpTest::JumpGreaterOrEqual =>
+            conditional_jump(f, operand, skip_true, skip_false, "jge", "jlt"),
         JumpTest::JumpLessOrEqual => write!(f, "jle {},{}", operand, skip_true),
         JumpTest::JumpBitsSet => {
             if skip_false > 0 {
                 return write!(f, "jset {},{},{}", operand, skip_true, skip_false);
             }
             return write!(f, "jset {},{}", operand, skip_true);
-        }
-        JumpTest::JumpBitsNotSet => {
-            jump_to_string(f, JumpTest::JumpBitsSet, operand, skip_false, skip_true)
-        }
+        },
+        JumpTest::JumpBitsNotSet =>
+            jump_to_string(f, JumpTest::JumpBitsSet, operand, skip_false, skip_true),
     }
 }
 

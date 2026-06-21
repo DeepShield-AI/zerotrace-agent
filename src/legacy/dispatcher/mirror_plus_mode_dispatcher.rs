@@ -14,49 +14,49 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::HashMap,
-    mem::drop,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, RwLock,
+use super::{
+    CaptureNetworkTypeHandler, Packet,
+    mirror_mode_dispatcher::{
+        get_key as mirror_get_key, handler as mirror_handler, swap_last_timestamp,
     },
-    thread::{self, JoinHandle},
-    time::Duration,
 };
-
-use arc_swap::access::Access;
-use log::{debug, info, warn};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::{
-    sched::{sched_setaffinity, CpuSet},
-    unistd::Pid,
-};
-
-use super::mirror_mode_dispatcher::{
-    get_key as mirror_get_key, handler as mirror_handler, swap_last_timestamp,
-};
-use super::{CaptureNetworkTypeHandler, Packet};
 #[cfg(target_os = "linux")]
 use crate::platform::{GenericPoller, Poller};
 use crate::{
     common::decapsulate::{TunnelInfo, TunnelTypeBitmap},
     config::DispatcherConfig,
     dispatcher::{
+        PacketCounter,
         base_dispatcher::{BaseDispatcher, BaseDispatcherListener},
         error::Result,
-        PacketCounter,
     },
-    flow_generator::{flow_map::Config, FlowMap},
+    flow_generator::{FlowMap, flow_map::Config},
     rpc::get_timestamp,
     utils::stats::{self, Countable, QueueStats},
+};
+use arc_swap::access::Access;
+use log::{debug, info, warn};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::{
+    sched::{CpuSet, sched_setaffinity},
+    unistd::Pid,
 };
 use public::{
     buffer::Allocator,
     debug::QueueDebugger,
     proto::agent::{AgentType, IfMacSource},
-    queue::{self, bounded_with_debug, DebugSender, Receiver},
+    queue::{self, DebugSender, Receiver, bounded_with_debug},
     utils::net::{Link, MacAddr},
+};
+use std::{
+    collections::HashMap,
+    mem::drop,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 const IF_INDEX_MAX_SIZE: usize = 1000;
@@ -81,8 +81,7 @@ impl MirrorPlusModeDispatcherListener {
     pub fn on_tap_interface_change(&self, links: &[Link], _: IfMacSource, agent_type: AgentType) {
         let mut old_agent_type = self.agent_type.write().unwrap();
         *old_agent_type = agent_type;
-        self.base
-            .on_tap_interface_change(links.to_vec(), IfMacSource::IfMac);
+        self.base.on_tap_interface_change(links.to_vec(), IfMacSource::IfMac);
     }
 
     pub fn on_vm_change_with_bridge_macs(
@@ -93,12 +92,9 @@ impl MirrorPlusModeDispatcherListener {
     ) {
         let mut new_vm_mac_set = HashMap::new();
 
-        vm_mac_addrs
-            .iter()
-            .zip(gateway_vmac_addrs)
-            .for_each(|(vm_mac, gw_vmac)| {
-                new_vm_mac_set.insert(vm_mac.to_lower_32b(), gw_vmac.clone());
-            });
+        vm_mac_addrs.iter().zip(gateway_vmac_addrs).for_each(|(vm_mac, gw_vmac)| {
+            new_vm_mac_set.insert(vm_mac.to_lower_32b(), gw_vmac.clone());
+        });
         tap_bridge_macs.iter().for_each(|e| {
             let key = e.to_lower_32b();
             new_vm_mac_set.insert(key, *e);
@@ -331,11 +327,11 @@ impl MirrorPlusModeDispatcher {
                         let cloud_gateway_traffic = config.flow.cloud_gateway_traffic;
 
                         match receiver.recv_all(&mut batch, Some(Duration::from_secs(1))) {
-                            Ok(_) => {}
+                            Ok(_) => {},
                             Err(queue::Error::Timeout) => {
                                 flow_map.inject_flush_ticker(&config, Duration::ZERO);
                                 continue;
-                            }
+                            },
                             Err(queue::Error::Terminated(..)) => break,
                             Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
                         }
@@ -518,9 +514,7 @@ impl MirrorPlusModeDispatcher {
             let (packet, timestamp) = recved.unwrap();
 
             base.counter.rx.fetch_add(1, Ordering::Relaxed);
-            base.counter
-                .rx_bytes
-                .fetch_add(packet.capture_length as u64, Ordering::Relaxed);
+            base.counter.rx_bytes.fetch_add(packet.capture_length as u64, Ordering::Relaxed);
             if base.tap_interface_whitelist.next_sync(timestamp.into()) {
                 base.need_update_bpf.store(true, Ordering::Relaxed);
             }
@@ -566,7 +560,7 @@ impl MirrorPlusModeDispatcher {
                 counter.invalid_packets.fetch_add(1, Ordering::Relaxed);
                 warn!("decap_tunnel failed: {:?}", e);
                 return 0;
-            }
+            },
         };
 
         return decap_length;

@@ -29,9 +29,8 @@ cfg_if::cfg_if! {
     }
 }
 
-use public::proto::agent::AgentType;
-
 use crate::utils::environment::{is_tt_pod, is_tt_workload};
+use public::proto::agent::AgentType;
 
 // whether need to scan the process info
 pub fn process_info_enabled(t: AgentType) -> bool {

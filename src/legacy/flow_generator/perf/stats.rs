@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
-
-use serde::Serialize;
-
 use crate::utils::stats::{Counter, CounterType, CounterValue, RefCountable};
+use serde::Serialize;
+use std::{
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    time::Duration,
+};
 
 // 每次获取统计数据后此结构体都会被清零，不能在其中保存Flow级别的信息避免被清空
 #[derive(Debug, Default, PartialEq, Clone, Serialize)]

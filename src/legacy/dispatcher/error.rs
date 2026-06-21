@@ -15,11 +15,10 @@
  */
 
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
-use thiserror::Error;
-
 use public::error;
 #[cfg(target_os = "linux")]
 use public::netns;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {

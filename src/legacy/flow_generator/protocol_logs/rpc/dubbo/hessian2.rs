@@ -14,14 +14,10 @@
  * limitations under the License.
  */
 
-use nom::FindSubstring;
-
-use public::codecs::hessian2::{consts::*, Hessian2Decoder};
-
-use super::consts::*;
-use super::{DubboInfo, BODY_PARAM_MAX, BODY_PARAM_MIN};
-
+use super::{BODY_PARAM_MAX, BODY_PARAM_MIN, DubboInfo, consts::*};
 use crate::config::handler::{L7LogDynamicConfig, TraceType};
+use nom::FindSubstring;
+use public::codecs::hessian2::{Hessian2Decoder, consts::*};
 
 cfg_if::cfg_if! {
 if #[cfg(feature = "enterprise")] {
@@ -34,9 +30,8 @@ if #[cfg(feature = "enterprise")] {
 
 fn lookup_str(payload: &[u8], trace_type: &TraceType) -> Option<String> {
     let tag = match trace_type {
-        TraceType::Sw3 | TraceType::Sw8 | TraceType::CloudWise | TraceType::Customize(_) => {
-            trace_type.as_str()
-        }
+        TraceType::Sw3 | TraceType::Sw8 | TraceType::CloudWise | TraceType::Customize(_) =>
+            trace_type.as_str(),
         _ => return None,
     };
 
@@ -84,12 +79,10 @@ fn get_req_param_len(payload: &[u8]) -> (usize, usize) {
     let tag = payload[0];
     match tag {
         BC_STRING_DIRECT..=STRING_DIRECT_MAX => (1, tag as usize),
-        BC_STRING_SHORT..=BC_STRING_SHORT_MAX if payload.len() > 2 => {
-            (2, ((tag as usize - 0x30) << 8) + payload[1] as usize)
-        }
-        BC_STRING_CHUNK | BC_STRING if payload.len() > 3 => {
-            (3, ((payload[1] as usize) << 8) + payload[2] as usize)
-        }
+        BC_STRING_SHORT..=BC_STRING_SHORT_MAX if payload.len() > 2 =>
+            (2, ((tag as usize - 0x30) << 8) + payload[1] as usize),
+        BC_STRING_CHUNK | BC_STRING if payload.len() > 3 =>
+            (3, ((payload[1] as usize) << 8) + payload[2] as usize),
         _ => (0, 0),
     }
 }
@@ -114,26 +107,25 @@ pub fn get_req_body_info(
         }
 
         match n {
-            BODY_PARAM_DUBBO_VERSION => {
+            BODY_PARAM_DUBBO_VERSION =>
                 info.dubbo_version =
                     String::from_utf8_lossy(&payload[para_index..para_index + para_len])
-                        .into_owned()
-            }
+                        .into_owned(),
             BODY_PARAM_SERVICE_NAME => {
                 info.service_name =
                     String::from_utf8_lossy(&payload[para_index..para_index + para_len])
                         .into_owned();
-            }
+            },
             BODY_PARAM_SERVICE_VERSION => {
                 info.service_version =
                     String::from_utf8_lossy(&payload[para_index..para_index + para_len])
                         .into_owned();
-            }
+            },
             BODY_PARAM_METHOD_NAME => {
                 info.method_name =
                     String::from_utf8_lossy(&payload[para_index..para_index + para_len])
                         .into_owned();
-            }
+            },
             _ => return,
         }
 

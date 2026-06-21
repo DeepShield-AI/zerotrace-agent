@@ -14,36 +14,30 @@
  * limitations under the License.
  */
 
-use std::ffi::CStr;
-
-use bson::{self, Document};
-use serde::Serialize;
-
-use public::l7_protocol::LogMessageType;
-
 use super::super::AppProtoHead;
-use crate::common::flow::L7PerfStats;
-use crate::common::l7_protocol_log::L7ParseResult;
-use crate::config::handler::LogParserConfig;
-use crate::flow_generator::protocol_logs::set_captured_byte;
 use crate::{
     common::{
         enums::IpProtocol,
-        flow::L7Protocol,
-        flow::PacketDirection,
+        flow::{L7PerfStats, L7Protocol, PacketDirection},
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
-        l7_protocol_log::{L7ProtocolParserInterface, LogCache, ParseParam},
+        l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, LogCache, ParseParam},
         meta_packet::ApplicationFlags,
     },
+    config::handler::LogParserConfig,
     flow_generator::{
-        protocol_logs::{
-            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
-            value_is_default, L7ResponseStatus,
-        },
         Error, Result,
+        protocol_logs::{
+            L7ResponseStatus,
+            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
+            set_captured_byte, value_is_default,
+        },
     },
     utils::bytes,
 };
+use bson::{self, Document};
+use public::l7_protocol::LogMessageType;
+use serde::Serialize;
+use std::ffi::CStr;
 
 #[derive(Serialize, Debug, Clone)]
 pub struct MongoDBInfo {
@@ -159,7 +153,7 @@ impl MongoDBInfo {
                 std::mem::swap(&mut self.request, &mut other.request);
                 self.request_id = other.request_id;
                 self.captured_request_byte = other.captured_request_byte;
-            }
+            },
             LogMessageType::Response => {
                 self.response_code = other.response_code;
                 self.resp_len = other.resp_len;
@@ -168,15 +162,15 @@ impl MongoDBInfo {
                 self.response_id = other.response_id;
                 std::mem::swap(&mut self.response, &mut other.response);
                 self.captured_response_byte = other.captured_response_byte;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::MongoDB) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.request)
-                || t.request_type.is_on_blacklist(&self.op_code_name);
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.request) ||
+                t.request_type.is_on_blacklist(&self.op_code_name);
         }
     }
 }
@@ -373,12 +367,12 @@ impl MongoDBLog {
                                 msg_body.sections.c_string.unwrap_or(_UNKNOWN.to_string());
                         }
                         info.response_code = msg_body.sections.doc.get_i32("code").unwrap_or(0);
-                    }
+                    },
                     _ => {
                         info.request = msg_body.sections.doc.to_string();
-                    }
+                    },
                 }
-            }
+            },
             _OP_REPLY if payload.len() > _HEADER_SIZE => {
                 // "OP_REPLY"
                 let mut msg_body = MongoOpReply::default();
@@ -386,7 +380,7 @@ impl MongoDBLog {
                 info.reply_false = !msg_body.reply_ok;
                 info.response = msg_body.doc.to_string();
                 info.exception = msg_body.response_msg;
-            }
+            },
             _OP_UPDATE if payload.len() > 24 => {
                 // "OP_UPDATE"
                 info.exception = CStr::from_bytes_until_nul(&payload[20..])
@@ -398,7 +392,7 @@ impl MongoDBLog {
                         .unwrap_or(Document::default());
                     info.request = update.to_string();
                 }
-            }
+            },
             _OP_INSERT if payload.len() > 20 => {
                 // OP_INSERT
                 info.exception = CStr::from_bytes_until_nul(&payload[20..])
@@ -410,7 +404,7 @@ impl MongoDBLog {
                         .unwrap_or(Document::default());
                     info.request = insert.to_string();
                 }
-            }
+            },
             _OP_QUERY if payload.len() > 28 => {
                 // "OP_QUERY"
                 let collection_name =
@@ -426,15 +420,15 @@ impl MongoDBLog {
                     .unwrap_or(Document::default());
                     info.request = query.to_string();
                 }
-            }
+            },
             _OP_GET_MORE | _OP_DELETE if payload.len() > 20 => {
                 // OP_GET_MORE
                 info.request = CStr::from_bytes_until_nul(&payload[..20])
                     .map_err(|_| Error::L7ProtocolUnknown)?
                     .to_string_lossy()
                     .into_owned();
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         Ok(false)
@@ -568,7 +562,7 @@ impl Sections {
                     return Ok(false);
                 }
                 self.doc = Document::from_reader(&payload[1..]).unwrap_or(Document::default());
-            }
+            },
             1 => {
                 // Doc
                 self.kind_name = "DOC".to_string();
@@ -582,18 +576,18 @@ impl Sections {
                 );
 
                 self.doc = Document::from_reader(&payload[1..]).unwrap_or(Document::default());
-            }
+            },
             2 => {
                 // Internal
                 self.kind_name = "INTERNAL".to_string();
                 // This section is used for internal purposes.
                 return Ok(false);
-            }
+            },
             _ => {
                 // Unknown
                 self.kind_name = _UNKNOWN.to_string();
                 return Ok(false);
-            }
+            },
         }
         Ok(true)
     }
@@ -624,22 +618,22 @@ impl MongoOpReply {
                 // CursorNotFound
                 self.response_msg = "CursorNotFound".to_string();
                 self.reply_ok = true;
-            }
+            },
             1 => {
                 // QueryFailure
                 self.response_msg = "QueryFailure".to_string();
                 self.reply_ok = false;
-            }
+            },
             2 => {
                 // ShardConfigStale
                 self.response_msg = "ShardConfigStale".to_string();
                 self.reply_ok = true;
-            }
+            },
             _ => {
                 // Unknown is Undecoded
                 self.response_msg = _UNKNOWN.to_string();
                 self.reply_ok = true;
-            }
+            },
         }
         self.doc = Document::from_reader(&payload[20..]).unwrap_or(Document::default());
         Ok(true)
@@ -678,17 +672,13 @@ pub struct MongoOpUpdate {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/mongo";
 
@@ -731,7 +721,7 @@ mod tests {
                 match info.unwrap_single() {
                     L7ProtocolInfo::MongoDBInfo(i) => {
                         output.push_str(&format!("{:?} is_mongo: {}\n", i, is_mongo));
-                    }
+                    },
                     _ => unreachable!(),
                 }
             } else {

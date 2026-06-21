@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net::SocketAddr;
-use std::net::UdpSocket;
-
-use bincode::config::Configuration;
-use bincode::{Decode, Encode};
-
-use crate::metric::disk::{collect_diskstats, DiskStat};
+use crate::metric::disk::{DiskStat, collect_diskstats};
+use bincode::{Decode, Encode, config::Configuration};
 use public::debug::send_to;
+use std::{
+    fmt,
+    net::{SocketAddr, UdpSocket},
+};
 
 #[derive(Debug, Encode, Decode, PartialEq)]
 pub enum DiskMessage {
@@ -39,7 +37,7 @@ impl fmt::Display for DiskMessage {
                     writeln!(f, "{}", stat)?;
                 }
                 Ok(())
-            }
+            },
             DiskMessage::Err(e) => write!(f, "Error: {}", e),
             _ => Ok(()),
         }

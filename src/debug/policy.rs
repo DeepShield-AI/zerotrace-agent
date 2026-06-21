@@ -14,22 +14,20 @@
  * limitations under the License.
  */
 
+use crate::policy::PolicySetter;
+use bincode::{Decode, Encode, config::Configuration};
+use log::warn;
+use public::{
+    debug::send_to,
+    queue::{Error, Receiver, Sender, bounded},
+};
 use std::{
     net::{SocketAddr, UdpSocket},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
-};
-
-use bincode::{config::Configuration, Decode, Encode};
-use log::warn;
-
-use crate::policy::PolicySetter;
-use public::{
-    debug::send_to,
-    queue::{bounded, Error, Receiver, Sender},
 };
 
 /// 策略模块调试消息
@@ -48,10 +46,10 @@ pub enum PolicyMessage {
 
 /// 策略模块调试器
 pub struct PolicyDebugger {
-    policy_setter: PolicySetter,        // 策略设置器，用于与策略模块交互
-    sender: Arc<Sender<String>>,        // 监控数据发送端
-    receiver: Arc<Receiver<String>>,    // 监控数据接收端
-    enabled: Arc<AtomicBool>,           // 监控开启状态标志
+    policy_setter: PolicySetter,     // 策略设置器，用于与策略模块交互
+    sender: Arc<Sender<String>>,     // 监控数据发送端
+    receiver: Arc<Receiver<String>>, // 监控数据接收端
+    enabled: Arc<AtomicBool>,        // 监控开启状态标志
 }
 
 impl PolicyDebugger {
@@ -111,7 +109,7 @@ impl PolicyDebugger {
                         serialize_conf,
                     );
                     return;
-                }
+                },
                 Err(Error::Timeout) => continue, // 超时，重新检查循环条件
                 Err(Error::BatchTooLarge(_)) => unreachable!(),
             };
@@ -136,7 +134,7 @@ impl PolicyDebugger {
         let (first_hits, fast_hits) = self.policy_setter.get_hits();
         // 按 ID 排序 ACL
         acls.sort_by_key(|x| x.id);
-        
+
         // 发送汇总标题
         let _ = send_to(
             &sock,
@@ -147,7 +145,7 @@ impl PolicyDebugger {
             )),
             serialize_conf,
         );
-        
+
         // 遍历并发送每个 ACL 详情
         for acl in acls {
             let _ = send_to(
@@ -203,16 +201,37 @@ impl PolicyDebugger {
         }
 
         // 格式化并发送详细的 ACL 信息
-        let _ = send_to(&sock, conn, PolicyMessage::Context(format!(
-            "Id: {}\nCaptureNetworkType: {}\nIP Src: \n\t{}\nIP Dst: \n\t{}\nProtocol: {}\nPort Src: {:?}\nPort Dst: {:?}\nActions: {}\n", 
-            acl.id,
-            acl.tap_type,
-            src_groups.iter().map(|x| format!("EPC: {} IP: {:?}", x.epc_id, x.ips)).collect::<Vec<String>>().join("\t\n"),
-            dst_groups.iter().map(|x| format!("EPC: {} IP: {:?}", x.epc_id, x.ips)).collect::<Vec<String>>().join("\t\n"),
-            acl.proto,
-            acl.src_port_ranges.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(", "),
-            acl.dst_port_ranges.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(", "),
-            acl.npb_actions.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(","),
-        )), serialize_conf);
+        let _ = send_to(
+            &sock,
+            conn,
+            PolicyMessage::Context(format!(
+                "Id: {}\nCaptureNetworkType: {}\nIP Src: \n\t{}\nIP Dst: \n\t{}\nProtocol: {}\nPort Src: {:?}\nPort Dst: {:?}\nActions: {}\n",
+                acl.id,
+                acl.tap_type,
+                src_groups
+                    .iter()
+                    .map(|x| format!("EPC: {} IP: {:?}", x.epc_id, x.ips))
+                    .collect::<Vec<String>>()
+                    .join("\t\n"),
+                dst_groups
+                    .iter()
+                    .map(|x| format!("EPC: {} IP: {:?}", x.epc_id, x.ips))
+                    .collect::<Vec<String>>()
+                    .join("\t\n"),
+                acl.proto,
+                acl.src_port_ranges
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                acl.dst_port_ranges
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                acl.npb_actions.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(","),
+            )),
+            serialize_conf,
+        );
     }
 }

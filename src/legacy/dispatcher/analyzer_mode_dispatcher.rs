@@ -14,38 +14,19 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::HashMap,
-    mem::drop,
-    ops::Add,
-    sync::{atomic::Ordering, Arc, RwLock},
-    thread::{self, JoinHandle},
-    time::Duration,
-};
-
-use arc_swap::access::Access;
-use log::{debug, info, warn};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::{
-    sched::{sched_setaffinity, CpuSet},
-    unistd::Pid,
-};
-use packet_dedup::PacketDedupMap;
-
-use super::base_dispatcher::BaseDispatcher;
-use super::Packet;
+use super::{Packet, base_dispatcher::BaseDispatcher};
 use crate::{
     common::{
+        ETH_HEADER_SIZE, MetaPacket, TapPort, VLAN_HEADER_SIZE,
         decapsulate::{TunnelInfo, TunnelType, TunnelTypeBitmap},
         enums::CaptureNetworkType,
-        MetaPacket, TapPort, ETH_HEADER_SIZE, VLAN_HEADER_SIZE,
     },
     config::DispatcherConfig,
     dispatcher::{
         base_dispatcher::{BaseDispatcherListener, CaptureNetworkTypeHandler},
         error::Result,
     },
-    flow_generator::{flow_map::Config, FlowMap},
+    flow_generator::{FlowMap, flow_map::Config},
     handler::{MiniPacket, PacketHandler},
     rpc::get_timestamp,
     utils::{
@@ -53,12 +34,28 @@ use crate::{
         stats::{self, Countable, QueueStats},
     },
 };
+use arc_swap::access::Access;
+use log::{debug, info, warn};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::{
+    sched::{CpuSet, sched_setaffinity},
+    unistd::Pid,
+};
+use packet_dedup::PacketDedupMap;
 use public::{
     buffer::Allocator,
     debug::QueueDebugger,
     proto::agent::IfMacSource,
-    queue::{self, bounded_with_debug, DebugSender, Receiver},
+    queue::{self, DebugSender, Receiver, bounded_with_debug},
     utils::net::{Link, MacAddr},
+};
+use std::{
+    collections::HashMap,
+    mem::drop,
+    ops::Add,
+    sync::{Arc, RwLock, atomic::Ordering},
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 // BILD to reduce the processing flow of Trident tunnel traffic, the tunnel traffic will be marked
@@ -84,16 +81,15 @@ impl AnalyzerModeDispatcherListener {
     }
 
     pub fn on_tap_interface_change(&self, links: &[Link], _: IfMacSource) {
-        self.base
-            .on_tap_interface_change(links.to_vec(), IfMacSource::IfMac);
+        self.base.on_tap_interface_change(links.to_vec(), IfMacSource::IfMac);
     }
 
     pub fn on_vm_change(&self, vm_mac_addrs: &[MacAddr], gateway_vmac_addrs: &[MacAddr]) {
         let old_vm_mac_addrs = self.vm_mac_addrs.read().unwrap();
         let old_gateway_vmac_addrs = self.gateway_vmac_addrs.read().unwrap();
-        if old_gateway_vmac_addrs.as_slice() == gateway_vmac_addrs
-            && old_vm_mac_addrs.len() <= vm_mac_addrs.len()
-            && vm_mac_addrs
+        if old_gateway_vmac_addrs.as_slice() == gateway_vmac_addrs &&
+            old_vm_mac_addrs.len() <= vm_mac_addrs.len() &&
+            vm_mac_addrs
                 .iter()
                 .all(|addr| old_vm_mac_addrs.contains_key(&addr.to_lower_32b()))
         {
@@ -116,12 +112,9 @@ impl AnalyzerModeDispatcherListener {
             );
         }
         let mut new_vm_mac_addrs = HashMap::with_capacity(vm_mac_addrs.len());
-        vm_mac_addrs
-            .iter()
-            .zip(gateway_vmac_addrs)
-            .for_each(|(vm_mac, gw_vmac)| {
-                new_vm_mac_addrs.insert(vm_mac.to_lower_32b(), gw_vmac.clone());
-            });
+        vm_mac_addrs.iter().zip(gateway_vmac_addrs).for_each(|(vm_mac, gw_vmac)| {
+            new_vm_mac_addrs.insert(vm_mac.to_lower_32b(), gw_vmac.clone());
+        });
         *self.vm_mac_addrs.write().unwrap() = new_vm_mac_addrs;
         *self.gateway_vmac_addrs.write().unwrap() = gateway_vmac_addrs.to_vec();
     }
@@ -309,11 +302,11 @@ impl AnalyzerModeDispatcher {
                         };
 
                         match receiver.recv_all(&mut batch, Some(Duration::from_secs(1))) {
-                            Ok(_) => {}
+                            Ok(_) => {},
                             Err(queue::Error::Timeout) => {
                                 flow_map.inject_flush_ticker(&config, Duration::ZERO);
                                 continue;
-                            }
+                            },
                             Err(queue::Error::Terminated(..)) => break,
                             Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
                         }
@@ -338,7 +331,7 @@ impl AnalyzerModeDispatcher {
                                     counter.invalid_packets.fetch_add(1, Ordering::Relaxed);
                                     warn!("decap_tunnel failed: {:?}", e);
                                     continue;
-                                }
+                                },
                             };
 
                             if decap_length >= raw_length {
@@ -350,8 +343,8 @@ impl AnalyzerModeDispatcher {
                                 continue;
                             }
 
-                            let decap_length = if packet.raw.len() - decap_length
-                                > ETH_HEADER_SIZE + VLAN_HEADER_SIZE
+                            let decap_length = if packet.raw.len() - decap_length >
+                                ETH_HEADER_SIZE + VLAN_HEADER_SIZE
                             {
                                 decap_length
                             } else {
@@ -364,9 +357,9 @@ impl AnalyzerModeDispatcher {
                             let mut overlay_packet = packet.raw;
                             overlay_packet.truncate(decap_length..raw_length);
                             // Only cloud traffic goes to de-duplication
-                            if tap_type == CaptureNetworkType::Cloud
-                                && !analyzer_dedup_disabled
-                                && dedup.duplicate(overlay_packet.as_mut(), timestamp)
+                            if tap_type == CaptureNetworkType::Cloud &&
+                                !analyzer_dedup_disabled &&
+                                dedup.duplicate(overlay_packet.as_mut(), timestamp)
                             {
                                 debug!("packet is duplicate");
                                 continue;
@@ -404,8 +397,8 @@ impl AnalyzerModeDispatcher {
 
                             if tunnel_info.tunnel_type != TunnelType::None {
                                 meta_packet.tunnel = Some(tunnel_info);
-                                if tunnel_info.tunnel_type == TunnelType::TencentGre
-                                    || tunnel_info.tunnel_type == TunnelType::Vxlan
+                                if tunnel_info.tunnel_type == TunnelType::TencentGre ||
+                                    tunnel_info.tunnel_type == TunnelType::Vxlan
                                 {
                                     // Tencent TCE and Qingyun Private Cloud need to query cloud platform information through TunnelID
                                     // Only the case of single-layer tunnel encapsulation needs to be considered here
@@ -468,7 +461,7 @@ impl AnalyzerModeDispatcher {
 
                     while !terminated.load(Ordering::Relaxed) {
                         match receiver.recv_all(&mut batch, Some(Duration::from_secs(1))) {
-                            Ok(_) => {}
+                            Ok(_) => {},
                             Err(queue::Error::Timeout) => continue,
                             Err(queue::Error::Terminated(..)) => break,
                             Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
@@ -478,9 +471,9 @@ impl AnalyzerModeDispatcher {
                             let pipeline = match tap_pipelines.get_mut(&tap_type) {
                                 None => {
                                     // ff : ff : ff : ff : DispatcherID : CaptureNetworkType(1-255)
-                                    let mac = ((0xffffffff as u64) << 16)
-                                        | ((id as u64) << 8)
-                                        | (u16::from(tap_type) as u64);
+                                    let mac = ((0xffffffff as u64) << 16) |
+                                        ((id as u64) << 8) |
+                                        (u16::from(tap_type) as u64);
                                     let handlers = handler_builder
                                         .read()
                                         .unwrap()
@@ -496,7 +489,7 @@ impl AnalyzerModeDispatcher {
                                     };
                                     tap_pipelines.insert(tap_type, pipeline);
                                     tap_pipelines.get_mut(&tap_type).unwrap()
-                                }
+                                },
                                 Some(p) => p,
                             };
 
@@ -589,9 +582,7 @@ impl AnalyzerModeDispatcher {
 
             // From here on, ANALYZER mode is different from LOCAL mode
             base.counter.rx.fetch_add(1, Ordering::Relaxed);
-            base.counter
-                .rx_bytes
-                .fetch_add(packet.capture_length as u64, Ordering::Relaxed);
+            base.counter.rx_bytes.fetch_add(packet.capture_length as u64, Ordering::Relaxed);
 
             let buffer = allocator.allocate_with(&packet.data);
             let info = Packet {
@@ -635,7 +626,7 @@ impl AnalyzerModeDispatcher {
                 Ok(l2_info) => l2_info.0,
                 Err(e) => {
                     return Err(e);
-                }
+                },
             };
             *tunnel_info = TunnelInfo::default();
             return Ok((overlay_offset, tap_type));

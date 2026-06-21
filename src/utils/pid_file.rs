@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-use std::fs::{self, File};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
-
 use log::{debug, trace};
 use nix::{sys::signal::kill, unistd::Pid};
+use std::{
+    fs::{self, File},
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+};
 
 static HANDLE: OnceLock<Mutex<Option<PidFile>>> = OnceLock::new();
 
@@ -38,7 +39,7 @@ pub fn close() {
         Some(h) => {
             // drop PidFile
             h.lock().unwrap().take();
-        }
+        },
         None => debug!("pid file not set"),
     }
 }
@@ -64,14 +65,14 @@ impl PidFile {
                         io::ErrorKind::AlreadyExists,
                         "pid file exists with a running process",
                     ));
-                }
+                },
                 // 进程不存在，是上一次agent异常退出留下的遗留文件，忽略，继续启动
                 _ => trace!("no process found with pid {}", pid_str),
             },
             // 文件不存在
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 trace!("old pid file {} not exist", path.display())
-            }
+            },
             // 其他错误直接返回错误
             Err(e) => return Err(e),
         }
@@ -81,11 +82,7 @@ impl PidFile {
             fs::create_dir_all(parent)?;
         }
         // 创建文件
-        let mut fp = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(path)?;
+        let mut fp = fs::OpenOptions::new().create(true).write(true).truncate(true).open(path)?;
         // 写入agent进程的pid
         let pid = std::process::id();
         write!(fp, "{}\n", pid)?;

@@ -14,62 +14,20 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
-use std::fs::{self, File};
-use std::io::{BufWriter, Write};
-use std::mem;
-use std::net::IpAddr;
-#[cfg(target_os = "linux")]
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
-use std::str::FromStr;
-use std::sync::{
-    self,
-    atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-    Arc, Weak,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-#[cfg(unix)]
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
-
-#[cfg(target_os = "linux")]
-use k8s_openapi::api::apps::v1::DaemonSet;
-#[cfg(target_os = "linux")]
-use kube::{
-    api::{Api, Patch, PatchParams},
-    Client, Config,
-};
-use log::{debug, error, info, warn};
-use md5::{Digest, Md5};
-use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use prost::Message;
-use rand::RngCore;
-use sysinfo::{System, SystemExt};
-use tokio::runtime::Runtime;
-use tokio::sync::{
-    broadcast,
-    mpsc::{self, UnboundedSender},
-    watch,
-};
-use tokio::task::JoinHandle;
-use tokio::time;
-
 use super::{
-    ntp::{NtpMode, NtpPacket, NtpTime},
     RPC_RECONNECT_INTERVAL, RPC_RETRY_INTERVAL,
+    ntp::{NtpMode, NtpPacket, NtpTime},
 };
-
 #[cfg(any(target_os = "linux"))]
 use crate::utils::environment::{get_current_k8s_image, get_k8s_namespace};
 use crate::{
     common::{
+        DEFAULT_CONTROLLER_PORT, FlowAclListener, NORMAL_EXIT_WITH_RESTART,
+        PlatformData as VInterface,
         endpoint::EPC_INTERNET,
         policy::{Acl, Cidr, Container, IpGroupData, PeerConnection},
-        FlowAclListener, PlatformData as VInterface, DEFAULT_CONTROLLER_PORT,
-        NORMAL_EXIT_WITH_RESTART,
     },
-    config::{config, UserConfig},
+    config::{UserConfig, config},
     exception::ExceptionHandler,
     platform,
     rpc::session::Session,
@@ -77,19 +35,60 @@ use crate::{
     utils::{
         command::get_hostname,
         environment::{
-            get_executable_path, is_tt_pod, running_in_container, running_in_k8s,
-            running_in_only_watch_k8s_mode, KubeWatchPolicy,
+            KubeWatchPolicy, get_executable_path, is_tt_pod, running_in_container, running_in_k8s,
+            running_in_only_watch_k8s_mode,
         },
         hasher::md5_to_string,
         stats,
     },
 };
-
+#[cfg(target_os = "linux")]
+use k8s_openapi::api::apps::v1::DaemonSet;
+#[cfg(target_os = "linux")]
+use kube::{
+    Client, Config,
+    api::{Api, Patch, PatchParams},
+};
+use log::{debug, error, info, warn};
+use md5::{Digest, Md5};
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use prost::Message;
 use public::{
     proto::agent::{
         self as pb, AgentIdentifier, AgentType, DynamicConfig, Exception, PacketCaptureType,
     },
-    utils::net::{is_unicast_link_local, IpMacPair, MacAddr},
+    utils::net::{IpMacPair, MacAddr, is_unicast_link_local},
+};
+use rand::RngCore;
+#[cfg(target_os = "linux")]
+use std::path::Path;
+use std::{
+    collections::HashSet,
+    fs::{self, File},
+    io::{BufWriter, Write},
+    mem,
+    net::IpAddr,
+    path::PathBuf,
+    process::Command,
+    str::FromStr,
+    sync::{
+        self, Arc, Weak,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+#[cfg(unix)]
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+use sysinfo::{System, SystemExt};
+use tokio::{
+    runtime::Runtime,
+    sync::{
+        broadcast,
+        mpsc::{self, UnboundedSender},
+        watch,
+    },
+    task::JoinHandle,
+    time,
 };
 
 const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_secs(60);
@@ -270,10 +269,7 @@ impl Status {
             self.version_acls, version
         );
 
-        let acls = flow_acls
-            .iter()
-            .map(|x| Arc::new(x.clone()))
-            .collect::<Vec<Arc<Acl>>>();
+        let acls = flow_acls.iter().map(|x| Arc::new(x.clone())).collect::<Vec<Arc<Acl>>>();
 
         self.version_acls = version;
         self.acls = acls;
@@ -335,7 +331,10 @@ impl Status {
 
                 if enabled_invalid_log {
                     if !invalid_interfaces.is_empty() {
-                        warn!("Invalid interfaces: {:?}, maybe it's caused by the wrong mac, ip_resource, if_type.", invalid_interfaces);
+                        warn!(
+                            "Invalid interfaces: {:?}, maybe it's caused by the wrong mac, ip_resource, if_type.",
+                            invalid_interfaces
+                        );
                         has_invalid_log = true;
                     }
 
@@ -382,9 +381,9 @@ impl Status {
                 viface.skip_mac = viface.region_id != region_id;
             } else {
                 let mut is_tap_interface = viface.pod_cluster_id == pod_cluster_id;
-                is_tap_interface = is_tap_interface
-                    || (viface.region_id == region_id
-                        && viface.device_type != (pb::DeviceType::Pod as u8));
+                is_tap_interface = is_tap_interface ||
+                    (viface.region_id == region_id &&
+                        viface.device_type != (pb::DeviceType::Pod as u8));
                 viface.skip_mac = !is_tap_interface;
             }
 
@@ -431,13 +430,16 @@ impl Status {
                                     invalid_flow_acl.push(id);
                                 }
                                 None
-                            }
+                            },
                             t => t.ok(),
                         }
                     })
                     .collect::<Vec<Acl>>();
                 if enabled_invalid_log && !invalid_flow_acl.is_empty() {
-                    warn!("Invalid flow acl: {:?}, maybe it's with the wrong port or capture_network_type.", invalid_flow_acl);
+                    warn!(
+                        "Invalid flow acl: {:?}, maybe it's with the wrong port or capture_network_type.",
+                        invalid_flow_acl
+                    );
                     has_invalid_log = true;
                 }
                 self.update_flow_acl(version, flow_acls);
@@ -549,7 +551,9 @@ impl Status {
     ) -> (bool, bool, bool) {
         let mut has_invalid_log = false;
 
-        self.proxy_ip = if user_config.global.communication.proxy_controller_ip.len() > 0 && user_config.global.communication.proxy_controller_ip != "127.0.0.1" {
+        self.proxy_ip = if user_config.global.communication.proxy_controller_ip.len() > 0 &&
+            user_config.global.communication.proxy_controller_ip != "127.0.0.1"
+        {
             Some(user_config.global.communication.proxy_controller_ip.clone())
         } else {
             Some(static_config.controller_ip.clone())
@@ -731,11 +735,11 @@ impl Synchronizer {
             (Err(e), _) => {
                 warn!("get links failed: {}", e);
                 return vec![];
-            }
+            },
             (_, Err(e)) => {
                 warn!("get addrs failed: {}", e);
                 return vec![];
-            }
+            },
         };
         // find ignored interface indices
         let filtered_indices: HashSet<u32> = links
@@ -751,8 +755,8 @@ impl Synchronizer {
         addrs
             .into_iter()
             .filter_map(|addr| {
-                if Self::is_excluded_ip_addr(addr.ip_addr)
-                    || filtered_indices.contains(&addr.if_index)
+                if Self::is_excluded_ip_addr(addr.ip_addr) ||
+                    filtered_indices.contains(&addr.if_index)
                 {
                     None
                 } else {
@@ -772,11 +776,7 @@ impl Synchronizer {
     ) -> pb::SyncRequest {
         let status = status.read();
 
-        let boot_time = static_config
-            .boot_time
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let boot_time = static_config.boot_time.duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let boot_time = (boot_time as i64 + time_diff) / 1_000_000_000;
 
         let agent_id = agent_id.read();
@@ -836,7 +836,6 @@ impl Synchronizer {
             // resp.revision is: ${rev_count}-${commit_id}
             Some(revision)
                 if revision != "" && !static_config.version_info.revision.contains(revision) =>
-            {
                 if let Some(url) = &resp.self_update_url {
                     if url.trim().to_lowercase() != "grpc" {
                         warn!("error upgrade method, only support grpc: {}", url);
@@ -847,8 +846,7 @@ impl Synchronizer {
                         &static_config.version_info.revision, revision
                     );
                     status.write().new_revision = Some(revision.clone());
-                }
-            }
+                },
             _ => (),
         }
     }
@@ -1043,14 +1041,14 @@ impl Synchronizer {
                     Err(e) => {
                         return Err(config::ConfigError::YamlConfigInvalid(format!(
                             "Parse custom_app_config failed: {e}"
-                        )))
-                    }
+                        )));
+                    },
                 },
                 Err(e) => {
                     return Err(config::ConfigError::YamlConfigInvalid(format!(
                         "Failed to create zstd decoder: {e}"
                     )));
-                }
+                },
             }
         } else {
             match serde_yaml::from_slice(config.configs()) {
@@ -1058,8 +1056,8 @@ impl Synchronizer {
                 Err(e) => {
                     return Err(config::ConfigError::YamlConfigInvalid(format!(
                         "Parse custom_app_config failed: {e}"
-                    )))
-                }
+                    )));
+                },
             }
         };
 
@@ -1067,11 +1065,8 @@ impl Synchronizer {
             custom_app_config.biz_protocol_policies.as_slice(),
         )
         .to_string();
-        let extra_headers: HashSet<String> = custom_app_config
-            .biz_field
-            .get_http2_headers()
-            .map(|h| h.to_string())
-            .collect();
+        let extra_headers: HashSet<String> =
+            custom_app_config.biz_field.get_http2_headers().map(|h| h.to_string()).collect();
         user_config.custom_app = config::CustomApp {
             version,
             custom_protocol_port_ranges: custom_protocol_port_ranges.clone(),
@@ -1142,7 +1137,7 @@ impl Synchronizer {
             match &dynamic_config.group_id {
                 Some(id) if !id.is_empty() => {
                     agent_id.write().group_id = id.to_owned();
-                }
+                },
                 _ => (),
             }
         }
@@ -1158,12 +1153,12 @@ impl Synchronizer {
                     extra_headers: sg.custom_app.extra_headers.clone(),
                     config: None,
                 };
-            }
+            },
             Err(e) => {
                 warn!("parse custom_app_config failed: {e}");
                 exception_handler.set(Exception::InvalidConfiguration);
                 return;
-            }
+            },
             _ => (),
         }
 
@@ -1220,15 +1215,21 @@ impl Synchronizer {
         if wait_ntp {
             // Here, it is necessary to wait for the NTP synchronization timestamp to start
             // collecting traffic and avoid using incorrect timestamps
-            info!("Waiting for NTP synchronization to complete... The agent will remain temporarily disabled until synchronization is finished.");
+            info!(
+                "Waiting for NTP synchronization to complete... The agent will remain temporarily disabled until synchronization is finished."
+            );
             let _ = ntp_receiver.changed().await;
         }
         if updated {
             let status_guard = status.write();
             // 更新策略相关
             let last = SystemTime::now();
-            info!("Grpc version ip-groups: {}, interfaces, peer-connections and cidrs: {}, flow-acls: {}",
-            status_guard.version_groups, status_guard.version_platform_data, status_guard.version_acls);
+            info!(
+                "Grpc version ip-groups: {}, interfaces, peer-connections and cidrs: {}, flow-acls: {}",
+                status_guard.version_groups,
+                status_guard.version_platform_data,
+                status_guard.version_acls
+            );
             let mut policy_error = false;
             for listener in flow_acl_listener.lock().unwrap().iter_mut() {
                 if let Err(e) = status_guard.trigger_flow_acl(
@@ -1248,7 +1249,8 @@ impl Synchronizer {
                 exception_handler.clear(Exception::TooManyPolicies);
             }
             let now = SystemTime::now();
-            info!("Grpc finish update cost {:?} on {} listener, {} ip-groups, {} interfaces, {} peer-connections, {} cidrs, {} flow-acls",
+            info!(
+                "Grpc finish update cost {:?} on {} listener, {} ip-groups, {} interfaces, {} peer-connections, {} cidrs, {} flow-acls",
                 now.duration_since(last).unwrap_or(Duration::from_secs(0)),
                 flow_acl_listener.lock().unwrap().len(),
                 status_guard.ip_groups.len(),
@@ -1382,20 +1384,20 @@ impl Synchronizer {
                             );
                             time::sleep(RPC_RETRY_INTERVAL).await;
                             continue;
-                        }
+                        },
                         pb::Status::Heartbeat => {
                             continue;
-                        }
+                        },
                         _ => (),
                     }
 
                     debug!("received realtime policy successfully");
                     {
                         let status = status.read();
-                        if status.version_acls
-                            + status.version_groups
-                            + status.version_platform_data
-                            == 0
+                        if status.version_acls +
+                            status.version_groups +
+                            status.version_platform_data ==
+                            0
                         {
                             // 如果没有同步过（agent重启），server下发的数据仅有版本号，此时应由agent主动请求
                             //If the data is not synchronized (the agent restarts), the server sends only
@@ -1443,7 +1445,7 @@ impl Synchronizer {
                         // 2. 控制器地址可能是通过域明解析的，如果域明解析发生变更需要重启来触发重新解析
                         crate::utils::clean_and_exit(NORMAL_EXIT_WITH_RESTART);
                         return;
-                    }
+                    },
                 }
             }
         });
@@ -1593,10 +1595,8 @@ impl Synchronizer {
             Ok(stream) => stream.into_inner(),
             Err(e) => return Err(format!("rpc error {:?}", e)),
         };
-        while let Some(message) = stream
-            .message()
-            .await
-            .map_err(|e| format!("rpc error {:?}", e))?
+        while let Some(message) =
+            stream.message().await.map_err(|e| format!("rpc error {:?}", e))?
         {
             if !running.load(Ordering::SeqCst) {
                 return Err("upgrade terminated".to_owned());
@@ -1613,15 +1613,12 @@ impl Synchronizer {
                 Some(image) if image == new_k8s_image => {
                     info!("k8s_image '{image}' has not changed, not upgraded");
                     return Ok(false);
-                }
+                },
                 _ => (),
             }
             info!(
                 "upgrading k8s_image from '{}' to '{new_k8s_image}'",
-                current_k8s_image
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_default(),
+                current_k8s_image.as_ref().map(|s| s.as_str()).unwrap_or_default(),
             );
 
             let Ok(mut config) = Config::infer().await else {
@@ -1652,9 +1649,7 @@ impl Synchronizer {
             });
             let params = PatchParams::default();
             let patch = Patch::Strategic(&patch);
-            if let Err(e) = daemonsets
-                .patch(public::consts::DAEMONSET_NAME, &params, &patch)
-                .await
+            if let Err(e) = daemonsets.patch(public::consts::DAEMONSET_NAME, &params, &patch).await
             {
                 return Err(format!(
                     "patch zerotrace-agent k8s image failed, current_k8s_image: {:?}, error: {:?}",
@@ -1674,7 +1669,9 @@ impl Synchronizer {
         agent_state: &AgentState,
     ) -> Result<bool, String> {
         if running_in_container() {
-            info!("running in a non-k8s containter, exit directly and try to recreate myself using a new version docker image...");
+            info!(
+                "running in a non-k8s containter, exit directly and try to recreate myself using a new version docker image..."
+            );
             return Ok(true);
         }
 
@@ -1711,10 +1708,8 @@ impl Synchronizer {
         let mut checksum = Md5::new();
 
         let mut stream = response.unwrap().into_inner();
-        while let Some(message) = stream
-            .message()
-            .await
-            .map_err(|e| format!("RPC error {:?}", e))?
+        while let Some(message) =
+            stream.message().await.map_err(|e| format!("RPC error {:?}", e))?
         {
             if !running.load(Ordering::SeqCst) {
                 return Err("Upgrade terminated".to_owned());
@@ -1826,7 +1821,7 @@ impl Synchronizer {
                             );
                             time::sleep(sync_interval).await;
                             continue;
-                        }
+                        },
                     };
                 let dynamic_config = DynamicConfig {
                     enabled: Some(true),
@@ -2045,7 +2040,7 @@ impl Synchronizer {
                 let esc_tx = self.run_escape_timer();
                 self.run_triggered_session(esc_tx.clone(), Some(ntp_receiver.clone()));
                 self.run(esc_tx, Some(ntp_receiver));
-            }
+            },
             RunningMode::Standalone => self.run_standalone(),
         }
     }

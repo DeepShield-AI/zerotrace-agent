@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-use std::cmp::max;
-use std::net::IpAddr;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, RwLock,
+use crate::common::{
+    endpoint::{EndpointData, EndpointStore},
+    lookup_key::LookupKey,
+    platform_data::PlatformData as Interface,
+    policy::{Acl, Cidr, IpGroupData},
+    port_range::{PortRange, PortRangeList},
 };
-
 use ipnet::{IpNet, Ipv4Net};
 use log::warn;
 use lru::LruCache;
-
-use crate::common::endpoint::{EndpointData, EndpointStore};
-use crate::common::lookup_key::LookupKey;
-use crate::common::platform_data::PlatformData as Interface;
-use crate::common::policy::{Acl, Cidr, IpGroupData};
-use crate::common::port_range::{PortRange, PortRangeList};
 use npb_pcap_policy::PolicyData;
+use std::{
+    cmp::max,
+    net::IpAddr,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 const MAX_ACL_PROTOCOL: usize = 255;
 const MAX_TAP_TYPE: usize = 256;
@@ -60,7 +62,7 @@ fn generate_mask_ip(netmask_table: &Vec<u32>, ip_src: IpAddr, ip_dst: IpAddr) ->
                 dst_mask = dst_mask.max(NET_IP_MASK);
             }
             return (src & src_mask, dst & dst_mask);
-        }
+        },
         (IpAddr::V6(src), IpAddr::V6(dst)) => {
             let src = u128::from_be_bytes(src.octets());
             let dst = u128::from_be_bytes(dst.octets());
@@ -68,15 +70,15 @@ fn generate_mask_ip(netmask_table: &Vec<u32>, ip_src: IpAddr, ip_dst: IpAddr) ->
                 src as u32 ^ (src >> 32) as u32 ^ (src >> 64) as u32 ^ (src >> 96) as u32,
                 dst as u32 ^ (dst >> 32) as u32 ^ (dst >> 64) as u32 ^ (dst >> 96) as u32,
             );
-        }
+        },
         _ => {
             warn!(
-                    "IpAddr({:?} and {:?}) is invalid: ip address version is inconsistent, zerotrace-agent restart...\n",
-                    ip_src, ip_dst,
-                );
+                "IpAddr({:?} and {:?}) is invalid: ip address version is inconsistent, zerotrace-agent restart...\n",
+                ip_src, ip_dst,
+            );
             crate::utils::clean_and_exit(1);
             return (0, 0);
-        }
+        },
     }
 }
 
@@ -298,10 +300,10 @@ impl FastPath {
                             }
                             start += 1;
                         }
-                    }
+                    },
                     IpAddr::V6(_) => {
                         //TODO
-                    }
+                    },
                 }
             }
         }
@@ -338,10 +340,10 @@ impl FastPath {
                 match ip {
                     IpNet::V4(addr) => {
                         Self::cidr_to_mask(addr, group.epc_id, &mut mask_from_ipgroup);
-                    }
+                    },
                     _ => {
                         // TODO IPV6
-                    }
+                    },
                 }
             }
         }
@@ -354,10 +356,10 @@ impl FastPath {
             match cidr.ip {
                 IpNet::V4(addr) => {
                     Self::cidr_to_mask(&addr, (cidr.epc_id & 0xffff) as u16, &mut mask_from_cidr);
-                }
+                },
                 _ => {
                     // TODO IPV6
-                }
+                },
             }
         }
         *self.mask_from_cidr.write().unwrap() = mask_from_cidr;
@@ -379,9 +381,8 @@ impl FastPath {
     }
 
     pub fn generate_interest_table(&mut self, acls: &Vec<Arc<Acl>>) {
-        let mut interest_table: Vec<PortRange> = std::iter::repeat(PortRange::new(0, 0))
-            .take(u16::MAX as usize + 1)
-            .collect();
+        let mut interest_table: Vec<PortRange> =
+            std::iter::repeat(PortRange::new(0, 0)).take(u16::MAX as usize + 1).collect();
         let mut list = Vec::new();
 
         for acl in acls.into_iter() {
@@ -499,7 +500,7 @@ impl FastPath {
                 } else {
                     false
                 }
-            }
+            },
             EndpointTableType::Otel => {
                 if self.otel_table_flush_flag.swap(false, Ordering::Relaxed) {
                     self.otel_table.clear();
@@ -508,7 +509,7 @@ impl FastPath {
                 } else {
                     false
                 }
-            }
+            },
         }
     }
 
@@ -567,9 +568,7 @@ impl FastPath {
             self.generate_endpoints_map_key(ip_src, ip_dst, l3_epc_id_src, l3_epc_id_dst, l2_end_0);
         let key = (key_0 as u128) << 64 | key_1 as u128;
 
-        self.get_endpoint_table(table_type)
-            .get(&key)
-            .and_then(|x| Some(x.clone()))
+        self.get_endpoint_table(table_type).get(&key).and_then(|x| Some(x.clone()))
     }
 
     fn generate_endpoints_map_key(
@@ -647,12 +646,13 @@ impl FastPath {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
-    use std::sync::Arc;
-
     use super::*;
     use crate::common::platform_data::{IpSubnet, PlatformData};
     use public::utils::net::MacAddr;
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        sync::Arc,
+    };
 
     #[test]
     fn test_fast_interest_1() {

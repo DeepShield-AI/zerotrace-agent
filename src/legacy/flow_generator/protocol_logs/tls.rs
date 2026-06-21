@@ -14,29 +14,28 @@
  * limitations under the License.
  */
 
-use std::fmt::Display;
-
-use chrono::{DateTime, Utc};
-use serde::Serialize;
-
-use super::pb_adapter::{
-    ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, MetricKeyVal,
+use super::{
+    AppProtoHead, L7ResponseStatus,
+    pb_adapter::{ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, MetricKeyVal},
+    set_captured_byte, value_is_default,
 };
-use super::{set_captured_byte, value_is_default, AppProtoHead, L7ResponseStatus};
-use crate::config::handler::LogParserConfig;
 use crate::{
     common::{
+        Timestamp,
         enums::IpProtocol,
         flow::{L7PerfStats, PacketDirection},
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, LogCache, ParseParam},
         meta_packet::ApplicationFlags,
-        Timestamp,
     },
+    config::handler::LogParserConfig,
     flow_generator::error::{Error, Result},
 };
+use chrono::{DateTime, Utc};
 use l7::tls::TlsHeader;
 use public::l7_protocol::{L7Protocol, LogMessageType};
+use serde::Serialize;
+use std::fmt::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum CipherSuite {
@@ -269,11 +268,7 @@ impl L7ProtocolInfoInterface for TlsInfo {
     fn session_id(&self) -> Option<u32> {
         // 0xff is a random non-zero value for tls rtt calculation
         // Calling `info.perf_stats` with cal_tls_rtt `on` or `off` will generate two different results
-        if self.cal_tls_rtt {
-            Some(0xff)
-        } else {
-            None
-        }
+        if self.cal_tls_rtt { Some(0xff) } else { None }
     }
 
     fn merge_log(
@@ -331,7 +326,7 @@ impl TlsInfo {
                     &mut other.client_cert_not_before,
                 );
                 self.captured_request_byte = other.captured_request_byte;
-            }
+            },
             LogMessageType::Response => {
                 self.status = other.status;
                 std::mem::swap(&mut self.response_result, &mut other.response_result);
@@ -348,16 +343,16 @@ impl TlsInfo {
                     &mut other.server_cert_not_before,
                 );
                 self.captured_response_byte = other.captured_response_byte;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::TLS) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.request_resource)
-                || t.request_type.is_on_blacklist(&self.request_type)
-                || t.request_domain.is_on_blacklist(&self.request_domain);
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.request_resource) ||
+                t.request_type.is_on_blacklist(&self.request_type) ||
+                t.request_domain.is_on_blacklist(&self.request_domain);
         }
     }
 }
@@ -583,8 +578,8 @@ impl TlsLog {
                         return Err(Error::TlsLogParseFailed(format!(
                             "Unknown tls version 0x{:x}",
                             v
-                        )))
-                    }
+                        )));
+                    },
                     v => info.version = v,
                 }
                 info.msg_type = LogMessageType::Request;
@@ -630,7 +625,7 @@ impl TlsLog {
                     .collect::<Vec<String>>()
                     .join("|")
                     .to_string();
-            }
+            },
             PacketDirection::ServerToClient => {
                 info.status = L7ResponseStatus::Ok;
                 info.msg_type = LogMessageType::Response;
@@ -641,8 +636,8 @@ impl TlsLog {
                             return Err(Error::TlsLogParseFailed(format!(
                                 "Unknown tls version 0x{:x}",
                                 v
-                            )))
-                        }
+                            )));
+                        },
                         v => info.version = v,
                     }
                 }
@@ -693,7 +688,7 @@ impl TlsLog {
                     .collect::<Vec<String>>()
                     .join("|")
                     .to_string();
-            }
+            },
         }
         set_captured_byte!(info, param);
         Ok(())

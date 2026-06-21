@@ -28,7 +28,7 @@ use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
 use log::info;
 
-extern "C" {
+unsafe extern "C" {
     fn print_uprobe_http2_info(data: *mut c_char, len: c_uint);
     fn print_uprobe_grpc_dataframe(data: *mut c_char, len: c_uint);
     fn print_io_event_info(data: *mut c_char, len: c_uint);

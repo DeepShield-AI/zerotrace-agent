@@ -14,26 +14,8 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex, Weak,
-    },
-    time::Duration,
-};
-
-use arc_swap::access::Access;
-use log::{debug, info, warn};
-#[cfg(target_os = "linux")]
-use procfs::{diskstats, DiskStat};
-#[cfg(target_os = "windows")]
-use sysinfo::NetworkExt;
-use sysinfo::{get_current_pid, Pid, ProcessExt, ProcessRefreshKind, System, SystemExt};
-
 #[cfg(target_os = "linux")]
 use crate::utils::{cgroups, environment::SocketInfo};
-
 use crate::{
     config::handler::EnvironmentAccess,
     error::{Error, Result},
@@ -46,10 +28,24 @@ use crate::{
         },
     },
 };
-
+use arc_swap::access::Access;
+use log::{debug, info, warn};
+#[cfg(target_os = "linux")]
+use procfs::{DiskStat, diskstats};
 #[cfg(target_os = "linux")]
 use public::netns::{self, NsFile};
-use public::utils::net::{link_list, Link};
+use public::utils::net::{Link, link_list};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::Duration,
+};
+#[cfg(target_os = "windows")]
+use sysinfo::NetworkExt;
+use sysinfo::{Pid, ProcessExt, ProcessRefreshKind, System, SystemExt, get_current_pid};
 
 #[derive(Default)]
 struct NetMetricArg {
@@ -190,13 +186,9 @@ impl SysStatusBroker {
                     pid
                 )));
             }
-            system_guard
-                .process(pid)
-                .map(|p| Duration::from_secs(p.start_time()))
-                .ok_or(Error::SysMonitor(format!(
-                    "couldn't get process start time with pid({})",
-                    pid
-                )))?
+            system_guard.process(pid).map(|p| Duration::from_secs(p.start_time())).ok_or(
+                Error::SysMonitor(format!("couldn't get process start time with pid({})", pid)),
+            )?
         };
         Ok(Self {
             system,
@@ -266,10 +258,10 @@ impl RefCountable for SysStatusBroker {
                     CounterType::Gauged,
                     CounterValue::Unsigned(file_and_size_sum.file_infos.len() as u64),
                 ));
-            }
+            },
             Err(e) => {
                 warn!("get file and size sum failed: {:?}", e);
-            }
+            },
         }
 
         match system_guard.process(self.pid) {
@@ -302,10 +294,10 @@ impl RefCountable for SysStatusBroker {
                     CounterType::Gauged,
                     CounterValue::Unsigned(self.create_time.as_millis() as u64),
                 ));
-            }
+            },
             None => {
                 warn!("get process data failed, system status monitor has stopped");
-            }
+            },
         }
 
         #[cfg(target_os = "linux")]
@@ -320,7 +312,7 @@ impl RefCountable for SysStatusBroker {
                     udp6,
                 }) => {
                     CounterValue::Unsigned((tcp.len() + tcp6.len() + udp.len() + udp6.len()) as u64)
-                }
+                },
                 Err(_) => CounterValue::Unsigned(0),
             },
         ));
@@ -408,10 +400,10 @@ impl RefCountable for FreeDiskUsage {
                     CounterType::Gauged,
                     CounterValue::Unsigned(free as u64),
                 ));
-            }
+            },
             Err(e) => {
                 warn!("get disk free usage failed: {:?}", e);
-            }
+            },
         }
         metrics
     }
@@ -502,8 +494,8 @@ impl RefCountable for DiskMonitor {
                     CounterValue::Float(if now.time_reading <= last.time_reading {
                         0.0
                     } else {
-                        ((now.time_reading - last.time_reading) * 1000000) as f64
-                            / (now.reads - last.reads) as f64
+                        ((now.time_reading - last.time_reading) * 1000000) as f64 /
+                            (now.reads - last.reads) as f64
                     }),
                 ));
                 metrics.push((
@@ -512,18 +504,18 @@ impl RefCountable for DiskMonitor {
                     CounterValue::Float(if now.time_writing <= last.time_writing {
                         0.0
                     } else {
-                        ((now.time_writing - last.time_writing) * 1000000) as f64
-                            / (now.writes - last.writes) as f64
+                        ((now.time_writing - last.time_writing) * 1000000) as f64 /
+                            (now.writes - last.writes) as f64
                     }),
                 ));
                 *last = now;
-            }
+            },
             Some(now) => {
                 *last = now;
-            }
+            },
             None => {
                 debug!("get disk {} io failed.", self.name);
-            }
+            },
         }
         metrics
     }
@@ -626,7 +618,7 @@ impl Monitor {
                         warn!("reset netns error: {}", e);
                     };
                     return;
-                }
+                },
             };
 
             let mut del_monitor_list = vec![];
@@ -767,11 +759,7 @@ impl Monitor {
             return;
         }
         // tear down
-        self.link_map
-            .lock()
-            .unwrap()
-            .drain()
-            .for_each(|(_, broker)| broker.close());
+        self.link_map.lock().unwrap().drain().for_each(|(_, broker)| broker.close());
         info!("monitor stopped");
     }
 }

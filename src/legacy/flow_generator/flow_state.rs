@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-use std::mem::{self, MaybeUninit};
-use std::rc::Rc;
-
 use super::FlowTimeout;
-
-use crate::common::{enums::TcpFlags, Timestamp};
+use crate::common::{Timestamp, enums::TcpFlags};
+use std::{
+    mem::{self, MaybeUninit},
+    rc::Rc,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum FlowState {
@@ -716,28 +716,24 @@ impl StateMachine {
 
 #[cfg(test)]
 mod tests {
-    use std::convert::AsRef;
-    use std::fmt;
-    use std::net::Ipv4Addr;
-    use std::path::Path;
-    use std::sync::Arc;
-
     use super::*;
-
-    use crate::common::endpoint::{
-        EndpointData, EndpointDataPov, EndpointInfo, EPC_ZEROTRACE, EPC_INTERNET,
+    use crate::{
+        common::{
+            endpoint::{EPC_INTERNET, EPC_ZEROTRACE, EndpointData, EndpointDataPov, EndpointInfo},
+            flow::{CloseType, PacketDirection},
+        },
+        config::UserConfig,
+        flow_generator::{
+            FLOW_METRICS_PEER_DST, FLOW_METRICS_PEER_SRC, FlowTimeout, TIME_UNIT, TcpTimeout,
+            flow_map::{_new_flow_map_and_receiver, Config},
+            flow_node::FlowNode,
+        },
+        rpc::get_timestamp,
+        utils::test_utils::Capture,
     };
-    use crate::common::flow::{CloseType, PacketDirection};
-    use crate::config::UserConfig;
-    use crate::flow_generator::flow_map::{Config, _new_flow_map_and_receiver};
-    use crate::flow_generator::flow_node::FlowNode;
-    use crate::flow_generator::{FlowTimeout, TcpTimeout};
-    use crate::flow_generator::{FLOW_METRICS_PEER_DST, FLOW_METRICS_PEER_SRC, TIME_UNIT};
-    use crate::rpc::get_timestamp;
-    use crate::utils::test_utils::Capture;
-    use public::proto::agent::AgentType;
-
     use packet_sequence_block::PacketSequenceBlock;
+    use public::proto::agent::AgentType;
+    use std::{convert::AsRef, fmt, net::Ipv4Addr, path::Path, sync::Arc};
 
     const FILE_DIR: &'static str = "resources/test/flow_generator";
 
@@ -758,8 +754,7 @@ mod tests {
         let flow_timeout: FlowTimeout = TcpTimeout::default().into();
         let m = StateMachine::new_master(&flow_timeout);
         assert_eq!(
-            *m.get(FlowState::ClientL4PortReuse, TcpFlags::FIN_ACK)
-                .unwrap(),
+            *m.get(FlowState::ClientL4PortReuse, TcpFlags::FIN_ACK).unwrap(),
             StateValue::new(flow_timeout.exception, FlowState::ClientL4PortReuse, false,)
         );
     }
@@ -912,9 +907,9 @@ mod tests {
                 data.pkt_dir,
             );
             assert!(
-                closed == data.closed
-                    && flow_node.flow_state == data.next_state
-                    && flow_node.timeout == data.timeout,
+                closed == data.closed &&
+                    flow_node.flow_state == data.next_state &&
+                    flow_node.timeout == data.timeout,
                 "{} actual result: [next_state: {:?}, timeout: {:?}, closed: {}]",
                 data,
                 flow_node.flow_state,

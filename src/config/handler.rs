@@ -14,6 +14,72 @@
  * limitations under the License.
  */
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use super::config::{Ebpf, EbpfFileIoEvent, ProcessMatcher, SymbolTable};
+use super::{
+    ConfigError, KubernetesPollerType, TrafficOverflowAction,
+    config::{
+        ApiResources, Config, DpdkSource, ExtraLogFields, ExtraLogFieldsInfo, GRPC_BUFFER_SIZE_MIN,
+        HttpEndpoint, HttpEndpointMatchRule, Iso8583ParseConfig, OracleConfig, PcapStream,
+        PortConfig, ProcessorsFlowLogTunning, RequestLogTunning, SessionTimeout, TagFilterOperator,
+        Timeouts, UserConfig, WebSphereMqParseConfig,
+    },
+};
+#[cfg(all(unix, feature = "libtrace"))]
+use crate::utils::environment::{get_ctrl_ip_and_mac, is_tt_workload};
+use crate::{
+    common::{
+        DEFAULT_LOG_UNCOMPRESSED_FILE_COUNT, Timestamp, decapsulate::TunnelTypeBitmap,
+        enums::CaptureNetworkType, l7_protocol_log::L7ProtocolBitmap,
+    },
+    config::InferenceWhitelist,
+    exception::ExceptionHandler,
+    flow_generator::{
+        FlowTimeout, TcpTimeout,
+        protocol_logs::{SOFA_NEW_RPC_TRACE_CTX_KEY, decode_new_rpc_trace_context_with_type},
+    },
+    handler::PacketHandlerBuilder,
+    metric::document::TapSide,
+    rpc::Session,
+    trident::{AgentComponents, AgentId, RunningMode},
+    utils::{
+        cgroups::is_kernel_available_for_cgroups,
+        environment::{free_memory_check, running_in_container},
+        stats,
+    },
+};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::{
+    dispatcher::recv_engine::af_packet::OptTpacketVersion,
+    utils::environment::{get_container_resource_limits, set_container_resource_limit},
+};
+#[cfg(target_os = "linux")]
+use crate::{
+    platform::{ApiWatcher, GenericPoller, kubernetes::Poller},
+    utils::environment::is_tt_pod,
+};
+use arc_swap::{ArcSwap, access::Map};
+use base64::{Engine, prelude::BASE64_STANDARD};
+use bytesize::ByteSize;
+use flexi_logger::{
+    Age, Cleanup, Criterion, FileSpec, FlexiLoggerError, LogSpecification, LoggerHandle, Naming,
+    writers::FileLogWriter,
+};
+use http2::get_expected_headers;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use libc::{MCL_CURRENT, MCL_FUTURE, mlockall};
+use log::{debug, error, info, warn};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::{
+    sched::{CpuSet, sched_setaffinity},
+    unistd::Pid,
+};
+use public::{
+    bitmap::Bitmap,
+    l7_protocol::L7Protocol,
+    proto::agent::{self, AgentType, PacketCaptureType},
+    utils::{bitmap::parse_range_list_to_bitmap, net::MacAddr},
+};
 use std::{
     borrow::Cow,
     cmp::{max, min},
@@ -27,75 +93,10 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-
-use arc_swap::{access::Map, ArcSwap};
-use base64::{prelude::BASE64_STANDARD, Engine};
-use bytesize::ByteSize;
-use flexi_logger::{
-    writers::FileLogWriter, Age, Cleanup, Criterion, FileSpec, FlexiLoggerError, LogSpecification,
-    LoggerHandle, Naming,
-};
-use http2::get_expected_headers;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use libc::{mlockall, MCL_CURRENT, MCL_FUTURE};
-use log::{debug, error, info, warn};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::{
-    sched::{sched_setaffinity, CpuSet},
-    unistd::Pid,
-};
 use sysinfo::SystemExt;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
 use tokio::runtime::Runtime;
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use super::config::{Ebpf, EbpfFileIoEvent, ProcessMatcher, SymbolTable};
-use super::{
-    config::{
-        ApiResources, Config, DpdkSource, ExtraLogFields, ExtraLogFieldsInfo, HttpEndpoint,
-        HttpEndpointMatchRule, Iso8583ParseConfig, OracleConfig, PcapStream, PortConfig,
-        ProcessorsFlowLogTunning, RequestLogTunning, SessionTimeout, TagFilterOperator, Timeouts,
-        UserConfig, WebSphereMqParseConfig, GRPC_BUFFER_SIZE_MIN,
-    },
-    ConfigError, KubernetesPollerType, TrafficOverflowAction,
-};
-use crate::config::InferenceWhitelist;
-use crate::flow_generator::protocol_logs::decode_new_rpc_trace_context_with_type;
-use crate::rpc::Session;
-#[cfg(all(unix, feature = "libtrace"))]
-use crate::utils::environment::{get_ctrl_ip_and_mac, is_tt_workload};
-use crate::{
-    common::{
-        decapsulate::TunnelTypeBitmap, enums::CaptureNetworkType,
-        l7_protocol_log::L7ProtocolBitmap, Timestamp, DEFAULT_LOG_UNCOMPRESSED_FILE_COUNT,
-    },
-    exception::ExceptionHandler,
-    flow_generator::{protocol_logs::SOFA_NEW_RPC_TRACE_CTX_KEY, FlowTimeout, TcpTimeout},
-    handler::PacketHandlerBuilder,
-    metric::document::TapSide,
-    trident::{AgentComponents, RunningMode},
-    utils::{
-        environment::{free_memory_check, running_in_container},
-        stats,
-    },
-};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use crate::{
-    dispatcher::recv_engine::af_packet::OptTpacketVersion,
-    utils::environment::{get_container_resource_limits, set_container_resource_limit},
-};
-#[cfg(target_os = "linux")]
-use crate::{
-    platform::{kubernetes::Poller, ApiWatcher, GenericPoller},
-    utils::environment::is_tt_pod,
-};
-use crate::{trident::AgentId, utils::cgroups::is_kernel_available_for_cgroups};
-
-use public::bitmap::Bitmap;
-use public::l7_protocol::L7Protocol;
-use public::proto::agent::{self, AgentType, PacketCaptureType};
-use public::utils::{bitmap::parse_range_list_to_bitmap, net::MacAddr};
 
 cfg_if::cfg_if! {
 if #[cfg(feature = "enterprise")] {
@@ -410,9 +411,9 @@ pub struct PluginConfig {
 
 impl PartialEq for PluginConfig {
     fn eq(&self, other: &PluginConfig) -> bool {
-        self.last_updated == other.last_updated
-            && self.digest == other.digest
-            && self.names == other.names
+        self.last_updated == other.last_updated &&
+            self.digest == other.digest &&
+            self.names == other.names
     }
 }
 
@@ -452,7 +453,7 @@ impl PluginConfig {
                     Err(err) => {
                         warn!("get {:?} plugin {} fail: {}", ptype, name, err);
                         continue;
-                    }
+                    },
                 }
             }
         });
@@ -544,11 +545,7 @@ impl From<&UserConfig> for FlowConfig {
             agent_id: conf.global.common.agent_id as u16,
             agent_type: conf.global.common.agent_type,
             capture_mode: conf.inputs.cbpf.common.capture_mode,
-            cloud_gateway_traffic: conf
-                .inputs
-                .cbpf
-                .physical_mirror
-                .private_cloud_gateway_traffic,
+            cloud_gateway_traffic: conf.inputs.cbpf.physical_mirror.private_cloud_gateway_traffic,
             collector_enabled: conf.outputs.flow_metrics.enabled,
             l7_log_tap_types: generate_tap_types_array(
                 &conf.outputs.flow_log.filters.l7_capture_network_types,
@@ -556,35 +553,13 @@ impl From<&UserConfig> for FlowConfig {
             rrt_cache_capacity: conf.processors.flow_log.tunning.rrt_cache_capacity,
             capacity: conf.processors.flow_log.tunning.concurrent_flow_limit,
             hash_slots: conf.processors.flow_log.tunning.flow_map_hash_slots,
-            packet_delay: conf
-                .processors
-                .flow_log
-                .time_window
-                .max_tolerable_packet_delay,
+            packet_delay: conf.processors.flow_log.time_window.max_tolerable_packet_delay,
             flush_interval: conf.processors.flow_log.conntrack.flow_flush_interval,
             flow_timeout: FlowTimeout::from(TcpTimeout {
-                established: conf
-                    .processors
-                    .flow_log
-                    .conntrack
-                    .timeouts
-                    .established
-                    .into(),
-                closing_rst: conf
-                    .processors
-                    .flow_log
-                    .conntrack
-                    .timeouts
-                    .closing_rst
-                    .into(),
+                established: conf.processors.flow_log.conntrack.timeouts.established.into(),
+                closing_rst: conf.processors.flow_log.conntrack.timeouts.closing_rst.into(),
                 others: conf.processors.flow_log.conntrack.timeouts.others.into(),
-                opening_rst: conf
-                    .processors
-                    .flow_log
-                    .conntrack
-                    .timeouts
-                    .opening_rst
-                    .into(),
+                opening_rst: conf.processors.flow_log.conntrack.timeouts.opening_rst.into(),
             }),
             ignore_tor_mac: conf
                 .processors
@@ -592,12 +567,7 @@ impl From<&UserConfig> for FlowConfig {
                 .conntrack
                 .flow_generation
                 .cloud_traffic_ignore_mac,
-            ignore_l2_end: conf
-                .processors
-                .flow_log
-                .conntrack
-                .flow_generation
-                .ignore_l2_end,
+            ignore_l2_end: conf.processors.flow_log.conntrack.flow_generation.ignore_l2_end,
             ignore_idc_vlan: conf
                 .processors
                 .flow_log
@@ -669,28 +639,17 @@ impl From<&UserConfig> for FlowConfig {
                             .map(|p| (p.clone(), agent::PluginType::Wasm)),
                     );
                     plugins.extend(
-                        conf.plugins
-                            .so_plugins
-                            .iter()
-                            .map(|p| (p.clone(), agent::PluginType::So)),
+                        conf.plugins.so_plugins.iter().map(|p| (p.clone(), agent::PluginType::So)),
                     );
                     plugins
                 },
                 wasm_plugins: vec![],
                 so_plugins: vec![],
             },
-            rrt_tcp_timeout: conf
-                .processors
-                .request_log
-                .timeouts
-                .tcp_request_timeout
-                .as_micros() as usize,
-            rrt_udp_timeout: conf
-                .processors
-                .request_log
-                .timeouts
-                .udp_request_timeout
-                .as_micros() as usize,
+            rrt_tcp_timeout: conf.processors.request_log.timeouts.tcp_request_timeout.as_micros()
+                as usize,
+            rrt_udp_timeout: conf.processors.request_log.timeouts.udp_request_timeout.as_micros()
+                as usize,
             batched_buffer_size_limit: conf.processors.flow_log.tunning.max_batched_buffer_size,
             oracle_parse_conf: conf
                 .processors
@@ -737,31 +696,16 @@ impl From<&UserConfig> for FlowConfig {
                     .parse_xml_enabled,
             },
             obfuscate_enabled_protocols: L7ProtocolBitmap::from(
-                conf.processors
-                    .request_log
-                    .tag_extraction
-                    .obfuscate_protocols
-                    .as_slice(),
+                conf.processors.request_log.tag_extraction.obfuscate_protocols.as_slice(),
             ),
-            server_ports: conf
-                .processors
-                .flow_log
-                .conntrack
-                .flow_generation
-                .server_ports
-                .clone(),
+            server_ports: conf.processors.flow_log.conntrack.flow_generation.server_ports.clone(),
             consistent_timestamp_in_l7_metrics: conf
                 .processors
                 .request_log
                 .tunning
                 .consistent_timestamp_in_l7_metrics,
             packet_segmentation_reassembly: HashSet::from_iter(
-                conf.inputs
-                    .cbpf
-                    .preprocess
-                    .packet_segmentation_reassembly
-                    .clone()
-                    .into_iter(),
+                conf.inputs.cbpf.preprocess.packet_segmentation_reassembly.clone().into_iter(),
             ),
         }
     }
@@ -769,8 +713,8 @@ impl From<&UserConfig> for FlowConfig {
 
 impl FlowConfig {
     pub fn need_to_reassemble(&self, src_port: u16, dst_port: u16) -> bool {
-        self.packet_segmentation_reassembly.contains(&src_port)
-            || self.packet_segmentation_reassembly.contains(&dst_port)
+        self.packet_segmentation_reassembly.contains(&src_port) ||
+            self.packet_segmentation_reassembly.contains(&dst_port)
     }
 
     pub fn flow_capacity(&self) -> u32 {
@@ -870,10 +814,7 @@ impl HttpEndpointTrie {
     pub fn insert(&mut self, rule: &HttpEndpointMatchRule) {
         let mut node = &mut self.root;
         for ch in rule.url_prefix.chars() {
-            node = node
-                .children
-                .entry(ch)
-                .or_insert_with(|| Box::new(TrieNode::new()));
+            node = node.children.entry(ch).or_insert_with(|| Box::new(TrieNode::new()));
         }
         node.keep_segments = Some(rule.keep_segments);
     }
@@ -906,10 +847,7 @@ impl HttpEndpointTrie {
 impl From<&HttpEndpoint> for HttpEndpointTrie {
     fn from(v: &HttpEndpoint) -> Self {
         let mut t = Self::new();
-        v.match_rules
-            .iter()
-            .filter(|r| r.keep_segments > 0)
-            .for_each(|r| t.insert(r));
+        v.match_rules.iter().filter(|r| r.keep_segments > 0).for_each(|r| t.insert(r));
         t
     }
 }
@@ -1007,7 +945,7 @@ impl BlacklistTrie {
                     rule.field_name.as_str()
                 );
                 return;
-            }
+            },
         };
 
         let operator = match rule.operator.to_ascii_lowercase().as_str() {
@@ -1019,7 +957,7 @@ impl BlacklistTrie {
                     rule.operator.as_str()
                 );
                 return;
-            }
+            },
         };
 
         for ch in rule.value.chars() {
@@ -1048,7 +986,7 @@ impl DomainNameTrieNode {
                     .entry(seg.to_string())
                     .or_insert_with(|| DomainNameTrieNode::default());
                 child.insert(segments);
-            }
+            },
         }
     }
 
@@ -1058,11 +996,8 @@ impl DomainNameTrieNode {
         }
         match segments.next() {
             None => self.unconcerned,
-            Some(seg) => self
-                .children
-                .get(seg)
-                .map(|child| child.search(segments))
-                .unwrap_or(false),
+            Some(seg) =>
+                self.children.get(seg).map(|child| child.search(segments)).unwrap_or(false),
         }
     }
 }
@@ -1238,16 +1173,13 @@ impl LogParserConfig {
         protocol: L7ProtocolEnum,
         param: &ParseParam,
     ) -> Option<PolicySlice<'_>> {
-        self.custom_app
-            .custom_field_policies
-            .as_ref()
-            .and_then(|cfp| {
-                let server_port = match param.direction {
-                    PacketDirection::ClientToServer => param.port_dst,
-                    PacketDirection::ServerToClient => param.port_src,
-                };
-                cfp.select(protocol, server_port)
-            })
+        self.custom_app.custom_field_policies.as_ref().and_then(|cfp| {
+            let server_port = match param.direction {
+                PacketDirection::ClientToServer => param.port_dst,
+                PacketDirection::ServerToClient => param.port_src,
+            };
+            cfp.select(protocol, server_port)
+        })
     }
 }
 
@@ -1352,8 +1284,8 @@ impl EbpfConfig {
             return false;
         }
         // eBPF data is only collected from Cloud-type TAP
-        return self.l7_log_tap_types[u16::from(CaptureNetworkType::Any) as usize]
-            || self.l7_log_tap_types[u16::from(CaptureNetworkType::Cloud) as usize];
+        return self.l7_log_tap_types[u16::from(CaptureNetworkType::Any) as usize] ||
+            self.l7_log_tap_types[u16::from(CaptureNetworkType::Cloud) as usize];
     }
 }
 
@@ -1431,9 +1363,8 @@ impl TraceType {
             TraceType::Sw6 => context.eq_ignore_ascii_case(TRACE_TYPE_SW6),
             TraceType::Sw8 => context.eq_ignore_ascii_case(TRACE_TYPE_SW8),
             TraceType::TraceParent => context.eq_ignore_ascii_case(TRACE_TYPE_TRACE_PARENT),
-            TraceType::NewRpcTraceContext => {
-                context.eq_ignore_ascii_case(SOFA_NEW_RPC_TRACE_CTX_KEY)
-            }
+            TraceType::NewRpcTraceContext =>
+                context.eq_ignore_ascii_case(SOFA_NEW_RPC_TRACE_CTX_KEY),
             TraceType::XTingyun(_) => context.eq_ignore_ascii_case(TRACE_TYPE_X_TINGYUN),
             TraceType::CloudWise => context.eq_ignore_ascii_case(TRACE_TYPE_CLOUD_WISE),
             TraceType::Customize(tag) => context.eq_ignore_ascii_case(&tag),
@@ -1487,8 +1418,7 @@ impl TraceType {
         } else if id_type == Self::SPAN_ID {
             let seg0 = segs.next();
             let seg1 = segs.next();
-            seg0.zip(seg1)
-                .map(|(seg_id, span_id)| format!("{}-{}", seg_id, span_id).into())
+            seg0.zip(seg1).map(|(seg_id, span_id)| format!("{}-{}", seg_id, span_id).into())
         } else {
             unreachable!()
         }
@@ -1578,9 +1508,8 @@ impl TraceType {
                 referer https://github.com/sofastack/sofa-rpc/blob/7931102255d6ea95ee75676d368aad37c56b57ee/tracer/tracer-opentracing-resteasy/src/main/java/com/alipay/sofa/rpc/tracer/sofatracer/RestTracerAdapter.java#L75
                 in new version of sofarpc, use new_rpc_trace_context header store trace info
             */
-            TraceType::NewRpcTraceContext => {
-                decode_new_rpc_trace_context_with_type(value.as_bytes(), id_type)
-            }
+            TraceType::NewRpcTraceContext =>
+                decode_new_rpc_trace_context_with_type(value.as_bytes(), id_type),
             TraceType::XTingyun(sub_tag) => Self::decode_tingyun(value, sub_tag),
             TraceType::CloudWise => Self::decode_cloud_wise(value).map(|s| s.into()),
             TraceType::B3 => Self::decode_b3(value, id_type).map(|s| s.into()),
@@ -1670,18 +1599,18 @@ impl fmt::Debug for L7LogDynamicConfig {
 
 impl PartialEq for L7LogDynamicConfig {
     fn eq(&self, other: &Self) -> bool {
-        self.proxy_client == other.proxy_client
-            && self.x_request_id == other.x_request_id
-            && self.multiple_trace_id_collection == other.multiple_trace_id_collection
-            && self.copy_apm_trace_id == other.copy_apm_trace_id
-            && self.trace_types == other.trace_types
-            && self.span_types == other.span_types
-            && self.extra_log_fields == other.extra_log_fields
-            && self.error_request_header == other.error_request_header
-            && self.error_response_header == other.error_response_header
-            && self.error_request_payload == other.error_request_payload
-            && self.error_response_payload == other.error_response_payload
-            && self.grpc_streaming_data_enabled == other.grpc_streaming_data_enabled
+        self.proxy_client == other.proxy_client &&
+            self.x_request_id == other.x_request_id &&
+            self.multiple_trace_id_collection == other.multiple_trace_id_collection &&
+            self.copy_apm_trace_id == other.copy_apm_trace_id &&
+            self.trace_types == other.trace_types &&
+            self.span_types == other.span_types &&
+            self.extra_log_fields == other.extra_log_fields &&
+            self.error_request_header == other.error_request_header &&
+            self.error_response_header == other.error_response_header &&
+            self.error_request_payload == other.error_request_payload &&
+            self.error_response_payload == other.error_response_payload &&
+            self.grpc_streaming_data_enabled == other.grpc_streaming_data_enabled
     }
 }
 
@@ -1933,7 +1862,9 @@ impl TryFrom<(Config, UserConfig)> for ModuleConfig {
         let (static_config, conf) = conf;
         let controller_ip = static_config.controller_ips[0].parse::<IpAddr>().unwrap();
         // 目标ip没设置就发送到本地回环
-        let dest_ip = if conf.global.communication.ingester_ip.len() > 0 && conf.global.communication.ingester_ip != "127.0.0.1" {
+        let dest_ip = if conf.global.communication.ingester_ip.len() > 0 &&
+            conf.global.communication.ingester_ip != "127.0.0.1"
+        {
             conf.global.communication.ingester_ip.clone()
         } else {
             match controller_ip {
@@ -1942,8 +1873,16 @@ impl TryFrom<(Config, UserConfig)> for ModuleConfig {
             }
         };
         // 代理控制器，用于在特殊网络环境下通过代理连接server
-        let proxy_controller_port = if conf.global.communication.proxy_controller_port != 0 && conf.global.communication.proxy_controller_port != 30035 { conf.global.communication.proxy_controller_port } else { static_config.controller_port };
-        let proxy_controller_ip = if conf.global.communication.proxy_controller_ip.len() > 0 && conf.global.communication.proxy_controller_ip != "127.0.0.1" {
+        let proxy_controller_port = if conf.global.communication.proxy_controller_port != 0 &&
+            conf.global.communication.proxy_controller_port != 30035
+        {
+            conf.global.communication.proxy_controller_port
+        } else {
+            static_config.controller_port
+        };
+        let proxy_controller_ip = if conf.global.communication.proxy_controller_ip.len() > 0 &&
+            conf.global.communication.proxy_controller_ip != "127.0.0.1"
+        {
             conf.global.communication.proxy_controller_ip.clone()
         } else {
             static_config.controller_ips[0].clone()
@@ -2834,14 +2773,14 @@ impl ConfigHandler {
                 Ok(re) => {
                     info!("platform monitoring extra netns: /{}/", regex);
                     Some(re)
-                }
+                },
                 Err(_) => {
                     warn!(
                         "platform monitoring no extra netns because regex /{}/ is invalid",
                         regex
                     );
                     None
-                }
+                },
             }
         } else {
             info!("platform monitoring no extra netns");
@@ -2849,9 +2788,7 @@ impl ConfigHandler {
         };
 
         let old_netns = old_regex.map(|re| public::netns::find_ns_files_by_regex(&re));
-        let new_netns = regex
-            .as_ref()
-            .map(|re| public::netns::find_ns_files_by_regex(&re));
+        let new_netns = regex.as_ref().map(|re| public::netns::find_ns_files_by_regex(&re));
         if old_netns != new_netns {
             info!(
                 "query net namespaces changed from {:?} to {:?}, restart agent to create dispatcher for extra namespaces, zerotrace-agent restart...",
@@ -2867,10 +2804,7 @@ impl ConfigHandler {
     #[cfg(target_os = "windows")]
     fn switch_recv_engine(handler: &ConfigHandler, comp: &mut AgentComponents) {
         for d in comp.dispatcher_components.iter() {
-            if let Err(e) = d
-                .dispatcher
-                .switch_recv_engine(&handler.candidate_config.dispatcher)
-            {
+            if let Err(e) = d.dispatcher.switch_recv_engine(&handler.candidate_config.dispatcher) {
                 log::error!("switch RecvEngine error: {}, zerotrace-agent restart...", e);
                 crate::utils::clean_and_exit(-1);
                 return;
@@ -2880,11 +2814,10 @@ impl ConfigHandler {
 
     fn start_dispatcher(handler: &ConfigHandler, components: &mut AgentComponents) {
         match handler.candidate_config.capture_mode {
-            PacketCaptureType::Analyzer => {
+            PacketCaptureType::Analyzer =>
                 for d in components.dispatcher_components.iter_mut() {
                     d.start();
-                }
-            }
+                },
             _ => {
                 if !running_in_container() && !is_kernel_available_for_cgroups() {
                     // In the environment where cgroups is not supported, we need to check free memory
@@ -2893,17 +2826,16 @@ impl ConfigHandler {
                         handler.candidate_config.environment.max_memory,
                         &components.exception_handler,
                     ) {
-                        Ok(()) => {
+                        Ok(()) =>
                             for d in components.dispatcher_components.iter_mut() {
                                 d.start();
-                            }
-                        }
+                            },
                         Err(e) => {
                             warn!("{}", e);
-                        }
+                        },
                     }
                 }
-            }
+            },
         }
     }
 
@@ -2918,7 +2850,7 @@ impl ConfigHandler {
             PacketCaptureType::Analyzer => {
                 components.rx_leaky_bucket.set_rate(None);
                 info!("dispatcher.global pps set ulimit when capture_mode=analyzer");
-            }
+            },
             _ => {
                 components.rx_leaky_bucket.set_rate(Some(
                     handler.candidate_config.dispatcher.global_pps_threshold,
@@ -2927,7 +2859,7 @@ impl ConfigHandler {
                     "dispatcher.global pps threshold change to {}",
                     handler.candidate_config.dispatcher.global_pps_threshold
                 );
-            }
+            },
         }
     }
 
@@ -2940,11 +2872,11 @@ impl ConfigHandler {
             Ok(spec) => {
                 handle.set_new_spec(spec);
                 true
-            }
+            },
             Err(e) => {
                 warn!("failed to set log_level: {}", e);
                 false
-            }
+            },
         }
     }
 
@@ -2959,7 +2891,7 @@ impl ConfigHandler {
                 Err(FlexiLoggerError::NoFileLogger) => {
                     info!("no file logger, skipped log_retention change");
                     false
-                }
+                },
                 _ => match h.reset_flw(
                     &FileLogWriter::builder(FileSpec::try_from(log_file).unwrap())
                         .rotate(
@@ -2977,13 +2909,13 @@ impl ConfigHandler {
                     Err(e) => {
                         warn!("failed to set log_retention: {}", e);
                         false
-                    }
+                    },
                 },
             },
             None => {
                 warn!("logger_handle not set");
                 false
-            }
+            },
         }
     }
 
@@ -3005,8 +2937,8 @@ impl ConfigHandler {
     fn set_platform(handler: &ConfigHandler, components: &mut AgentComponents) {
         let conf = &handler.candidate_config.platform;
 
-        if conf.agent_enabled
-            && (conf.capture_mode == PacketCaptureType::Local || is_tt_pod(conf.agent_type))
+        if conf.agent_enabled &&
+            (conf.capture_mode == PacketCaptureType::Local || is_tt_pod(conf.agent_type))
         {
             if is_tt_pod(conf.agent_type) {
                 components.kubernetes_poller.start();
@@ -3019,8 +2951,7 @@ impl ConfigHandler {
     #[cfg(all(target_os = "linux", feature = "libtrace"))]
     fn set_ebpf(handler: &ConfigHandler, components: &mut AgentComponents) {
         if let Some(d) = components.ebpf_dispatcher_component.as_mut() {
-            d.ebpf_collector
-                .on_config_change(&handler.candidate_config.ebpf);
+            d.ebpf_collector.on_config_change(&handler.candidate_config.ebpf);
         }
     }
 
@@ -3051,8 +2982,8 @@ impl ConfigHandler {
                             &handler.candidate_config.npb,
                             &components.debugger.clone_queue(),
                         );
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         }
@@ -3065,13 +2996,7 @@ impl ConfigHandler {
     fn set_vector(handler: &ConfigHandler, components: &mut AgentComponents) {
         components.vector_component.on_config_change(
             handler.candidate_config.user_config.inputs.vector.enabled,
-            handler
-                .candidate_config
-                .user_config
-                .inputs
-                .vector
-                .config
-                .clone(),
+            handler.candidate_config.user_config.inputs.vector.config.clone(),
         );
     }
 
@@ -3079,9 +3004,9 @@ impl ConfigHandler {
         for d in components.dispatcher_components.iter_mut() {
             d.stop();
         }
-        if handler.candidate_config.capture_mode != PacketCaptureType::Analyzer
-            && !running_in_container()
-            && !is_kernel_available_for_cgroups()
+        if handler.candidate_config.capture_mode != PacketCaptureType::Analyzer &&
+            !running_in_container() &&
+            !is_kernel_available_for_cgroups()
         // In the environment where cgroups is not supported, we need to check free memory
         {
             match free_memory_check(
@@ -3089,14 +3014,13 @@ impl ConfigHandler {
                 handler.candidate_config.environment.max_memory,
                 &components.exception_handler,
             ) {
-                Ok(()) => {
+                Ok(()) =>
                     for d in components.dispatcher_components.iter_mut() {
                         d.start();
-                    }
-                }
+                    },
                 Err(e) => {
                     warn!("{}", e);
-                }
+                },
             }
         } else {
             for d in components.dispatcher_components.iter_mut() {
@@ -3217,8 +3141,8 @@ impl ConfigHandler {
                 callbacks.push(Self::switch_recv_engine);
             }
         }
-        if af_packet.inner_interface_capture_enabled
-            != new_af_packet.inner_interface_capture_enabled
+        if af_packet.inner_interface_capture_enabled !=
+            new_af_packet.inner_interface_capture_enabled
         {
             info!(
                 "Update inputs.cbpf.af_packet.inner_interface_capture_enabled from {:?} to {:?}.",
@@ -3244,8 +3168,8 @@ impl ConfigHandler {
             af_packet.src_interfaces = new_af_packet.src_interfaces.clone();
             restart_agent = !first_run;
         }
-        if af_packet.vlan_pcp_in_physical_mirror_traffic
-            != new_af_packet.vlan_pcp_in_physical_mirror_traffic
+        if af_packet.vlan_pcp_in_physical_mirror_traffic !=
+            new_af_packet.vlan_pcp_in_physical_mirror_traffic
         {
             info!(
                 "Update inputs.cbpf.af_packet.vlan_pcp_in_physical_mirror_traffic from {:?} to {:?}.",
@@ -3329,9 +3253,9 @@ impl ConfigHandler {
             }
             restart_agent = !first_run;
         }
-        if candidate_config.capture_mode != PacketCaptureType::Analyzer
-            && !running_in_container()
-            && !is_kernel_available_for_cgroups()
+        if candidate_config.capture_mode != PacketCaptureType::Analyzer &&
+            !running_in_container() &&
+            !is_kernel_available_for_cgroups()
         // In the environment where cgroups is not supported, we need to check free memory
         {
             // Check and send out exceptions in time
@@ -3351,8 +3275,8 @@ impl ConfigHandler {
             physical_mirror.packet_dedup_disabled = new_physical_mirror.packet_dedup_disabled;
             restart_agent = !first_run;
         }
-        if physical_mirror.private_cloud_gateway_traffic
-            != new_physical_mirror.private_cloud_gateway_traffic
+        if physical_mirror.private_cloud_gateway_traffic !=
+            new_physical_mirror.private_cloud_gateway_traffic
         {
             info!(
                 "Update inputs.cbpf.physical_mirror.private_cloud_gateway_traffic from {:?} to {:?}.",
@@ -3363,8 +3287,8 @@ impl ConfigHandler {
                 new_physical_mirror.private_cloud_gateway_traffic;
             restart_agent = !first_run;
         }
-        if physical_mirror.default_capture_network_type
-            != new_physical_mirror.default_capture_network_type
+        if physical_mirror.default_capture_network_type !=
+            new_physical_mirror.default_capture_network_type
         {
             info!(
                 "Update inputs.cbpf.physical_mirror.default_capture_network_type from {:?} to {:?}.",
@@ -3378,8 +3302,8 @@ impl ConfigHandler {
 
         let preprocess = &mut config.inputs.cbpf.preprocess;
         let new_preprocess = &mut new_config.user_config.inputs.cbpf.preprocess;
-        if preprocess.packet_segmentation_reassembly
-            != new_preprocess.packet_segmentation_reassembly
+        if preprocess.packet_segmentation_reassembly !=
+            new_preprocess.packet_segmentation_reassembly
         {
             info!(
                 "Update inputs.cbpf.preprocess.packet_segmentation_reassembly from {:?} to {:?}.",
@@ -3416,8 +3340,8 @@ impl ConfigHandler {
             special_network.dpdk.source = new_special_network.dpdk.source;
             restart_agent = !first_run;
         }
-        if special_network.dpdk.reorder_cache_window_size
-            != new_special_network.dpdk.reorder_cache_window_size
+        if special_network.dpdk.reorder_cache_window_size !=
+            new_special_network.dpdk.reorder_cache_window_size
         {
             info!(
                 "Update inputs.cbpf.special_network.dpdk.reorder_cache_window_size from {:?} to {:?}.",
@@ -3455,8 +3379,8 @@ impl ConfigHandler {
             physical_switch.sflow_ports = new_physical_switch.sflow_ports.clone();
             restart_agent = !first_run;
         }
-        if special_network.vhost_user.vhost_socket_path
-            != new_special_network.vhost_user.vhost_socket_path
+        if special_network.vhost_user.vhost_socket_path !=
+            new_special_network.vhost_user.vhost_socket_path
         {
             info!(
                 "Update inputs.cbpf.special_network.vhost_user.vhost_socket_path from {:?} to {:?}.",
@@ -3547,8 +3471,8 @@ impl ConfigHandler {
             io_event.enable_virtual_file_collect = new_io_event.enable_virtual_file_collect;
             restart_agent = !first_run;
         }
-        if ebpf.java_symbol_file_refresh_defer_interval
-            != new_ebpf.java_symbol_file_refresh_defer_interval
+        if ebpf.java_symbol_file_refresh_defer_interval !=
+            new_ebpf.java_symbol_file_refresh_defer_interval
         {
             info!(
                 "Update inputs.ebpf.java_symbol_file_refresh_defer_interval from {:?} to {:?}.",
@@ -3594,9 +3518,9 @@ impl ConfigHandler {
                 "Update inputs.ebpf.profile.memory from {:?} to {:?}.",
                 memory, new_memory
             );
-            restart_agent = (memory.disabled != new_memory.disabled
-                || memory.queue_size != new_memory.queue_size)
-                && !first_run;
+            restart_agent = (memory.disabled != new_memory.disabled ||
+                memory.queue_size != new_memory.queue_size) &&
+                !first_run;
             *memory = *new_memory;
         }
 
@@ -3627,8 +3551,8 @@ impl ConfigHandler {
             restart_agent = !first_run;
         }
 
-        if ebpf.profile.preprocess.stack_compression
-            != new_ebpf.profile.preprocess.stack_compression
+        if ebpf.profile.preprocess.stack_compression !=
+            new_ebpf.profile.preprocess.stack_compression
         {
             info!(
                 "Update inputs.ebpf.profile.preprocess.stack_compression from {:?} to {:?}.",
@@ -3719,8 +3643,8 @@ impl ConfigHandler {
             );
             sock_ops.tcp_option_trace.enabled = new_sock_ops.tcp_option_trace.enabled;
         }
-        if sock_ops.tcp_option_trace.sampling_window_bytes
-            != new_sock_ops.tcp_option_trace.sampling_window_bytes
+        if sock_ops.tcp_option_trace.sampling_window_bytes !=
+            new_sock_ops.tcp_option_trace.sampling_window_bytes
         {
             info!(
                 "Update inputs.ebpf.socket.sock_ops.tcp_option_trace.sampling_window_bytes from {:?} to {:?}.",
@@ -3789,8 +3713,8 @@ impl ConfigHandler {
 
         let preprocess = &mut ebpf.socket.preprocess;
         let new_preprocess = &mut new_ebpf.socket.preprocess;
-        if preprocess.out_of_order_reassembly_cache_size
-            != new_preprocess.out_of_order_reassembly_cache_size
+        if preprocess.out_of_order_reassembly_cache_size !=
+            new_preprocess.out_of_order_reassembly_cache_size
         {
             info!(
                 "Update inputs.ebpf.socket.preprocess.out_of_order_reassembly_cache_size from {:?} to {:?}.",
@@ -3801,8 +3725,8 @@ impl ConfigHandler {
                 new_preprocess.out_of_order_reassembly_cache_size;
             restart_agent = !first_run;
         }
-        if preprocess.out_of_order_reassembly_protocols
-            != new_preprocess.out_of_order_reassembly_protocols
+        if preprocess.out_of_order_reassembly_protocols !=
+            new_preprocess.out_of_order_reassembly_protocols
         {
             info!(
                 "Update inputs.ebpf.socket.preprocess.out_of_order_reassembly_protocols from {:?} to {:?}.",
@@ -3813,8 +3737,8 @@ impl ConfigHandler {
                 new_preprocess.out_of_order_reassembly_protocols.clone();
             restart_agent = !first_run;
         }
-        if preprocess.out_of_order_reassembly_timeout
-            != new_preprocess.out_of_order_reassembly_timeout
+        if preprocess.out_of_order_reassembly_timeout !=
+            new_preprocess.out_of_order_reassembly_timeout
         {
             info!(
                 "Update inputs.ebpf.socket.preprocess.out_of_order_reassembly_timeout from {:?} to {:?}.",
@@ -3825,8 +3749,8 @@ impl ConfigHandler {
                 new_preprocess.out_of_order_reassembly_timeout.clone();
             restart_agent = !first_run;
         }
-        if preprocess.segmentation_reassembly_protocols
-            != new_preprocess.segmentation_reassembly_protocols
+        if preprocess.segmentation_reassembly_protocols !=
+            new_preprocess.segmentation_reassembly_protocols
         {
             info!(
                 "Update inputs.ebpf.socket.preprocess.segmentation_reassembly_protocols from {:?} to {:?}.",
@@ -4038,8 +3962,8 @@ impl ConfigHandler {
 
         let private_cloud = &mut resources.private_cloud;
         let new_private_cloud = &mut new_resources.private_cloud;
-        if private_cloud.hypervisor_resource_enabled
-            != new_private_cloud.hypervisor_resource_enabled
+        if private_cloud.hypervisor_resource_enabled !=
+            new_private_cloud.hypervisor_resource_enabled
         {
             info!(
                 "Update inputs.resources.private_cloud.hypervisor_resource_enabled from {:?} to {:?}.",
@@ -4157,20 +4081,8 @@ impl ConfigHandler {
                     &new_config.user_config.inputs.proc.process_blacklist,
                     &new_config.user_config.inputs.proc.process_matcher,
                     new_config.user_config.inputs.proc.proc_dir_path.clone(),
-                    new_config
-                        .user_config
-                        .inputs
-                        .proc
-                        .tag_extraction
-                        .exec_username
-                        .clone(),
-                    new_config
-                        .user_config
-                        .inputs
-                        .proc
-                        .tag_extraction
-                        .script_command
-                        .clone(),
+                    new_config.user_config.inputs.proc.tag_extraction.exec_username.clone(),
+                    new_config.user_config.inputs.proc.tag_extraction.script_command.clone(),
                 );
             }
         }
@@ -4257,8 +4169,8 @@ impl ConfigHandler {
                     .set_nic_rate(new_tx_throughput.trigger_threshold);
             }
         }
-        if tx_throughput.throughput_monitoring_interval
-            != new_tx_throughput.throughput_monitoring_interval
+        if tx_throughput.throughput_monitoring_interval !=
+            new_tx_throughput.throughput_monitoring_interval
         {
             info!(
                 "Update global.circuit_breakers.tx_throughput.throughput_monitoring_interval from {:?} to {:?}.",
@@ -4382,7 +4294,9 @@ impl ConfigHandler {
             if new_communication.grpc_buffer_size > 0 {
                 info!(
                     "Update global.communication.grpc_buffer_size from {:?} to {:?}, and it is actually used {:?}.",
-                    communication.grpc_buffer_size, new_communication.grpc_buffer_size, new_communication.grpc_buffer_size.max(GRPC_BUFFER_SIZE_MIN)
+                    communication.grpc_buffer_size,
+                    new_communication.grpc_buffer_size,
+                    new_communication.grpc_buffer_size.max(GRPC_BUFFER_SIZE_MIN)
                 );
 
                 session.set_rx_size(new_communication.grpc_buffer_size.max(GRPC_BUFFER_SIZE_MIN));
@@ -4398,8 +4312,8 @@ impl ConfigHandler {
             );
             communication.max_throughput_to_ingester = new_communication.max_throughput_to_ingester;
         }
-        if communication.ingester_traffic_overflow_action
-            != new_communication.ingester_traffic_overflow_action
+        if communication.ingester_traffic_overflow_action !=
+            new_communication.ingester_traffic_overflow_action
         {
             info!(
                 "Update global.communication.ingester_traffic_overflow_action from {:?} to {:?}.",
@@ -4814,8 +4728,8 @@ impl ConfigHandler {
         }
         let aggregators = &mut flow_log.aggregators;
         let new_aggregators = &mut new_flow_log.aggregators;
-        if aggregators.aggregate_health_check_l4_flow_log
-            != new_aggregators.aggregate_health_check_l4_flow_log
+        if aggregators.aggregate_health_check_l4_flow_log !=
+            new_aggregators.aggregate_health_check_l4_flow_log
         {
             info!(
                 "Update outputs.flow_log.aggregators.aggregate_health_check_l4_flow_log from {:?} to {:?}.",
@@ -5372,17 +5286,16 @@ impl ConfigHandler {
             filters.tag_filters = new_filters.tag_filters.clone();
             restart_agent = !first_run;
         }
-        if filters.unconcerned_dns_nxdomain_response_suffixes
-            != new_filters.unconcerned_dns_nxdomain_response_suffixes
+        if filters.unconcerned_dns_nxdomain_response_suffixes !=
+            new_filters.unconcerned_dns_nxdomain_response_suffixes
         {
             info!(
                 "Update processors.request_log.filters.unconcerned_dns_nxdomain_response_suffixes from {:?} to {:?}.",
                 filters.unconcerned_dns_nxdomain_response_suffixes,
                 new_filters.unconcerned_dns_nxdomain_response_suffixes
             );
-            filters.unconcerned_dns_nxdomain_response_suffixes = new_filters
-                .unconcerned_dns_nxdomain_response_suffixes
-                .clone();
+            filters.unconcerned_dns_nxdomain_response_suffixes =
+                new_filters.unconcerned_dns_nxdomain_response_suffixes.clone();
         }
         if filters.cbpf_disabled != new_filters.cbpf_disabled {
             info!(
@@ -5453,25 +5366,29 @@ impl ConfigHandler {
         let raw = &mut tag_extraction.raw;
         let new_raw = &mut new_tag_extraction.raw;
         if raw.error_request_header != new_raw.error_request_header {
-            info!("Update processors.request_log.tag_extraction.raw.error_request_header from {:?} to {:?}.",
+            info!(
+                "Update processors.request_log.tag_extraction.raw.error_request_header from {:?} to {:?}.",
                 raw.error_request_header, new_raw.error_request_header
             );
             raw.error_request_header = new_raw.error_request_header;
         }
         if raw.error_response_header != new_raw.error_response_header {
-            info!("Update processors.request_log.tag_extraction.raw.error_response_header from {:?} to {:?}.",
+            info!(
+                "Update processors.request_log.tag_extraction.raw.error_response_header from {:?} to {:?}.",
                 raw.error_response_header, new_raw.error_response_header
             );
             raw.error_response_header = new_raw.error_response_header;
         }
         if raw.error_request_payload != new_raw.error_request_payload {
-            info!("Update processors.request_log.tag_extraction.raw.error_request_payload from {:?} to {:?}.",
+            info!(
+                "Update processors.request_log.tag_extraction.raw.error_request_payload from {:?} to {:?}.",
                 raw.error_request_payload, new_raw.error_request_payload
             );
             raw.error_request_payload = new_raw.error_request_payload;
         }
         if raw.error_response_payload != new_raw.error_response_payload {
-            info!("Update processors.request_log.tag_extraction.raw.error_response_payload from {:?} to {:?}.",
+            info!(
+                "Update processors.request_log.tag_extraction.raw.error_response_payload from {:?} to {:?}.",
                 raw.error_response_payload, new_raw.error_response_payload
             );
             raw.error_response_payload = new_raw.error_response_payload;
@@ -5479,8 +5396,8 @@ impl ConfigHandler {
 
         let tunning = &mut request_log.tunning;
         let new_tunning = &mut new_request_log.tunning;
-        if tunning.consistent_timestamp_in_l7_metrics
-            != new_tunning.consistent_timestamp_in_l7_metrics
+        if tunning.consistent_timestamp_in_l7_metrics !=
+            new_tunning.consistent_timestamp_in_l7_metrics
         {
             info!(
                 "Update processors.request_log.tunning.consistent_timestamp_in_l7_metrics from {:?} to {:?}.",
@@ -5531,24 +5448,24 @@ impl ConfigHandler {
                 candidate_config.dispatcher.cpu_set = new_config.dispatcher.cpu_set;
             }
 
-            if candidate_config.dispatcher.max_memory != new_config.dispatcher.max_memory
-                || candidate_config
+            if candidate_config.dispatcher.max_memory != new_config.dispatcher.max_memory ||
+                candidate_config.user_config.get_af_packet_blocks(
+                    new_config.capture_mode,
+                    new_config.dispatcher.max_memory,
+                ) != new_config.user_config.get_af_packet_blocks(
+                    new_config.capture_mode,
+                    new_config.dispatcher.max_memory,
+                ) ||
+                candidate_config
                     .user_config
-                    .get_af_packet_blocks(new_config.capture_mode, new_config.dispatcher.max_memory)
-                    != new_config.user_config.get_af_packet_blocks(
-                        new_config.capture_mode,
-                        new_config.dispatcher.max_memory,
-                    )
-                || candidate_config
-                    .user_config
-                    .get_fast_path_map_size(new_config.dispatcher.max_memory)
-                    != new_config
+                    .get_fast_path_map_size(new_config.dispatcher.max_memory) !=
+                    new_config
                         .user_config
-                        .get_fast_path_map_size(candidate_config.dispatcher.max_memory)
-                || candidate_config.get_channel_size(new_config.dispatcher.max_memory)
-                    != candidate_config.get_channel_size(candidate_config.dispatcher.max_memory)
-                || candidate_config.get_flow_capacity(new_config.dispatcher.max_memory)
-                    != candidate_config.get_flow_capacity(candidate_config.dispatcher.max_memory)
+                        .get_fast_path_map_size(candidate_config.dispatcher.max_memory) ||
+                candidate_config.get_channel_size(new_config.dispatcher.max_memory) !=
+                    candidate_config.get_channel_size(candidate_config.dispatcher.max_memory) ||
+                candidate_config.get_flow_capacity(new_config.dispatcher.max_memory) !=
+                    candidate_config.get_flow_capacity(candidate_config.dispatcher.max_memory)
             {
                 restart_dispatcher = true;
             }
@@ -5589,9 +5506,7 @@ impl ConfigHandler {
 
         if candidate_config.environment.max_memory != new_config.environment.max_memory {
             if let Some(ref components) = components {
-                components
-                    .policy_setter
-                    .set_memory_limit(new_config.environment.max_memory);
+                components.policy_setter.set_memory_limit(new_config.environment.max_memory);
             }
         }
 
@@ -5613,8 +5528,8 @@ impl ConfigHandler {
             }
             #[cfg(target_os = "linux")]
             if running_in_container() {
-                if self.container_cpu_limit != candidate_config.environment.max_millicpus
-                    || self.container_mem_limit != candidate_config.environment.max_memory
+                if self.container_cpu_limit != candidate_config.environment.max_millicpus ||
+                    self.container_mem_limit != candidate_config.environment.max_memory
                 {
                     info!(
                         "current container cpu limit: {}, memory limit: {}bytes, set cpu limit {} and memory limit {}bytes",
@@ -5664,10 +5579,7 @@ impl ConfigHandler {
                     "plugins changed, pulling {} plugins from server",
                     new_config.flow.plugins.names.len()
                 );
-                new_config
-                    .flow
-                    .plugins
-                    .fill_plugin_prog_from_server(runtime, session, agent_id);
+                new_config.flow.plugins.fill_plugin_prog_from_server(runtime, session, agent_id);
             }
             candidate_config.flow = new_config.flow.clone();
         }
@@ -5677,9 +5589,9 @@ impl ConfigHandler {
                 "collector config change from {:#?} to {:#?}",
                 candidate_config.collector, new_config.collector
             );
-            restart_dispatcher = candidate_config.collector.agent_id
-                != new_config.collector.agent_id
-                && new_config.collector.enabled;
+            restart_dispatcher = candidate_config.collector.agent_id !=
+                new_config.collector.agent_id &&
+                new_config.collector.enabled;
             candidate_config.collector = new_config.collector.clone();
         }
 
@@ -5691,13 +5603,13 @@ impl ConfigHandler {
 
             // restart api watcher if it keeps running and config changes
             #[cfg(target_os = "linux")]
-            let restart_api_watcher = old_cfg.kubernetes_api_enabled
-                && new_cfg.kubernetes_api_enabled
-                && (old_cfg.kubernetes_api_list_limit != new_cfg.kubernetes_api_list_limit
-                    || old_cfg.kubernetes_api_list_interval
-                        != new_cfg.kubernetes_api_list_interval
-                    || old_cfg.kubernetes_resources != new_cfg.kubernetes_resources
-                    || old_cfg.max_memory != new_cfg.max_memory);
+            let restart_api_watcher = old_cfg.kubernetes_api_enabled &&
+                new_cfg.kubernetes_api_enabled &&
+                (old_cfg.kubernetes_api_list_limit != new_cfg.kubernetes_api_list_limit ||
+                    old_cfg.kubernetes_api_list_interval !=
+                        new_cfg.kubernetes_api_list_interval ||
+                    old_cfg.kubernetes_resources != new_cfg.kubernetes_resources ||
+                    old_cfg.max_memory != new_cfg.max_memory);
             #[cfg(target_os = "linux")]
             if restart_api_watcher {
                 api_watcher.stop();
@@ -5716,8 +5628,8 @@ impl ConfigHandler {
         }
 
         if candidate_config.sender != new_config.sender {
-            if candidate_config.sender.collector_socket_type
-                != new_config.sender.collector_socket_type
+            if candidate_config.sender.collector_socket_type !=
+                new_config.sender.collector_socket_type
             {
                 if candidate_config.sender.enabled != new_config.sender.enabled {
                     restart_dispatcher = true;
@@ -5814,9 +5726,9 @@ impl ConfigHandler {
         if candidate_config.ebpf != new_config.ebpf {
             if candidate_config.capture_mode != PacketCaptureType::Analyzer {
                 // Check if language-specific profiling configuration changed (only on dynamic config update, not on first start)
-                if components.is_some()
-                    && candidate_config.ebpf.ebpf.profile.languages
-                        != new_config.ebpf.ebpf.profile.languages
+                if components.is_some() &&
+                    candidate_config.ebpf.ebpf.profile.languages !=
+                        new_config.ebpf.ebpf.profile.languages
                 {
                     error!(
                         "Language-specific profiling configuration changed from {:#?} to {:#?}. \
@@ -5896,15 +5808,8 @@ impl ConfigHandler {
         // avoid first config changed to restart dispatcher
         let restart_dispatcher =
             components.is_some() && restart_dispatcher && candidate_config.dispatcher.enabled;
-        if restart_dispatcher
-            && new_config
-                .user_config
-                .inputs
-                .cbpf
-                .special_network
-                .dpdk
-                .source
-                == DpdkSource::Ebpf
+        if restart_dispatcher &&
+            new_config.user_config.inputs.cbpf.special_network.dpdk.source == DpdkSource::Ebpf
         {
             restart_agent = !first_run;
         }
@@ -5921,8 +5826,7 @@ impl ConfigHandler {
         }
 
         // deploy updated config
-        self.current_config
-            .store(Arc::new(candidate_config.clone()));
+        self.current_config.store(Arc::new(candidate_config.clone()));
         exception_handler.clear(agent::Exception::InvalidConfiguration);
 
         callbacks
@@ -5940,12 +5844,7 @@ impl ModuleConfig {
 
     fn get_flow_capacity(&self, mem_size: u64) -> usize {
         if self.capture_mode == PacketCaptureType::Analyzer {
-            return self
-                .user_config
-                .processors
-                .flow_log
-                .tunning
-                .concurrent_flow_limit as usize;
+            return self.user_config.processors.flow_log.tunning.concurrent_flow_limit as usize;
         }
 
         min((mem_size / MB / 128 * 65536) as usize, 1 << 30)

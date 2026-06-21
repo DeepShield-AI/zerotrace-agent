@@ -14,39 +14,43 @@
  * limitations under the License.
  */
 
-use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use super::{
+    Result as PResult,
+    fast_path::EndpointTableType,
+    first_path::FirstPath,
+    forward::{FROM_TRAFFIC_ARP, Forward},
+    labeler::Labeler,
 };
-
+use crate::{
+    common::{
+        FlowAclListener, FlowAclListenerId, MetaPacket, TapPort,
+        endpoint::{EndpointData, EndpointDataPov},
+        enums::CaptureNetworkType,
+        flow::{PacketDirection, SignalSource},
+        lookup_key::LookupKey,
+        platform_data::PlatformData,
+        policy::{
+            Acl, Cidr, Container, GpidEntry, GpidProtocol, IpGroupData, PeerConnection, gpid_key,
+        },
+    },
+    utils::environment::{is_tt_pod, is_tt_workload},
+};
 use ahash::AHashMap;
 use log::{debug, info};
-use pnet::datalink;
-use public::enums::IpProtocol;
-
-use super::fast_path::EndpointTableType;
-use super::{
-    first_path::FirstPath,
-    forward::{Forward, FROM_TRAFFIC_ARP},
-    labeler::Labeler,
-    Result as PResult,
-};
-use crate::common::endpoint::{EndpointData, EndpointDataPov};
-use crate::common::enums::CaptureNetworkType;
-use crate::common::flow::{PacketDirection, SignalSource};
-use crate::common::lookup_key::LookupKey;
-use crate::common::platform_data::PlatformData;
-use crate::common::policy::{
-    gpid_key, Acl, Cidr, Container, GpidEntry, GpidProtocol, IpGroupData, PeerConnection,
-};
-use crate::common::MetaPacket;
-use crate::common::TapPort;
-use crate::common::{FlowAclListener, FlowAclListenerId};
-use crate::utils::environment::{is_tt_pod, is_tt_workload};
 use npb_pcap_policy::PolicyData;
-use public::proto::agent::{AgentType, RoleType};
-use public::queue::Sender;
+use pnet::datalink;
+use public::{
+    enums::IpProtocol,
+    proto::agent::{AgentType, RoleType},
+    queue::Sender,
+};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 pub struct PolicyMonitor {
     sender: Arc<Sender<String>>,
@@ -160,18 +164,13 @@ impl Policy {
             key.l3_end_1 = true;
             return;
         }
-        key.l3_end_0 = self
-            .forward
-            .query(index, key.src_mac, key.src_ip, key.l2_end_0);
-        key.l3_end_1 = self
-            .forward
-            .query(index, key.dst_mac, key.dst_ip, key.l2_end_1);
+        key.l3_end_0 = self.forward.query(index, key.src_mac, key.src_ip, key.l2_end_0);
+        key.l3_end_1 = self.forward.query(index, key.dst_mac, key.dst_ip, key.l2_end_1);
 
         // 根据ARP和NDP添加forward表
         if packet.is_ndp_response() {
             if !packet.lookup_key.l3_end_0 {
-                self.forward
-                    .add(index, &packet.lookup_key, packet.tap_port, FROM_TRAFFIC_ARP);
+                self.forward.add(index, &packet.lookup_key, packet.tap_port, FROM_TRAFFIC_ARP);
                 packet.lookup_key.l3_end_0 = true;
             }
         }
@@ -190,14 +189,12 @@ impl Policy {
         // it is taken from the socket information of the OS. Both meta_packet and flow need to
         // correct their direction based on this.
         packet.need_reverse_flow = match direction {
-            PacketDirection::ServerToClient => {
-                gpid_entry.port_1 != packet.lookup_key.src_port
-                    || IpAddr::from(Ipv4Addr::from(gpid_entry.ip_1)) != packet.lookup_key.src_ip
-            }
-            PacketDirection::ClientToServer => {
-                gpid_entry.port_1 != packet.lookup_key.dst_port
-                    || IpAddr::from(Ipv4Addr::from(gpid_entry.ip_1)) != packet.lookup_key.dst_ip
-            }
+            PacketDirection::ServerToClient =>
+                gpid_entry.port_1 != packet.lookup_key.src_port ||
+                    IpAddr::from(Ipv4Addr::from(gpid_entry.ip_1)) != packet.lookup_key.src_ip,
+            PacketDirection::ClientToServer =>
+                gpid_entry.port_1 != packet.lookup_key.dst_port ||
+                    IpAddr::from(Ipv4Addr::from(gpid_entry.ip_1)) != packet.lookup_key.dst_ip,
         };
         if packet.need_reverse_flow {
             direction = direction.reversed()
@@ -218,7 +215,7 @@ impl Policy {
                                 packet.lookup_key.dst_nat_ip =
                                     IpAddr::V4(Ipv4Addr::from(gpid_entry.ip_real));
                             }
-                        }
+                        },
                         RoleType::RoleClient => {
                             packet.gpid_0 = gpid_entry.pid_real;
                             // NAT_SOURCE_TOA高于当前优先级会更新数据
@@ -229,17 +226,17 @@ impl Policy {
                                     IpAddr::V4(Ipv4Addr::from(gpid_entry.ip_real));
                             }
                             packet.gpid_1 = gpid_entry.pid_1;
-                        }
+                        },
                         RoleType::RoleNone => {
                             packet.gpid_0 = gpid_entry.pid_0;
                             packet.gpid_1 = gpid_entry.pid_1;
-                        }
+                        },
                     }
                 } else {
                     packet.gpid_0 = gpid_entry.pid_0;
                     packet.gpid_1 = gpid_entry.pid_1;
                 }
-            }
+            },
             PacketDirection::ServerToClient => {
                 if gpid_entry.port_real > 0 {
                     // 用于客户端处采集的流量，流量服务端IP为NAT IP，需要通过客户端信息查询流量真实的服务端IP
@@ -254,7 +251,7 @@ impl Policy {
                                     IpAddr::V4(Ipv4Addr::from(gpid_entry.ip_real));
                             }
                             packet.gpid_1 = gpid_entry.pid_0;
-                        }
+                        },
                         RoleType::RoleClient => {
                             packet.gpid_0 = gpid_entry.pid_1;
                             packet.gpid_1 = gpid_entry.pid_real;
@@ -265,17 +262,17 @@ impl Policy {
                                 packet.lookup_key.dst_nat_ip =
                                     IpAddr::V4(Ipv4Addr::from(gpid_entry.ip_real));
                             }
-                        }
+                        },
                         RoleType::RoleNone => {
                             packet.gpid_0 = gpid_entry.pid_1;
                             packet.gpid_1 = gpid_entry.pid_0;
-                        }
+                        },
                     }
                 } else {
                     packet.gpid_0 = gpid_entry.pid_1;
                     packet.gpid_1 = gpid_entry.pid_0;
                 }
-            }
+            },
         }
     }
 
@@ -312,10 +309,7 @@ impl Policy {
         gpid_entry: &GpidEntry,
     ) {
         if self.monitor.is_some() {
-            self.monitor
-                .as_ref()
-                .unwrap()
-                .send(key, policy, endpoints, gpid_entry);
+            self.monitor.as_ref().unwrap().send(key, policy, endpoints, gpid_entry);
         }
     }
 
@@ -364,9 +358,7 @@ impl Policy {
 
     fn lookup_epc_by_epc(&mut self, src: IpAddr, dst: IpAddr, l3_epc_id_src: i32) -> i32 {
         // TODO：可能也需要走fast提升性能
-        let endpoints = self
-            .labeler
-            .get_endpoint_data_by_epc(src, dst, l3_epc_id_src, 0, false);
+        let endpoints = self.labeler.get_endpoint_data_by_epc(src, dst, l3_epc_id_src, 0, false);
         self.send_ebpf(
             src,
             dst,
@@ -463,8 +455,7 @@ impl Policy {
 
         // TODO: 后续需要添加监控本地网卡，如果网卡配置有变化应该也需要出发表更新
         let local_interfaces = datalink::interfaces();
-        self.forward
-            .update_from_config(agent_type, ifaces, &local_interfaces);
+        self.forward.update_from_config(agent_type, ifaces, &local_interfaces);
     }
 
     pub fn update_ip_group(&mut self, groups: &Vec<Arc<IpGroupData>>) {
@@ -484,8 +475,7 @@ impl Policy {
         has_invalid_log: &mut bool,
     ) {
         self.table.update_cidr(cidrs);
-        self.labeler
-            .update_cidr_table(cidrs, enabled_invalid_log, has_invalid_log);
+        self.labeler.update_cidr_table(cidrs, enabled_invalid_log, has_invalid_log);
     }
 
     pub fn update_container(&mut self, cidrs: &Vec<Arc<Container>>) {
@@ -499,8 +489,7 @@ impl Policy {
         enabled_invalid_log: bool,
         has_invalid_log: &mut bool,
     ) -> PResult<()> {
-        self.table
-            .update_acl(acls, check, enabled_invalid_log, has_invalid_log)?;
+        self.table.update_acl(acls, check, enabled_invalid_log, has_invalid_log)?;
 
         self.acls = acls.clone();
 
@@ -726,9 +715,7 @@ impl PolicySetter {
     }
 
     pub fn update_local_epc(&mut self, local_epc: i32, running_in_single_epc: bool) {
-        self.policy()
-            .labeler
-            .update_local_epc(local_epc, running_in_single_epc);
+        self.policy().labeler.update_local_epc(local_epc, running_in_single_epc);
     }
 
     pub fn update_interfaces(&mut self, agent_type: AgentType, ifaces: &Vec<Arc<PlatformData>>) {
@@ -749,8 +736,7 @@ impl PolicySetter {
         enabled_invalid_log: bool,
         has_invalid_log: &mut bool,
     ) {
-        self.policy()
-            .update_cidr(cidrs, enabled_invalid_log, has_invalid_log);
+        self.policy().update_cidr(cidrs, enabled_invalid_log, has_invalid_log);
     }
 
     pub fn update_container(&mut self, containers: &Vec<Arc<Container>>) {
@@ -764,8 +750,7 @@ impl PolicySetter {
         enabled_invalid_log: bool,
         has_invalid_log: &mut bool,
     ) -> PResult<()> {
-        self.policy()
-            .update_acl(acls, check, enabled_invalid_log, has_invalid_log)?;
+        self.policy().update_acl(acls, check, enabled_invalid_log, has_invalid_log)?;
 
         Ok(())
     }
@@ -805,15 +790,17 @@ impl PolicySetter {
 
 #[cfg(test)]
 mod test {
-    use std::net::{IpAddr, Ipv4Addr};
-    use std::sync::Arc;
-
-    use ipnet::IpNet;
-
     use super::*;
-    use crate::common::platform_data::IpSubnet;
-    use crate::common::policy::{Cidr, CidrType};
+    use crate::common::{
+        platform_data::IpSubnet,
+        policy::{Cidr, CidrType},
+    };
+    use ipnet::IpNet;
     use public::utils::net::MacAddr;
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        sync::Arc,
+    };
 
     #[test]
     fn test_policy_normal() {

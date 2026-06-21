@@ -14,6 +14,13 @@
  * limitations under the License.
  */
 
+use crate::{
+    config::ProcessMatcher,
+    platform::{ProcessData, ProcessDataOp, get_os_app_tag_by_exec},
+};
+use log::{debug, error, info, trace};
+use nix::sys::utsname::uname;
+use procfs::process::all_processes_with_root;
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
@@ -23,19 +30,12 @@ use std::{
     path::PathBuf,
     process,
     sync::{
-        atomic::{AtomicBool, Ordering::Relaxed},
         Arc, Mutex, RwLock,
+        atomic::{AtomicBool, Ordering::Relaxed},
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
-
-use log::{debug, error, info, trace};
-use nix::sys::utsname::uname;
-use procfs::process::all_processes_with_root;
-
-use crate::config::ProcessMatcher;
-use crate::platform::{get_os_app_tag_by_exec, ProcessData, ProcessDataOp};
 
 //返回当前进程占用内存RSS单位（字节）
 pub fn get_memory_rss() -> Result<u64> {
@@ -90,20 +90,16 @@ pub fn get_thread_num() -> Result<u32> {
         if !line.starts_with("Threads:") {
             continue;
         }
-        match line
-            .trim()
-            .rsplit_once('\t')
-            .and_then(|(_, s)| s.parse::<u32>().ok())
-        {
+        match line.trim().rsplit_once('\t').and_then(|(_, s)| s.parse::<u32>().ok()) {
             Some(num) => {
                 return Ok(num);
-            }
+            },
             None => {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
                     format!("line: ({}) in /proc/{}/status is not a number", line, pid),
                 ));
-            }
+            },
         }
     }
 
@@ -134,7 +130,7 @@ pub fn get_exec_path() -> io::Result<PathBuf> {
                 exec_path.push(name);
             }
             Ok(exec_path)
-        }
+        },
         "NetBSD" => fs::read_link("/proc/curproc/exe"),
         "FreeBSD" | "OpenBSD" | "DragonFly" => fs::read_link("/proc/curproc/file"),
         "Solaris" => fs::read_link(format!("/proc/{}/path/a.out", process::id())),
@@ -143,7 +139,7 @@ pub fn get_exec_path() -> io::Result<PathBuf> {
                 io::ErrorKind::Unsupported,
                 format!("ExecPath not implemented for {}", x),
             ));
-        }
+        },
     }
 }
 
@@ -197,31 +193,26 @@ fn get_num_from_status_file(pattern: &str, value: &str) -> Result<u32> {
             Err(e) => {
                 debug!("{:?}", e);
                 continue;
-            }
+            },
         };
 
         match entry.file_type() {
-            Ok(t) => {
+            Ok(t) =>
                 if !t.is_dir() {
                     continue;
-                }
-            }
+                },
             Err(e) => {
                 debug!("filename: {:?}, {:?}", entry.file_name(), e);
                 continue;
-            }
+            },
         }
 
-        let search_pid = match entry
-            .file_name()
-            .to_str()
-            .and_then(|pid| pid.parse::<u32>().ok())
-        {
+        let search_pid = match entry.file_name().to_str().and_then(|pid| pid.parse::<u32>().ok()) {
             Some(pid) => pid,
             None => {
                 debug!("parse number error: {:?}", entry.file_name());
                 continue;
-            }
+            },
         };
 
         let status_file = format!("/proc/{}/status", search_pid);
@@ -230,7 +221,7 @@ fn get_num_from_status_file(pattern: &str, value: &str) -> Result<u32> {
             Err(e) => {
                 debug!("open status file {} error: {:?}", status_file, e);
                 continue;
-            }
+            },
         };
         let mut buf = String::new();
         if let Err(e) = status.read_to_string(&mut buf) {
@@ -242,12 +233,7 @@ fn get_num_from_status_file(pattern: &str, value: &str) -> Result<u32> {
             if !line.starts_with(pattern) {
                 continue;
             }
-            if line
-                .trim()
-                .rsplit_once('\t')
-                .filter(|&(_, s)| s == value)
-                .is_some()
-            {
+            if line.trim().rsplit_once('\t').filter(|&(_, s)| s == value).is_some() {
                 num += 1;
             } else {
                 break;
@@ -336,10 +322,7 @@ impl ProcessListener {
         user: String,
         command: Vec<String>,
     ) {
-        self.config
-            .write()
-            .unwrap()
-            .update(proc_root, user, command);
+        self.config.write().unwrap().update(proc_root, user, command);
         self.set(process_blacklist, process_matcher);
     }
 
@@ -429,7 +412,7 @@ impl ProcessListener {
                     err
                 );
                 HashMap::new()
-            }
+            },
         };
 
         let mut alive_pids = HashSet::new();
@@ -442,7 +425,7 @@ impl ProcessListener {
                 Err(e) => {
                     error!("get process failed: {}", e);
                     continue;
-                }
+                },
             };
             match process.status().map(|s| s.name) {
                 // not found
@@ -453,11 +436,11 @@ impl ProcessListener {
                         process.pid
                     );
                     continue;
-                }
+                },
                 Err(e) => {
                     debug!("get process status failed: {}", e);
                     continue;
-                }
+                },
             }
             alive_pids.insert(process.pid);
             if let Some(old_data) = process_data_cache.get(&process.pid) {
@@ -476,8 +459,8 @@ impl ProcessListener {
         process_data_cache.retain(|pid, _| alive_pids.contains(pid));
 
         for (key, value) in features.iter_mut() {
-            if (value.process_matcher.is_empty() && value.pids.is_empty())
-                || value.callback.is_none()
+            if (value.process_matcher.is_empty() && value.pids.is_empty()) ||
+                value.callback.is_none()
             {
                 continue;
             }

@@ -13,11 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use public::proto::flow_log;
-
 pub use public::l7_protocol::{
     ExtendedInfo, KeyVal, L7Request, L7Response, MetricKeyVal, TraceInfo,
 };
+use public::proto::flow_log;
 
 /*
  * server 的协议适配结构，用于把所有协议转换成统一的结构发送到 server

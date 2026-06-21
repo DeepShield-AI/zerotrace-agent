@@ -17,20 +17,19 @@
 pub mod af_packet;
 pub(crate) mod bpf;
 
-use std::ffi::CStr;
-use std::sync::{atomic::AtomicU64, Arc};
-use std::time::Duration;
-
+use crate::utils::stats;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use af_packet::{options::Options, tpacket::Tpacket};
 pub use public::error::{Error, Result};
 use public::packet;
-
-use crate::utils::stats;
-
 #[cfg(target_os = "linux")]
 pub use special_recv_engine::{Dpdk, DpdkFromEbpf, VhostUser};
 pub use special_recv_engine::{Libpcap, LibpcapCounter};
+use std::{
+    ffi::CStr,
+    sync::{Arc, atomic::AtomicU64},
+    time::Duration,
+};
 
 pub const DEFAULT_BLOCK_SIZE: usize = 1 << 20;
 pub const FRAME_SIZE_MAX: usize = 1 << 16; // local and mirror
@@ -70,7 +69,7 @@ impl RecvEngine {
         match self {
             Self::Libpcap(w) => {
                 let _ = w.take();
-            }
+            },
             #[cfg(any(target_os = "linux", target_os = "android"))]
             _ => (),
         }
@@ -79,26 +78,26 @@ impl RecvEngine {
     pub unsafe fn recv(&mut self) -> Result<packet::Packet<'_>> {
         match self {
             #[cfg(any(target_os = "linux", target_os = "android"))]
-            Self::AfPacket(e) => match e.read() {
+            Self::AfPacket(e) => match unsafe { e.read() } {
                 Some(p) => Ok(p),
                 None => Err(Error::Timeout),
             },
             #[cfg(target_os = "linux")]
-            Self::Dpdk(d) => match d.read() {
+            Self::Dpdk(d) => match unsafe { d.read() } {
                 Ok(p) => Ok(p),
                 _ => Err(Error::Timeout),
             },
             #[cfg(target_os = "linux")]
-            Self::DpdkFromEbpf(d) => match d.read() {
+            Self::DpdkFromEbpf(d) => match unsafe { d.read() } {
                 Ok(p) => Ok(*p),
                 _ => Err(Error::Timeout),
             },
             Self::Libpcap(w) => w
                 .as_mut()
                 .ok_or(Error::LibpcapError(Self::LIBPCAP_NONE.to_string()))
-                .and_then(|e| e.read()),
+                .and_then(|e| unsafe { e.read() }),
             #[cfg(target_os = "linux")]
-            Self::VhostUser(v) => match v.read() {
+            Self::VhostUser(v) => match unsafe { v.read() } {
                 Ok(p) => Ok(p),
                 _ => Err(Error::Timeout),
             },

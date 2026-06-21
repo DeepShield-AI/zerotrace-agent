@@ -14,6 +14,23 @@
  * limitations under the License.
  */
 
+use crate::{
+    common::PROCESS_NAME,
+    config::K8S_CA_CRT_PATH,
+    error::{Error, Result},
+    exception::ExceptionHandler,
+    utils::process::get_process_num_by_name,
+};
+use bytesize::ByteSize;
+use fs2::{free_space, total_space};
+use log::{error, warn};
+use public::{
+    proto::agent::{AgentType, Exception, KubernetesWatchPolicy},
+    utils::net::{
+        LinkFlags, MacAddr, addr_list, get_mac_by_ip, get_route_src_ip_and_mac, is_global,
+        link_by_name, link_list,
+    },
+};
 use std::{
     cell::OnceCell,
     env::{self, VarError},
@@ -24,27 +41,7 @@ use std::{
     thread,
     time::Duration,
 };
-
-use bytesize::ByteSize;
-use fs2::{free_space, total_space};
-use log::{error, warn};
 use sysinfo::{DiskExt, System, SystemExt};
-
-use crate::{
-    common::PROCESS_NAME,
-    config::K8S_CA_CRT_PATH,
-    error::{Error, Result},
-    exception::ExceptionHandler,
-    utils::process::get_process_num_by_name,
-};
-
-use public::{
-    proto::agent::{AgentType, Exception, KubernetesWatchPolicy},
-    utils::net::{
-        addr_list, get_mac_by_ip, get_route_src_ip_and_mac, is_global, link_by_name, link_list,
-        LinkFlags, MacAddr,
-    },
-};
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod linux;
@@ -80,7 +77,7 @@ pub fn check(f: Checker) {
             Err(e) if !logged => {
                 warn!("{}", e);
                 logged = true;
-            }
+            },
             _ => (),
         }
         thread::sleep(Duration::from_secs(10));
@@ -168,18 +165,17 @@ pub fn trident_process_check(process_threshold: u32) {
     let process_num = get_process_num_by_name(PROCESS_NAME);
 
     match process_num {
-        Ok(num) => {
+        Ok(num) =>
             if num > process_threshold {
                 error!(
                     "the number of process exceeds the limit({} > {}), zerotrace-agent restart...",
                     num, process_threshold
                 );
                 crate::utils::clean_and_exit(-1);
-            }
-        }
+            },
         Err(e) => {
             warn!("{}", e);
-        }
+        },
     }
 }
 
@@ -196,9 +192,9 @@ pub fn is_tt_hyper_v(agent_type: AgentType) -> bool {
 }
 
 pub fn is_tt_pod(agent_type: AgentType) -> bool {
-    agent_type == AgentType::TtHostPod
-        || agent_type == AgentType::TtVmPod
-        || agent_type == AgentType::TtK8sSidecar
+    agent_type == AgentType::TtHostPod ||
+        agent_type == AgentType::TtVmPod ||
+        agent_type == AgentType::TtK8sSidecar
 }
 
 pub fn is_tt_process(agent_type: AgentType) -> bool {
@@ -214,17 +210,16 @@ pub fn get_k8s_local_node_ip() -> Option<IpAddr> {
         Ok(v) => match v.parse::<IpAddr>() {
             Ok(ip) => {
                 return Some(ip);
-            }
+            },
             Err(e) => warn!("parse K8S_NODE_IP_FOR_ZEROTRACE string to ip failed: {}", e),
         },
-        Err(e) => {
+        Err(e) =>
             if let VarError::NotUnicode(_) = &e {
                 warn!(
                     "parse K8S_NODE_IP_FOR_ZEROTRACE environment variable failed: {}",
                     e
                 );
-            }
-        }
+            },
     }
     None
 }
@@ -276,7 +271,9 @@ impl KubeWatchPolicy {
     pub fn from_env() -> Self {
         // ONLY_WATCH_K8S_RESOURCE no longer supported
         if env::var_os(ONLY_WATCH_K8S_RESOURCE).is_some() {
-            error!("Environment variable ONLY_WATCH_K8S_RESOURCE is not longer supported, use K8S_WATCH_POLICY=watch-only instead! zerotrace-agent restart...");
+            error!(
+                "Environment variable ONLY_WATCH_K8S_RESOURCE is not longer supported, use K8S_WATCH_POLICY=watch-only instead! zerotrace-agent restart..."
+            );
             thread::sleep(Duration::from_secs(60));
             crate::utils::clean_and_exit(-1);
             return KubeWatchPolicy::Normal;
@@ -317,7 +314,7 @@ pub fn get_mac_by_name(src_interface: String) -> u32 {
         Err(e) => {
             warn!("get_mac_by_name failed, {}", e);
             0
-        }
+        },
     }
 }
 
@@ -347,7 +344,7 @@ pub fn get_ctrl_ip_and_mac(dest: &IpAddr) -> Result<(IpAddr, MacAddr)> {
                     _ => {
                         warn!("ip {} in env {} invalid", s, K8S_POD_IP_FOR_ZEROTRACE);
                         None
-                    }
+                    },
                 })
                 .collect(),
             // B. 如果没有，遍历所有 IP
@@ -426,7 +423,10 @@ pub fn get_ctrl_ip_and_mac(dest: &IpAddr) -> Result<(IpAddr, MacAddr)> {
                     };
                     let tuple = get_route_src_ip_and_mac(&dest);
                     if tuple.is_err() {
-                        warn!("failed getting control ip and mac from {}, because: {:?}, wait 1 second", dest, tuple);
+                        warn!(
+                            "failed getting control ip and mac from {}, because: {:?}, wait 1 second",
+                            dest, tuple
+                        );
                         thread::sleep(Duration::from_secs(1));
                         // There are scenarios where multiple network cards use the same MAC address, so it is necessary to
                         // continue checking the other network cards.

@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fs;
-use std::io;
-use std::ops::Sub;
-
 use bincode::{Decode, Encode};
+use std::{fmt, fs, io, ops::Sub};
 
 #[derive(Debug, Default, Clone, Copy, Encode, Decode, PartialEq)]
 pub struct CpuTimes {
@@ -37,16 +33,16 @@ pub struct CpuTimes {
 
 impl CpuTimes {
     pub fn total(&self) -> u64 {
-        self.user
-            + self.nice
-            + self.system
-            + self.idle
-            + self.iowait
-            + self.irq
-            + self.softirq
-            + self.steal
-            + self.guest
-            + self.guest_nice
+        self.user +
+            self.nice +
+            self.system +
+            self.idle +
+            self.iowait +
+            self.irq +
+            self.softirq +
+            self.steal +
+            self.guest +
+            self.guest_nice
     }
 
     pub fn active(&self) -> u64 {
@@ -77,7 +73,10 @@ impl fmt::Display for CpuTimes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let total = self.total() as f64;
         if total == 0.0 {
-            return write!(f, "user=0.00% nice=0.00% system=0.00% idle=0.00% iowait=0.00% irq=0.00% softirq=0.00% steal=0.00% guest=0.00% guest_nice=0.00%");
+            return write!(
+                f,
+                "user=0.00% nice=0.00% system=0.00% idle=0.00% iowait=0.00% irq=0.00% softirq=0.00% steal=0.00% guest=0.00% guest_nice=0.00%"
+            );
         }
         let pct = |v: u64| v as f64 / total * 100.0;
         write!(
@@ -139,12 +138,27 @@ impl CpuState {
                 }
             } else {
                 match parts[0] {
-                    "ctxt" => if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() { context_switches = v; },
-                    "btime" => if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() { boot_time = v; },
-                    "processes" => if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() { processes = v; },
-                    "procs_running" => if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() { procs_running = v; },
-                    "procs_blocked" => if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() { procs_blocked = v; },
-                    _ => {}
+                    "ctxt" =>
+                        if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() {
+                            context_switches = v;
+                        },
+                    "btime" =>
+                        if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() {
+                            boot_time = v;
+                        },
+                    "processes" =>
+                        if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() {
+                            processes = v;
+                        },
+                    "procs_running" =>
+                        if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() {
+                            procs_running = v;
+                        },
+                    "procs_blocked" =>
+                        if let Ok(v) = parts.get(1).unwrap_or(&"0").parse() {
+                            procs_blocked = v;
+                        },
+                    _ => {},
                 }
             }
         }
@@ -242,8 +256,30 @@ softirq 50234534 2 10780769 26 784191 1209517 0 1498 12767672 0 24690859
 
     #[test]
     fn test_cpu_times_sub() {
-        let a = CpuTimes { user: 200, nice: 20, system: 100, idle: 1600, iowait: 40, irq: 10, softirq: 6, steal: 4, guest: 0, guest_nice: 0 };
-        let b = CpuTimes { user: 100, nice: 10, system: 50, idle: 800, iowait: 20, irq: 5, softirq: 3, steal: 2, guest: 0, guest_nice: 0 };
+        let a = CpuTimes {
+            user: 200,
+            nice: 20,
+            system: 100,
+            idle: 1600,
+            iowait: 40,
+            irq: 10,
+            softirq: 6,
+            steal: 4,
+            guest: 0,
+            guest_nice: 0,
+        };
+        let b = CpuTimes {
+            user: 100,
+            nice: 10,
+            system: 50,
+            idle: 800,
+            iowait: 20,
+            irq: 5,
+            softirq: 3,
+            steal: 2,
+            guest: 0,
+            guest_nice: 0,
+        };
         let delta = a - b;
         assert_eq!(delta.user, 100);
         assert_eq!(delta.idle, 800);

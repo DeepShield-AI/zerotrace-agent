@@ -28,7 +28,7 @@ mod platform_synchronizer;
 pub use platform_synchronizer::process_info_enabled;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub use platform_synchronizer::{
-    get_os_app_tag_by_exec, OsAppTag, ProcessData, ProcessDataOp, SocketSynchronizer,
+    OsAppTag, ProcessData, ProcessDataOp, SocketSynchronizer, get_os_app_tag_by_exec,
 };
 
 mod querier;

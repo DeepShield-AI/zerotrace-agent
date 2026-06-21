@@ -14,18 +14,6 @@
  * limitations under the License.
  */
 
-use std::{num::NonZeroUsize, str};
-
-use nom::{
-    bytes::complete::take,
-    number::complete::{be_i16, be_i32, be_i64, be_i8, be_u32, be_u8},
-    IResult,
-};
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::Serialize;
-
-use public::l7_protocol::LogMessageType;
-
 use crate::{
     common::{
         flow::{L7PerfStats, L7Protocol},
@@ -36,11 +24,20 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
-            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
             AppProtoHead, L7ResponseStatus,
+            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
         },
     },
 };
+use nom::{
+    IResult,
+    bytes::complete::take,
+    number::complete::{be_i8, be_i16, be_i32, be_i64, be_u8, be_u32},
+};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use public::l7_protocol::LogMessageType;
+use serde::Serialize;
+use std::{num::NonZeroUsize, str};
 
 /*
 These parameters can be determined from the framework code (Refer to the notes below)
@@ -89,19 +86,19 @@ impl From<ErrorCode> for L7ResponseStatus {
     fn from(value: ErrorCode) -> Self {
         match value {
             ErrorCode::ServerSuccess => L7ResponseStatus::Ok,
-            ErrorCode::AdapterNull
-            | ErrorCode::InvokeByInvalidEset
-            | ErrorCode::ClientDecodeErr => L7ResponseStatus::ClientError,
-            ErrorCode::ServerDecodeErr
-            | ErrorCode::ServerEncodeErr
-            | ErrorCode::ServerNoFuncErr
-            | ErrorCode::ServerNoServantErr
-            | ErrorCode::ServerResetGrid
-            | ErrorCode::ServerQueueTimeout
-            | ErrorCode::AsyncCallOrInvokeTimeout
-            | ErrorCode::ProxyConnectErr
-            | ErrorCode::ServerOverload
-            | ErrorCode::ServerUnknownErr => L7ResponseStatus::ServerError,
+            ErrorCode::AdapterNull |
+            ErrorCode::InvokeByInvalidEset |
+            ErrorCode::ClientDecodeErr => L7ResponseStatus::ClientError,
+            ErrorCode::ServerDecodeErr |
+            ErrorCode::ServerEncodeErr |
+            ErrorCode::ServerNoFuncErr |
+            ErrorCode::ServerNoServantErr |
+            ErrorCode::ServerResetGrid |
+            ErrorCode::ServerQueueTimeout |
+            ErrorCode::AsyncCallOrInvokeTimeout |
+            ErrorCode::ProxyConnectErr |
+            ErrorCode::ServerOverload |
+            ErrorCode::ServerUnknownErr => L7ResponseStatus::ServerError,
         }
     }
 }
@@ -197,19 +194,19 @@ impl<'a> Field<'a> {
             TYPE_INT8 => {
                 let (input, value) = be_i8(input)?;
                 Ok((input, Field::Integer(tag, value as i64)))
-            }
+            },
             TYPE_INT16 => {
                 let (input, value) = be_i16(input)?;
                 Ok((input, Field::Integer(tag, value as i64)))
-            }
+            },
             TYPE_INT32 => {
                 let (input, value) = be_i32(input)?;
                 Ok((input, Field::Integer(tag, value as i64)))
-            }
+            },
             TYPE_INT64 => {
                 let (input, value) = be_i64(input)?;
                 Ok((input, Field::Integer(tag, value as i64)))
-            }
+            },
             TYPE_STRING1 => {
                 let (input, value) = be_u8(input)?;
                 let (input, s) = take(value as usize)(input)?;
@@ -220,7 +217,7 @@ impl<'a> Field<'a> {
                         nom::error::ErrorKind::Verify,
                     ))),
                 }
-            }
+            },
             TYPE_STRING4 => {
                 let (input, value) = be_u32(input)?;
                 let (input, s) = take(value as usize)(input)?;
@@ -231,7 +228,7 @@ impl<'a> Field<'a> {
                         nom::error::ErrorKind::Verify,
                     ))),
                 }
-            }
+            },
             TYPE_ZERO => Ok((input, Field::Integer(tag, 0))),
             _ => Err(nom::Err::Failure(nom::error::Error::new(
                 b,
@@ -289,8 +286,8 @@ impl TarsInfo {
                 return Err(nom::Err::Failure(nom::error::Error::new(
                     payload,
                     nom::error::ErrorKind::Verify,
-                )))
-            }
+                )));
+            },
         };
 
         /*
@@ -372,7 +369,7 @@ impl TarsInfo {
                     info.req_method_name = Some(value.to_string());
                 }
                 info.endpoint = info.generate_endpoint();
-            }
+            },
             _ => {
                 info.msg_type = LogMessageType::Response;
                 info.resp_len = total_len;
@@ -390,7 +387,7 @@ impl TarsInfo {
                     assert_eq!(tag, 5);
                     info.ret = Some(ErrorCode::try_from(value as i32).unwrap_or_default());
                 }
-            }
+            },
         }
         Ok((input, info))
     }
@@ -404,13 +401,13 @@ impl TarsInfo {
                 self.req_len = other.req_len;
                 self.request_id = other.request_id;
                 self.captured_request_byte = other.captured_request_byte;
-            }
+            },
             LogMessageType::Response => {
                 self.resp_len = other.resp_len;
                 self.captured_response_byte = other.captured_response_byte;
                 self.ret = other.ret;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -420,14 +417,12 @@ impl TarsInfo {
                 .req_method_name
                 .as_ref()
                 .map(|p| t.request_type.is_on_blacklist(p))
-                .unwrap_or_default()
-                || self
-                    .req_service_name
+                .unwrap_or_default() ||
+                self.req_service_name
                     .as_ref()
                     .map(|p| t.request_resource.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .endpoint
+                    .unwrap_or_default() ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -461,7 +456,7 @@ impl L7ProtocolParserInterface for TarsLog {
                     proto: L7Protocol::Tars,
                     reason: format!("parser has error: {e:?}").into(),
                 });
-            }
+            },
         };
         if let Some(config) = param.parse_config {
             info.set_is_on_blacklist(config);
@@ -581,18 +576,15 @@ impl L7ProtocolInfoInterface for TarsInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, fmt::Write, fs, path::Path, rc::Rc};
-
-    use serde_json;
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use serde_json;
+    use std::{cell::RefCell, fmt::Write, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/tars";
 
@@ -652,15 +644,14 @@ mod tests {
                 match info {
                     L7ParseResult::Single(s) => {
                         let _ = write!(&mut output, "{}\n", serde_json::to_string(&s).unwrap());
-                    }
-                    L7ParseResult::Multi(m) => {
+                    },
+                    L7ParseResult::Multi(m) =>
                         for i in m {
                             let _ = write!(&mut output, "{}\n", serde_json::to_string(&i).unwrap());
-                        }
-                    }
+                        },
                     L7ParseResult::None => {
                         output.push_str("None\n");
-                    }
+                    },
                 }
             } else {
                 let _ = write!(

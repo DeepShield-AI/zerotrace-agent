@@ -14,43 +14,24 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, HashSet};
-use std::ffi::CString;
-use std::fmt;
-use std::mem;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::{
-    atomic::{AtomicBool, AtomicI64, Ordering},
-    Arc, Mutex, RwLock,
-};
-use std::thread;
-use std::time::Duration;
-
-use dns_lookup::lookup_host;
-use log::{error, info, warn};
-
 use super::{
-    error::{Error, Result},
-    recv_engine::{self, bpf, RecvEngine},
     BpfOptions, Options, PacketCounter, Pipeline,
+    error::{Error, Result},
+    recv_engine::{self, RecvEngine, bpf},
 };
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub use recv_engine::af_packet::{bpf::*, BpfSyntax};
-
-use special_recv_engine::Libpcap;
-
-use crate::config::handler::{CollectorAccess, DispatcherAccess, LogParserAccess};
 use crate::{
     common::{
+        CaptureNetworkTyper, DEFAULT_CONTROLLER_PORT, DEFAULT_INGESTER_PORT, ETH_HEADER_SIZE,
+        FIELD_OFFSET_ETH_TYPE, MetaPacket, TaggedFlow, VLAN_HEADER_SIZE, VLAN_ID_MASK,
         decapsulate::{TunnelInfo, TunnelType, TunnelTypeBitmap},
         endpoint::FeatureFlags,
         enums::{CaptureNetworkType, EthernetType},
         flow::L7Stats,
-        CaptureNetworkTyper, MetaPacket, TaggedFlow, DEFAULT_CONTROLLER_PORT,
-        DEFAULT_INGESTER_PORT, ETH_HEADER_SIZE, FIELD_OFFSET_ETH_TYPE, VLAN_HEADER_SIZE,
-        VLAN_ID_MASK,
     },
-    config::{handler::FlowAccess, DispatcherConfig},
+    config::{
+        DispatcherConfig,
+        handler::{CollectorAccess, DispatcherAccess, FlowAccess, LogParserAccess},
+    },
     exception::ExceptionHandler,
     flow_generator::AppProto,
     handler::PacketHandlerBuilder,
@@ -58,15 +39,31 @@ use crate::{
     rpc::get_timestamp,
     utils::{bytes::read_u16_be, stats::Collector},
 };
-
+use dns_lookup::lookup_host;
+use log::{error, info, warn};
 use public::{
+    LeakyBucket,
     buffer::BatchedBox,
     debug::QueueDebugger,
     packet::Packet,
     proto::agent::{Exception, IfMacSource, PacketCaptureType},
     queue::DebugSender,
-    utils::net::{self, get_route_src_ip, Link, MacAddr},
-    LeakyBucket,
+    utils::net::{self, Link, MacAddr, get_route_src_ip},
+};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub use recv_engine::af_packet::{BpfSyntax, bpf::*};
+use special_recv_engine::Libpcap;
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::CString,
+    fmt, mem,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::{
+        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicI64, Ordering},
+    },
+    thread,
+    time::Duration,
 };
 
 pub(super) struct BaseDispatcher {
@@ -149,10 +146,7 @@ impl BaseDispatcher {
         queue_hash: u8,
         npb_dedup_enabled: bool,
     ) {
-        meta_packet
-            .lookup_key
-            .feature_flag
-            .set(FeatureFlags::DEDUP, npb_dedup_enabled);
+        meta_packet.lookup_key.feature_flag.set(FeatureFlags::DEDUP, npb_dedup_enabled);
         meta_packet.lookup_key.tap_type = tap_type;
         meta_packet.reset_ttl = reset_ttl;
         meta_packet.queue_hash = queue_hash;
@@ -208,7 +202,7 @@ impl BaseDispatcher {
             Err(e) => {
                 warn!("get interfaces by name regex failed: {}", e);
                 vec![]
-            }
+            },
             Ok(links) => links,
         };
         #[cfg(any(target_os = "windows", target_os = "android"))]
@@ -216,7 +210,7 @@ impl BaseDispatcher {
             Err(e) => {
                 warn!("get interfaces by name regex failed: {}", e);
                 vec![]
-            }
+            },
             Ok(links) => links,
         };
         let options = self.is.options.lock().unwrap();
@@ -265,7 +259,7 @@ impl BaseDispatcher {
         counter: &PacketCounter,
         ntp_diff: &AtomicI64,
     ) -> Option<(Packet<'a>, Duration)> {
-        let packet = engine.recv();
+        let packet = unsafe { engine.recv() };
         if packet.is_err() {
             if let recv_engine::Error::Timeout = packet.unwrap_err() {
                 return None;
@@ -307,9 +301,7 @@ impl BaseDispatcher {
         }
 
         counter.rx_all.fetch_add(1, Ordering::Relaxed);
-        counter
-            .rx_all_bytes
-            .fetch_add(packet.capture_length as u64, Ordering::Relaxed);
+        counter.rx_all_bytes.fetch_add(packet.capture_length as u64, Ordering::Relaxed);
 
         Some((packet, timestamp))
     }
@@ -448,12 +440,7 @@ impl BaseDispatcher {
             BpfSyntax::RetConstant(RetConstant { val: 0 }),
         ];
 
-        self.is
-            .bpf_options
-            .lock()
-            .unwrap()
-            .bpf_syntax
-            .append(&mut syntax);
+        self.is.bpf_options.lock().unwrap().bpf_syntax.append(&mut syntax);
     }
 
     pub(super) fn init(&mut self) -> Result<()> {
@@ -465,14 +452,14 @@ impl BaseDispatcher {
                     }
                 }
                 Ok(())
-            }
+            },
             Err(e) => {
                 error!(
                     "dispatcher recv_engine init error: {}, zerotrace-agent restart...",
                     e
                 );
                 Err(e.into())
-            }
+            },
         }
     }
 
@@ -573,10 +560,7 @@ impl InternalState {
             );
         }
 
-        let if_indices = tap_interfaces
-            .iter()
-            .map(|i| i.if_index as i32)
-            .collect::<Vec<i32>>();
+        let if_indices = tap_interfaces.iter().map(|i| i.if_index as i32).collect::<Vec<i32>>();
         // When the configuration is changed, the zerotrace-agent will restart,
         // and the NIC configured in promiscuous mode will be retired
         if self.options.lock().unwrap().promisc && self.promisc_if_indices != if_indices {
@@ -620,14 +604,14 @@ impl CaptureNetworkTypeHandler {
         let mut eth_type = read_u16_be(&packet[FIELD_OFFSET_ETH_TYPE..]);
         let mut tap_type = self.default_tap_type;
         let mut l2_opt_size = 0;
-        let (outer_vlan_tag, inner_vlan_tag) = if eth_type == EthernetType::DOT1Q
-            && packet.len() >= ETH_HEADER_SIZE + VLAN_HEADER_SIZE
+        let (outer_vlan_tag, inner_vlan_tag) = if eth_type == EthernetType::DOT1Q &&
+            packet.len() >= ETH_HEADER_SIZE + VLAN_HEADER_SIZE
         {
             let vlan_tag = read_u16_be(&packet[ETH_HEADER_SIZE..]);
             l2_opt_size += VLAN_HEADER_SIZE;
             eth_type = read_u16_be(&packet[FIELD_OFFSET_ETH_TYPE + l2_opt_size..]);
-            if eth_type == EthernetType::DOT1Q
-                && packet.len() >= ETH_HEADER_SIZE + 2 * VLAN_HEADER_SIZE
+            if eth_type == EthernetType::DOT1Q &&
+                packet.len() >= ETH_HEADER_SIZE + 2 * VLAN_HEADER_SIZE
             {
                 l2_opt_size += VLAN_HEADER_SIZE;
                 eth_type = read_u16_be(&packet[FIELD_OFFSET_ETH_TYPE + l2_opt_size..]);
@@ -652,37 +636,33 @@ impl CaptureNetworkTypeHandler {
             } else {
                 match self.mirror_traffic_pcp {
                     Self::OUTER_VLAN => {
-                        if let Some(t) = self
-                            .tap_typer
-                            .get_tap_type_by_vlan(outer_vlan_tag & VLAN_ID_MASK)
+                        if let Some(t) =
+                            self.tap_typer.get_tap_type_by_vlan(outer_vlan_tag & VLAN_ID_MASK)
                         {
                             if t != CaptureNetworkType::Unknown {
                                 tap_type = t;
                             }
                         }
-                    }
+                    },
                     Self::INNER_VLAN => {
-                        if let Some(t) = self
-                            .tap_typer
-                            .get_tap_type_by_vlan(inner_vlan_tag & VLAN_ID_MASK)
+                        if let Some(t) =
+                            self.tap_typer.get_tap_type_by_vlan(inner_vlan_tag & VLAN_ID_MASK)
                         {
                             if t != CaptureNetworkType::Unknown {
                                 tap_type = t;
                             }
                         }
-                    }
-                    _ => {
+                    },
+                    _ =>
                         if (outer_vlan_tag >> 13) & 0x7 == self.mirror_traffic_pcp {
-                            if let Some(t) = self
-                                .tap_typer
-                                .get_tap_type_by_vlan(outer_vlan_tag & VLAN_ID_MASK)
+                            if let Some(t) =
+                                self.tap_typer.get_tap_type_by_vlan(outer_vlan_tag & VLAN_ID_MASK)
                             {
                                 if t != CaptureNetworkType::Unknown {
                                     tap_type = t;
                                 }
                             }
-                        }
-                    }
+                        },
                 };
             }
         }
@@ -784,12 +764,12 @@ impl BaseDispatcherListener {
     }
 
     fn on_bpf_change(&mut self, config: &DispatcherConfig) {
-        if self.capture_bpf == config.capture_bpf
-            && self.proxy_controller_ip == config.proxy_controller_ip
-            && self.proxy_controller_port == config.proxy_controller_port
-            && self.analyzer_ip == config.analyzer_ip
-            && self.analyzer_port == config.analyzer_port
-            && self.options.lock().unwrap().snap_len == config.capture_packet_size as usize
+        if self.capture_bpf == config.capture_bpf &&
+            self.proxy_controller_ip == config.proxy_controller_ip &&
+            self.proxy_controller_port == config.proxy_controller_port &&
+            self.analyzer_ip == config.analyzer_ip &&
+            self.analyzer_port == config.analyzer_port &&
+            self.options.lock().unwrap().snap_len == config.capture_packet_size as usize
         {
             return;
         }
@@ -848,8 +828,7 @@ impl BaseDispatcherListener {
     fn on_npb_dedup_change(&mut self, config: &DispatcherConfig) {
         if config.npb_dedup_enabled != self.npb_dedup_enabled.load(Ordering::Relaxed) {
             info!("Npb dedup change to {}", config.npb_dedup_enabled);
-            self.npb_dedup_enabled
-                .store(config.npb_dedup_enabled, Ordering::Relaxed)
+            self.npb_dedup_enabled.store(config.npb_dedup_enabled, Ordering::Relaxed)
         }
     }
 
@@ -891,7 +870,7 @@ impl BaseDispatcherListener {
                 _ => {
                     deleted.push(v.lock().unwrap().vm_mac);
                     false
-                }
+                },
             }
         });
         if !deleted.is_empty() {
@@ -908,8 +887,8 @@ impl BaseDispatcherListener {
 
         let mut added = Vec::new();
         for (i, key) in keys.iter().enumerate() {
-            if pipelines.contains_key(key)
-                && pipelines.get(key).unwrap().lock().unwrap().vm_mac == vm_macs[i]
+            if pipelines.contains_key(key) &&
+                pipelines.get(key).unwrap().lock().unwrap().vm_mac == vm_macs[i]
             {
                 // vm mac already checked
                 continue;
@@ -923,11 +902,8 @@ impl BaseDispatcherListener {
                 .iter()
                 .map(|b| b.build_with(self.id, *key, vm_mac))
                 .collect();
-            let bond_mac = self
-                .bond_group_map
-                .get(&(*key as u32))
-                .unwrap_or_else(|| &vm_mac)
-                .clone();
+            let bond_mac =
+                self.bond_group_map.get(&(*key as u32)).unwrap_or_else(|| &vm_mac).clone();
             pipelines.insert(
                 *key,
                 Arc::new(Mutex::new(Pipeline {

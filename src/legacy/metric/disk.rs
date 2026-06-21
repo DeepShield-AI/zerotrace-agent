@@ -14,11 +14,8 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::fs;
-use std::io;
-
 use bincode::{Decode, Encode};
+use std::{fmt, fs, io};
 
 /// Disk I/O statistics from /proc/diskstats
 /// See: https://www.kernel.org/doc/Documentation/ABI/testing/procfs-diskstats

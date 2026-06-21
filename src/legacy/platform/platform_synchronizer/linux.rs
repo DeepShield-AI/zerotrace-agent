@@ -14,18 +14,10 @@
  * limitations under the License.
  */
 
-use std::{
-    net::{IpAddr, SocketAddr, SocketAddrV4},
-    sync::{Arc, Condvar, Mutex, RwLock as SysRwLock},
-    thread,
-    time::Duration,
+use super::{
+    linux_socket::{Role, SockAddrData, get_all_socket},
+    process_info_enabled,
 };
-
-use arc_swap::access::Access;
-use log::{debug, error, info, warn};
-use parking_lot::RwLock;
-use tokio::runtime::Runtime;
-
 use crate::{
     common::policy::GpidEntry,
     config::handler::PlatformAccess,
@@ -35,15 +27,20 @@ use crate::{
     trident::AgentId,
     utils::{lru::Lru, process::ProcessListener},
 };
+use arc_swap::access::Access;
+use log::{debug, error, info, warn};
+use parking_lot::RwLock;
 use public::{
     proto::agent::{GpidSyncRequest, GpidSyncResponse},
     queue::Receiver,
 };
-
-use super::{
-    linux_socket::{get_all_socket, Role, SockAddrData},
-    process_info_enabled,
+use std::{
+    net::{IpAddr, SocketAddr, SocketAddrV4},
+    sync::{Arc, Condvar, Mutex, RwLock as SysRwLock},
+    thread,
+    time::Duration,
 };
+use tokio::runtime::Runtime;
 
 pub struct SocketSynchronizer {
     runtime: Arc<Runtime>,
@@ -133,8 +130,7 @@ impl SocketSynchronizer {
             return;
         }
 
-        self.process_listener
-            .register("proc.socket_list", Self::set_socket_pids);
+        self.process_listener.register("proc.socket_list", Self::set_socket_pids);
 
         let (
             runtime,
@@ -233,7 +229,7 @@ impl SocketSynchronizer {
                         return;
                     }
                     continue;
-                }
+                },
                 Ok(mut res) => {
                     // fill toa
                     let mut lru_toa = lru_toa_info.lock().unwrap();
@@ -241,9 +237,8 @@ impl SocketSynchronizer {
                         if se.role == Role::Server {
                             // the client addr
                             let sa = match se.remote.ip {
-                                IpAddr::V4(v4) => {
-                                    SocketAddr::V4(SocketAddrV4::new(v4.clone(), se.remote.port))
-                                }
+                                IpAddr::V4(v4) =>
+                                    SocketAddr::V4(SocketAddrV4::new(v4.clone(), se.remote.port)),
                                 _ => continue,
                             };
                             // get real addr by client addr from toa
@@ -257,7 +252,7 @@ impl SocketSynchronizer {
                         }
                     }
                     res
-                }
+                },
             };
 
             match runtime.block_on(
@@ -297,7 +292,7 @@ impl SocketSynchronizer {
                         policy_setter.update_gpids(&current_entries);
                         last_entries = current_entries
                     }
-                }
+                },
             }
 
             if !Self::wait_for_running(&running, &stop_notify, sync_interval) {

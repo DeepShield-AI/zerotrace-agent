@@ -25,13 +25,7 @@
 use md5::{Digest, Md5};
 
 pub fn jenkins64(mut hash: u64) -> u64 {
-    hash = hash
-        .overflowing_shl(21)
-        .0
-        .overflowing_sub(hash)
-        .0
-        .overflowing_sub(1)
-        .0;
+    hash = hash.overflowing_shl(21).0.overflowing_sub(hash).0.overflowing_sub(1).0;
     hash = hash ^ hash.overflowing_shr(24).0;
     hash = hash
         .overflowing_add(hash.overflowing_shl(3).0)

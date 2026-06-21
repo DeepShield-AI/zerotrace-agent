@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-use serde::Serialize;
-
-use public::l7_protocol::LogMessageType;
-
 use crate::{
     common::{
         flow::{L7PerfStats, L7Protocol, PacketDirection},
@@ -28,15 +24,18 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
+            AppProtoHead, L7ResponseStatus,
             pb_adapter::{ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response},
-            set_captured_byte, swap_if, value_is_default, AppProtoHead, L7ResponseStatus,
+            set_captured_byte, swap_if, value_is_default,
         },
     },
 };
 use l7::some_ip::{
-    SomeIpHeader, E_OK, E_UNKNOWN_METHOD, E_UNKNOWN_SERVICE, E_WRONG_INTERFACE_VERSION,
-    E_WRONG_MESSAGE_TYPE, E_WRONG_PROTOCOL_VERSION,
+    E_OK, E_UNKNOWN_METHOD, E_UNKNOWN_SERVICE, E_WRONG_INTERFACE_VERSION, E_WRONG_MESSAGE_TYPE,
+    E_WRONG_PROTOCOL_VERSION, SomeIpHeader,
 };
+use public::l7_protocol::LogMessageType;
+use serde::Serialize;
 
 #[derive(Serialize, Debug, Default, Clone)]
 pub struct SomeIpInfo {
@@ -243,11 +242,11 @@ impl SomeIpLog {
     fn set_status(&mut self, status_code: u8, info: &mut SomeIpInfo) {
         info.resp_status = match status_code {
             E_OK => L7ResponseStatus::Ok,
-            E_UNKNOWN_SERVICE
-            | E_UNKNOWN_METHOD
-            | E_WRONG_PROTOCOL_VERSION
-            | E_WRONG_INTERFACE_VERSION
-            | E_WRONG_MESSAGE_TYPE => L7ResponseStatus::ClientError,
+            E_UNKNOWN_SERVICE |
+            E_UNKNOWN_METHOD |
+            E_WRONG_PROTOCOL_VERSION |
+            E_WRONG_INTERFACE_VERSION |
+            E_WRONG_MESSAGE_TYPE => L7ResponseStatus::ClientError,
             _ => L7ResponseStatus::ServerError,
         }
     }
@@ -277,10 +276,10 @@ impl SomeIpLog {
         match direction {
             PacketDirection::ClientToServer => {
                 self.request(&header, info);
-            }
+            },
             PacketDirection::ServerToClient => {
                 self.response(&header, info);
-            }
+            },
         }
         Ok(())
     }
@@ -288,22 +287,19 @@ impl SomeIpLog {
 
 #[cfg(test)]
 mod tests {
-    use serde_json;
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::SomeIpLog;
     use crate::{
         common::{
+            MetaPacket,
             flow::PacketDirection,
             l7_protocol_log::{L7ParseResult, L7PerfCache, L7ProtocolParserInterface, ParseParam},
-            MetaPacket,
         },
         config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use serde_json;
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/some_ip";
 
@@ -362,8 +358,8 @@ mod tests {
                             format!(" check: {:?}", some_ip.check_payload(payload, param)).as_str(),
                         );
                         output.push_str("\n");
-                    }
-                    L7ParseResult::Multi(m) => {
+                    },
+                    L7ParseResult::Multi(m) =>
                         for i in m {
                             output.push_str(&serde_json::to_string(&i).unwrap());
                             output.push_str(
@@ -371,11 +367,10 @@ mod tests {
                                     .as_str(),
                             );
                             output.push_str("\n");
-                        }
-                    }
+                        },
                     L7ParseResult::None => {
                         output.push_str("None\n");
-                    }
+                    },
                 }
             } else {
                 output.push_str(&format!("{:?}\n", SomeIpLog::default()));

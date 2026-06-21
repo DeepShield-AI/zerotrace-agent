@@ -14,45 +14,42 @@
  * limitations under the License.
  */
 
-use std::{
-    fmt,
-    sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-        Arc, Mutex,
-    },
-    thread,
-    thread::JoinHandle,
-    time::Duration,
-};
-
-use arc_swap::access::Access;
-use log::{debug, info};
-use serde::Serialize;
-
 use super::{AppProtoHead, AppProtoLogsBaseInfo, BoxAppProtoLogsData};
-
 use crate::{
     common::{
+        MetaPacket, TaggedFlow, Timestamp,
         ebpf::EbpfType,
         flow::{L7Protocol, PacketDirection, SignalSource},
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         meta_packet::ProtocolData,
-        MetaPacket, TaggedFlow, Timestamp,
     },
     config::handler::{LogParserAccess, LogParserConfig},
     flow_generator::{
-        error::Result, protocol_logs::L7ResponseStatus, FLOW_METRICS_PEER_DST,
-        FLOW_METRICS_PEER_SRC,
+        FLOW_METRICS_PEER_DST, FLOW_METRICS_PEER_SRC, error::Result,
+        protocol_logs::L7ResponseStatus,
     },
     rpc::get_timestamp,
     utils::stats::{Counter, CounterType, CounterValue, RefCountable},
 };
+use arc_swap::access::Access;
+use log::{debug, info};
 use public::{
     chrono_map::ChronoMap,
     l7_protocol::LogMessageType,
     queue::{self, DebugSender, Receiver},
     throttle::Throttle,
     utils::net::MacAddr,
+};
+use serde::Serialize;
+use std::{
+    fmt,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread,
+    thread::JoinHandle,
+    time::Duration,
 };
 
 const QUEUE_BATCH_SIZE: usize = 1024;
@@ -144,20 +141,20 @@ impl MetaAppProto {
             let process_name =
                 public::utils::string::get_string_from_chars(&meta_packet.process_kname);
             match (is_src, meta_packet.lookup_key.direction) {
-                (true, PacketDirection::ClientToServer)
-                | (false, PacketDirection::ServerToClient) => {
+                (true, PacketDirection::ClientToServer) |
+                (false, PacketDirection::ServerToClient) => {
                     base_info.process_id_0 = meta_packet.process_id;
                     base_info.process_kname_0 = process_name;
                     base_info.syscall_coroutine_0 = meta_packet.coroutine_id;
                     base_info.pod_id_0 = meta_packet.pod_id;
-                }
-                (false, PacketDirection::ClientToServer)
-                | (true, PacketDirection::ServerToClient) => {
+                },
+                (false, PacketDirection::ClientToServer) |
+                (true, PacketDirection::ServerToClient) => {
                     base_info.process_id_1 = meta_packet.process_id;
                     base_info.process_kname_1 = process_name;
                     base_info.syscall_coroutine_1 = meta_packet.coroutine_id;
                     base_info.pod_id_1 = meta_packet.pod_id;
-                }
+                },
             }
         }
 
@@ -249,10 +246,7 @@ impl MetaAppProto {
     }
 
     fn calc_key(&self) -> u128 {
-        let mut cap_seq = self
-            .base_info
-            .syscall_cap_seq_0
-            .max(self.base_info.syscall_cap_seq_1);
+        let mut cap_seq = self.base_info.syscall_cap_seq_0.max(self.base_info.syscall_cap_seq_1);
         if self.base_info.head.msg_type == LogMessageType::Request {
             cap_seq += 1;
         }
@@ -356,10 +350,7 @@ impl ThrottleSender {
         if data.l7_info.skip_send() || data.l7_info.is_on_blacklist() {
             return;
         }
-        if !self
-            .throttle
-            .send(BoxAppProtoLogsData::new(data, override_resp_status))
-        {
+        if !self.throttle.send(BoxAppProtoLogsData::new(data, override_resp_status)) {
             self.counter.throttle_drop.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -430,8 +421,8 @@ impl SessionQueue {
         }
         self.counter.receive.fetch_add(1, Ordering::Relaxed);
 
-        if !item.l7_info.needs_session_aggregation()
-            || matches!(item.base_info.head.msg_type, LogMessageType::Session)
+        if !item.l7_info.needs_session_aggregation() ||
+            matches!(item.base_info.head.msg_type, LogMessageType::Session)
         {
             if item.base_info.start_time.is_zero() {
                 item.base_info.start_time = item.base_info.end_time;
@@ -446,9 +437,7 @@ impl SessionQueue {
         let timeout_time =
             item.base_info.start_time + config.get_l7_timeout(item.base_info.head.proto);
         if timeout_time <= self.window_start {
-            self.counter
-                .send_before_window
-                .fetch_add(1, Ordering::Relaxed);
+            self.counter.send_before_window.fetch_add(1, Ordering::Relaxed);
             debug!(
                 "l7 log {:?} time {:?} timeout {:?} sent before aggregate start time {:?}",
                 item.base_info.head.proto,
@@ -470,8 +459,7 @@ impl SessionQueue {
                         v.l7_info.get_request_resource_length() as u64,
                         Ordering::Relaxed,
                     );
-                    self.throttle_sender
-                        .send(self.entries.remove(&key).unwrap(), None);
+                    self.throttle_sender.send(self.entries.remove(&key).unwrap(), None);
                 }
             } else {
                 match item.base_info.head.msg_type {
@@ -488,13 +476,12 @@ impl SessionQueue {
                             Ordering::Relaxed,
                         );
                         self.counter.merge.fetch_add(1, Ordering::Relaxed);
-                        self.throttle_sender
-                            .send(self.entries.remove(&key).unwrap(), None);
-                    }
+                        self.throttle_sender.send(self.entries.remove(&key).unwrap(), None);
+                    },
                     // If the order is out of order and there is a response, it can be matched as a session, and the aggregated response is sent
                     LogMessageType::Request
-                        if v.is_response()
-                            && v.base_info.start_time > item.base_info.start_time =>
+                        if v.is_response() &&
+                            v.base_info.start_time > item.base_info.start_time =>
                     {
                         // if can not merge, send req and resp directly.
                         self.counter.cached_request_resource.fetch_sub(
@@ -508,7 +495,7 @@ impl SessionQueue {
                         self.counter.cached.fetch_sub(1, Ordering::Relaxed);
                         self.counter.merge.fetch_add(1, Ordering::Relaxed);
                         self.throttle_sender.send(item, None);
-                    }
+                    },
                     // if entry and item cannot merge, send the early one and cache the other
                     _ => {
                         if v.base_info.start_time > item.base_info.start_time {
@@ -519,15 +506,14 @@ impl SessionQueue {
                                 v.l7_info.get_request_resource_length() as u64,
                                 Ordering::Relaxed,
                             );
-                            self.throttle_sender
-                                .send(self.entries.remove(&key).unwrap(), None);
+                            self.throttle_sender.send(self.entries.remove(&key).unwrap(), None);
                             self.counter.cached_request_resource.fetch_add(
                                 item.l7_info.get_request_resource_length() as u64,
                                 Ordering::Relaxed,
                             );
                             self.entries.insert(timeout_time, key, item);
                         }
-                    }
+                    },
                 }
             }
             return;
@@ -568,9 +554,7 @@ impl SessionQueue {
         }
         self.throttle_sender.throttle.flush();
         self.counter.cached.store(0, Ordering::Relaxed);
-        self.counter
-            .cached_request_resource
-            .store(0, Ordering::Relaxed);
+        self.counter.cached_request_resource.store(0, Ordering::Relaxed);
         // shrink
         self.entries.shrink_to(self.max_entries, self.max_timelines);
     }
@@ -583,8 +567,7 @@ impl SessionQueue {
                 Ordering::Relaxed,
             );
 
-            self.throttle_sender
-                .send(item.clone(), Some(L7ResponseStatus::Timeout));
+            self.throttle_sender.send(item.clone(), Some(L7ResponseStatus::Timeout));
             None
         });
         self.throttle_sender.throttle.flush();
@@ -654,7 +637,7 @@ impl SessionAggregator {
                     let result = input_queue.recv_all(&mut batch_buffer, Some(RCV_TIMEOUT));
                     let config = config.load();
                     match result {
-                        Ok(_) => {
+                        Ok(_) =>
                             for app_proto in batch_buffer.drain(..) {
                                 match app_proto {
                                     AppProto::MetaAppProto(ref m) => match batch_time {
@@ -664,8 +647,7 @@ impl SessionAggregator {
                                     _ => (),
                                 }
                                 session_queue.aggregate_session_and_send(&config, app_proto);
-                            }
-                        }
+                            },
                         Err(queue::Error::Timeout) => (),
                         Err(queue::Error::Terminated(..)) => break,
                         Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
@@ -675,7 +657,7 @@ impl SessionAggregator {
                         Some(time) => {
                             lag_second = now.as_secs() as i64 - time.as_secs() as i64;
                             time
-                        }
+                        },
                         None => {
                             // no valid batch time from app proto, use current time with estimated lag
                             if lag_second > 0 {
@@ -683,11 +665,11 @@ impl SessionAggregator {
                             } else {
                                 now + Duration::from_secs((-lag_second) as u64)
                             }
-                        }
+                        },
                     };
                     session_queue.flush_till(flush_timestamp);
-                    if config.l7_log_session_aggr_max_timeout.as_secs() as usize
-                        != session_queue.max_timelines
+                    if config.l7_log_session_aggr_max_timeout.as_secs() as usize !=
+                        session_queue.max_timelines
                     {
                         session_queue.max_timelines =
                             config.l7_log_session_aggr_max_timeout.as_secs() as usize;
@@ -696,8 +678,8 @@ impl SessionAggregator {
                         session_queue.max_entries = config.l7_log_session_aggr_max_entries;
                         session_queue.flush();
                     }
-                    if config.l7_log_collect_nps_threshold
-                        != session_queue.l7_log_collect_nps_threshold
+                    if config.l7_log_collect_nps_threshold !=
+                        session_queue.l7_log_collect_nps_threshold
                     {
                         info!(
                             "update l7_log_collect_nps_threshold from {} to {}",

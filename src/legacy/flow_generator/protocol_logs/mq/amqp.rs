@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-use std::{mem, str};
-
 use serde::Serialize;
-use serde_json::{value::Value, Map, Number};
+use serde_json::{Map, Number, value::Value};
+use std::{mem, str};
 
 const AMQPHEADER: &[u8] = b"AMQP\x00\x00\x09\x01";
 const AMQPVERSION: &[u8] = b"v0.9.1";
@@ -34,15 +33,14 @@ use crate::{
     flow_generator::{
         error::Result,
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             decode_base64_to_string,
             pb_adapter::{L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
-            set_captured_byte, value_is_default, AppProtoHead, L7ResponseStatus, PrioFields,
-            BASE_FIELD_PRIORITY,
+            set_captured_byte, value_is_default,
         },
     },
     utils::bytes::{read_u16_be, read_u32_be, read_u64_be},
 };
-
 use public::l7_protocol::LogMessageType;
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, num_enum::FromPrimitive)]
@@ -75,9 +73,8 @@ impl From<ReplyCode> for L7ResponseStatus {
     fn from(code: ReplyCode) -> Self {
         match code {
             ReplyCode::Success => Self::Ok,
-            ReplyCode::ConnectionForced | ReplyCode::ResourceError | ReplyCode::InternalError => {
-                Self::ServerError
-            }
+            ReplyCode::ConnectionForced | ReplyCode::ResourceError | ReplyCode::InternalError =>
+                Self::ServerError,
             _ => Self::ClientError,
         }
     }
@@ -430,13 +427,13 @@ fn read_field_value(payload: &[u8]) -> Option<(&[u8], Value)> {
         b's' => {
             let (payload_tmp, s) = read_short_str(payload.get(1..)?)?;
             (payload_tmp, Value::String(slice_to_string(s)))
-        }
+        },
         // longstr
         b'S' => {
             let size = read_u32_be(payload.get(1..5)?) as usize;
             let s = String::from_utf8_lossy(payload.get(5..5 + size)?).to_string();
             (payload.get(5 + size..)?, Value::String(s))
-        }
+        },
         // field array
         b'A' => {
             let size = read_u32_be(payload.get(1..5)?) as usize;
@@ -448,7 +445,7 @@ fn read_field_value(payload: &[u8]) -> Option<(&[u8], Value)> {
                 vec.push(value);
             }
             (payload, Value::Array(vec))
-        }
+        },
         // timestamp
         b'T' => (
             payload.get(9..)?,
@@ -479,16 +476,10 @@ fn read_table(payload: &[u8]) -> Option<(&[u8], Value)> {
 
 impl AmqpInfo {
     fn generate_endpoint(&self) -> Option<String> {
-        let (exchange, exchange_len) = self
-            .exchange
-            .as_ref()
-            .map(|r| (r.as_str(), r.len()))
-            .unwrap_or(("", 0));
-        let (routing_key, routing_key_len) = self
-            .routing_key
-            .as_ref()
-            .map(|r| (r.as_str(), r.len()))
-            .unwrap_or(("", 0));
+        let (exchange, exchange_len) =
+            self.exchange.as_ref().map(|r| (r.as_str(), r.len())).unwrap_or(("", 0));
+        let (routing_key, routing_key_len) =
+            self.routing_key.as_ref().map(|r| (r.as_str(), r.len())).unwrap_or(("", 0));
         if exchange_len + routing_key_len == 0 {
             return self.queue.clone();
         }
@@ -513,77 +504,77 @@ impl AmqpInfo {
             return LogMessageType::Session;
         }
         match self.frame_type {
-            FrameType::Method => {}
+            FrameType::Method => {},
             FrameType::Header => return LogMessageType::Session,
             FrameType::Body => return LogMessageType::Session,
             FrameType::Heartbeat => return LogMessageType::Session,
             FrameType::Unknown => return LogMessageType::Other,
         }
         match (self.class_id, self.method_id) {
-            (ClassType::Connection, MethodType::Blocked)
-            | (ClassType::Connection, MethodType::Unblocked)
-            | (ClassType::Basic, MethodType::Publish)
-            | (ClassType::Basic, MethodType::Return)
-            | (ClassType::Basic, MethodType::Deliver)
-            | (ClassType::Basic, MethodType::Ack)
-            | (ClassType::Basic, MethodType::Reject)
-            | (ClassType::Basic, MethodType::RecoverAsync)
-            | (ClassType::Basic, MethodType::Nack) => LogMessageType::Session,
-            (ClassType::Connection, MethodType::Start)
-            | (ClassType::Connection, MethodType::Secure)
-            | (ClassType::Connection, MethodType::Tune)
-            | (ClassType::Connection, MethodType::Open)
-            | (ClassType::Connection, MethodType::Close)
-            | (ClassType::Connection, MethodType::UpdateSecret)
-            | (ClassType::Channel, MethodType::Open)
-            | (ClassType::Channel, MethodType::Flow)
-            | (ClassType::Channel, MethodType::Close)
-            | (ClassType::Exchange, MethodType::Declare)
-            | (ClassType::Exchange, MethodType::Delete)
-            | (ClassType::Exchange, MethodType::Bind)
-            | (ClassType::Exchange, MethodType::Unbind)
-            | (ClassType::Queue, MethodType::Declare)
-            | (ClassType::Queue, MethodType::Bind)
-            | (ClassType::Queue, MethodType::Purge)
-            | (ClassType::Queue, MethodType::Delete)
-            | (ClassType::Queue, MethodType::Unbind)
-            | (ClassType::Basic, MethodType::Qos)
-            | (ClassType::Basic, MethodType::Consume)
-            | (ClassType::Basic, MethodType::Cancel)
-            | (ClassType::Basic, MethodType::Get)
-            | (ClassType::Basic, MethodType::Recover)
-            | (ClassType::Tx, MethodType::Select)
-            | (ClassType::Tx, MethodType::Commit)
-            | (ClassType::Tx, MethodType::Rollback)
-            | (ClassType::Confirm, MethodType::Select) => LogMessageType::Request,
-            (ClassType::Connection, MethodType::StartOk)
-            | (ClassType::Connection, MethodType::SecureOk)
-            | (ClassType::Connection, MethodType::TuneOk)
-            | (ClassType::Connection, MethodType::OpenOk)
-            | (ClassType::Connection, MethodType::CloseOk)
-            | (ClassType::Connection, MethodType::UpdateSecretOk)
-            | (ClassType::Channel, MethodType::OpenOk)
-            | (ClassType::Channel, MethodType::FlowOk)
-            | (ClassType::Channel, MethodType::CloseOk)
-            | (ClassType::Exchange, MethodType::DeclareOk)
-            | (ClassType::Exchange, MethodType::DeleteOk)
-            | (ClassType::Exchange, MethodType::BindOk)
-            | (ClassType::Exchange, MethodType::UnbindOk)
-            | (ClassType::Queue, MethodType::DeclareOk)
-            | (ClassType::Queue, MethodType::BindOk)
-            | (ClassType::Queue, MethodType::PurgeOk)
-            | (ClassType::Queue, MethodType::DeleteOk)
-            | (ClassType::Queue, MethodType::UnbindOk)
-            | (ClassType::Basic, MethodType::QosOk)
-            | (ClassType::Basic, MethodType::ConsumeOk)
-            | (ClassType::Basic, MethodType::CancelOk)
-            | (ClassType::Basic, MethodType::GetOk)
-            | (ClassType::Basic, MethodType::GetEmpty)
-            | (ClassType::Basic, MethodType::RecoverOk)
-            | (ClassType::Tx, MethodType::SelectOk)
-            | (ClassType::Tx, MethodType::CommitOk)
-            | (ClassType::Tx, MethodType::RollbackOk)
-            | (ClassType::Confirm, MethodType::SelectOk) => LogMessageType::Response,
+            (ClassType::Connection, MethodType::Blocked) |
+            (ClassType::Connection, MethodType::Unblocked) |
+            (ClassType::Basic, MethodType::Publish) |
+            (ClassType::Basic, MethodType::Return) |
+            (ClassType::Basic, MethodType::Deliver) |
+            (ClassType::Basic, MethodType::Ack) |
+            (ClassType::Basic, MethodType::Reject) |
+            (ClassType::Basic, MethodType::RecoverAsync) |
+            (ClassType::Basic, MethodType::Nack) => LogMessageType::Session,
+            (ClassType::Connection, MethodType::Start) |
+            (ClassType::Connection, MethodType::Secure) |
+            (ClassType::Connection, MethodType::Tune) |
+            (ClassType::Connection, MethodType::Open) |
+            (ClassType::Connection, MethodType::Close) |
+            (ClassType::Connection, MethodType::UpdateSecret) |
+            (ClassType::Channel, MethodType::Open) |
+            (ClassType::Channel, MethodType::Flow) |
+            (ClassType::Channel, MethodType::Close) |
+            (ClassType::Exchange, MethodType::Declare) |
+            (ClassType::Exchange, MethodType::Delete) |
+            (ClassType::Exchange, MethodType::Bind) |
+            (ClassType::Exchange, MethodType::Unbind) |
+            (ClassType::Queue, MethodType::Declare) |
+            (ClassType::Queue, MethodType::Bind) |
+            (ClassType::Queue, MethodType::Purge) |
+            (ClassType::Queue, MethodType::Delete) |
+            (ClassType::Queue, MethodType::Unbind) |
+            (ClassType::Basic, MethodType::Qos) |
+            (ClassType::Basic, MethodType::Consume) |
+            (ClassType::Basic, MethodType::Cancel) |
+            (ClassType::Basic, MethodType::Get) |
+            (ClassType::Basic, MethodType::Recover) |
+            (ClassType::Tx, MethodType::Select) |
+            (ClassType::Tx, MethodType::Commit) |
+            (ClassType::Tx, MethodType::Rollback) |
+            (ClassType::Confirm, MethodType::Select) => LogMessageType::Request,
+            (ClassType::Connection, MethodType::StartOk) |
+            (ClassType::Connection, MethodType::SecureOk) |
+            (ClassType::Connection, MethodType::TuneOk) |
+            (ClassType::Connection, MethodType::OpenOk) |
+            (ClassType::Connection, MethodType::CloseOk) |
+            (ClassType::Connection, MethodType::UpdateSecretOk) |
+            (ClassType::Channel, MethodType::OpenOk) |
+            (ClassType::Channel, MethodType::FlowOk) |
+            (ClassType::Channel, MethodType::CloseOk) |
+            (ClassType::Exchange, MethodType::DeclareOk) |
+            (ClassType::Exchange, MethodType::DeleteOk) |
+            (ClassType::Exchange, MethodType::BindOk) |
+            (ClassType::Exchange, MethodType::UnbindOk) |
+            (ClassType::Queue, MethodType::DeclareOk) |
+            (ClassType::Queue, MethodType::BindOk) |
+            (ClassType::Queue, MethodType::PurgeOk) |
+            (ClassType::Queue, MethodType::DeleteOk) |
+            (ClassType::Queue, MethodType::UnbindOk) |
+            (ClassType::Basic, MethodType::QosOk) |
+            (ClassType::Basic, MethodType::ConsumeOk) |
+            (ClassType::Basic, MethodType::CancelOk) |
+            (ClassType::Basic, MethodType::GetOk) |
+            (ClassType::Basic, MethodType::GetEmpty) |
+            (ClassType::Basic, MethodType::RecoverOk) |
+            (ClassType::Tx, MethodType::SelectOk) |
+            (ClassType::Tx, MethodType::CommitOk) |
+            (ClassType::Tx, MethodType::RollbackOk) |
+            (ClassType::Confirm, MethodType::SelectOk) => LogMessageType::Response,
             _ => LogMessageType::Other,
         }
     }
@@ -658,21 +649,21 @@ impl AmqpInfo {
     fn parse_queue(&self, arguments: &[u8]) -> Option<String> {
         let queue = match (self.class_id, self.method_id) {
             // [reserved: short] [queue: shortstr]
-            (ClassType::Queue, MethodType::Declare)
-            | (ClassType::Queue, MethodType::Bind)
-            | (ClassType::Queue, MethodType::Unbind)
-            | (ClassType::Queue, MethodType::Purge)
-            | (ClassType::Queue, MethodType::Delete)
-            | (ClassType::Basic, MethodType::Consume)
-            | (ClassType::Basic, MethodType::Get) => {
+            (ClassType::Queue, MethodType::Declare) |
+            (ClassType::Queue, MethodType::Bind) |
+            (ClassType::Queue, MethodType::Unbind) |
+            (ClassType::Queue, MethodType::Purge) |
+            (ClassType::Queue, MethodType::Delete) |
+            (ClassType::Basic, MethodType::Consume) |
+            (ClassType::Basic, MethodType::Get) => {
                 let (_arguments, queue) = read_short_str(arguments.get(2..)?)?;
                 queue
-            }
+            },
             // [queue: shortstr]
             (ClassType::Queue, MethodType::DeclareOk) => {
                 let (_arguments, queue) = read_short_str(arguments)?;
                 queue
-            }
+            },
             _ => return None,
         };
         Some(slice_to_string(queue))
@@ -681,35 +672,35 @@ impl AmqpInfo {
     fn parse_exchange(&self, arguments: &[u8]) -> Option<String> {
         let exchange = match (self.class_id, self.method_id) {
             // [reserved: short] [exchange: shortstr]
-            (ClassType::Exchange, MethodType::Declare)
-            | (ClassType::Exchange, MethodType::Delete)
-            | (ClassType::Basic, MethodType::Publish) => {
+            (ClassType::Exchange, MethodType::Declare) |
+            (ClassType::Exchange, MethodType::Delete) |
+            (ClassType::Basic, MethodType::Publish) => {
                 let (_arguments, exchange) = read_short_str(arguments.get(2..)?)?;
                 exchange
-            }
+            },
             // [reserved: short] [queue: shortstr] [exchange: shortstr]
             (ClassType::Queue, MethodType::Bind) | (ClassType::Queue, MethodType::Unbind) => {
                 let (arguments, _queue) = read_short_str(arguments.get(2..)?)?;
                 let (_arguments, exchange) = read_short_str(arguments)?;
                 exchange
-            }
+            },
             // [reply-code: short] [reply-text: shortstr] [exchange: shortstr]
             (ClassType::Basic, MethodType::Return) => {
                 let (arguments, _reply_text) = read_short_str(arguments.get(2..)?)?;
                 let (_arguments, exchange) = read_short_str(arguments)?;
                 exchange
-            }
+            },
             // [consumer-tag: shortstr] [delivery-tag: long long] [redelivered: bool] [exchange: shortstr]
             (ClassType::Basic, MethodType::Deliver) => {
                 let (arguments, _consumer_tag) = read_short_str(arguments)?;
                 let (_arguments, exchange) = read_short_str(arguments.get(9..)?)?;
                 exchange
-            }
+            },
             // [delivery-tag: long long] [redelivered: bool] [exchange: shortstr]
             (ClassType::Basic, MethodType::GetOk) => {
                 let (_arguments, exchange) = read_short_str(arguments.get(9..)?)?;
                 exchange
-            }
+            },
             _ => return None,
         };
         Some(slice_to_string(exchange))
@@ -723,40 +714,40 @@ impl AmqpInfo {
                 let (arguments, _src) = read_short_str(arguments)?;
                 let (_arguments, routing_key) = read_short_str(arguments)?;
                 routing_key
-            }
+            },
             // [reserved: short] [queue: shortstr] [exchange: shortstr] [routing-key: shortstr]
             (ClassType::Queue, MethodType::Bind) | (ClassType::Queue, MethodType::Unbind) => {
                 let (arguments, _queue) = read_short_str(arguments.get(2..)?)?;
                 let (arguments, _exchange) = read_short_str(arguments)?;
                 let (_arguments, routing_key) = read_short_str(arguments)?;
                 routing_key
-            }
+            },
             // [reserved: short] [exchange: shortstr] [routing-key: shortstr]
             (ClassType::Basic, MethodType::Publish) => {
                 let (arguments, _exchange) = read_short_str(arguments.get(2..)?)?;
                 let (_arguments, routing_key) = read_short_str(arguments)?;
                 routing_key
-            }
+            },
             // [reply-code: short] [reply-text: shortstr] [exchange: shortstr] [routing-key: shortstr]
             (ClassType::Basic, MethodType::Return) => {
                 let (arguments, _reply_text) = read_short_str(arguments.get(2..)?)?;
                 let (arguments, _exchange) = read_short_str(arguments)?;
                 let (_arguments, routing_key) = read_short_str(arguments)?;
                 routing_key
-            }
+            },
             // [consumer-tag: shortstr] [delivery-tag: long long] [redelivered: bool] [exchange: shortstr] [routing-key: shortstr]
             (ClassType::Basic, MethodType::Deliver) => {
                 let (arguments, _consumer_tag) = read_short_str(arguments)?;
                 let (arguments, _exchange) = read_short_str(arguments.get(9..)?)?;
                 let (_arguments, routing_key) = read_short_str(arguments)?;
                 routing_key
-            }
+            },
             // [delivery-tag: long long] [redelivered: bool] [exchange: shortstr] [routing-key: shortstr]
             (ClassType::Basic, MethodType::GetOk) => {
                 let (arguments, _exchange) = read_short_str(arguments.get(9..)?)?;
                 let (_arguments, routing_key) = read_short_str(arguments)?;
                 routing_key
-            }
+            },
             _ => return None,
         };
         Some(slice_to_string(routing_key))
@@ -764,9 +755,9 @@ impl AmqpInfo {
 
     fn has_reply_code(&self) -> bool {
         match (self.class_id, self.method_id) {
-            (ClassType::Basic, MethodType::Return)
-            | (ClassType::Connection, MethodType::Close)
-            | (ClassType::Channel, MethodType::Close) => true,
+            (ClassType::Basic, MethodType::Return) |
+            (ClassType::Connection, MethodType::Close) |
+            (ClassType::Channel, MethodType::Close) => true,
             _ => false,
         }
     }
@@ -789,14 +780,12 @@ impl AmqpInfo {
                 .req_type
                 .as_ref()
                 .map(|p| t.request_type.is_on_blacklist(p))
-                .unwrap_or_default()
-                || self
-                    .vhost
+                .unwrap_or_default() ||
+                self.vhost
                     .as_ref()
                     .map(|p| t.request_domain.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .endpoint
+                    .unwrap_or_default() ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p) || t.request_resource.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -1007,7 +996,7 @@ impl L7ProtocolParserInterface for AmqpLog {
                     info.queue = info.parse_queue(&payload[offset + 4..]);
                     info.exchange = info.parse_exchange(&payload[offset + 4..]);
                     info.routing_key = info.parse_routing_key(&payload[offset + 4..]);
-                }
+                },
                 FrameType::Header => {
                     if info.payload_size < 14 {
                         break;
@@ -1018,7 +1007,7 @@ impl L7ProtocolParserInterface for AmqpLog {
                         x => x,
                     };
                     match read_u16_be(&payload[offset + 2..offset + 4]) {
-                        0 => {}
+                        0 => {},
                         _ => break,
                     }
                     info.body_size = read_u64_be(&payload[offset + 4..offset + 12]);
@@ -1030,9 +1019,9 @@ impl L7ProtocolParserInterface for AmqpLog {
                         }
                         info.span_id = Some(span_id);
                     }
-                }
-                FrameType::Body => {}
-                FrameType::Heartbeat => {}
+                },
+                FrameType::Body => {},
+                FrameType::Heartbeat => {},
                 FrameType::Unknown => unreachable!(),
             }
 
@@ -1068,12 +1057,12 @@ impl L7ProtocolParserInterface for AmqpLog {
                     ClassType::Basic => {
                         debug_assert_eq!(info.method_id, MethodType::Return);
                         info.msg_type = LogMessageType::Session;
-                    }
+                    },
                     // connection close with non-200 reply code is of LogMessageType::Response and there wouldn't be a "close-ok"
                     ClassType::Connection => {
                         debug_assert_eq!(info.method_id, MethodType::Close);
                         info.msg_type = LogMessageType::Response;
-                    }
+                    },
                     // channel close with non-200 reply code is also a response, but there would be a "close-ok"
                     // in this case, client will send two messages (including a close-ok) and server will reply only once
                     // so we need to duplicate this "close" message as both
@@ -1091,7 +1080,7 @@ impl L7ProtocolParserInterface for AmqpLog {
                         // request for client "close-ok"
                         info.resp_status = L7ResponseStatus::Unknown;
                         info.msg_type = LogMessageType::Request;
-                    }
+                    },
                     _ => unreachable!(),
                 },
                 _ => {
@@ -1102,16 +1091,16 @@ impl L7ProtocolParserInterface for AmqpLog {
                     ) {
                         info.resp_status = L7ResponseStatus::Ok;
                     }
-                }
+                },
             }
             match info.msg_type {
                 LogMessageType::Request => {
                     info.req_len = Some((offset - offset_begin) as u32);
                     info.req_type = Some(info.get_packet_type());
                     info.endpoint = info.generate_endpoint();
-                }
+                },
                 LogMessageType::Response => info.resp_len = Some((offset - offset_begin) as u32),
-                _ => {}
+                _ => {},
             }
             vec.push(L7ProtocolInfo::AmqpInfo(info));
         }
@@ -1171,20 +1160,18 @@ impl L7ProtocolParserInterface for AmqpLog {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
+        flow_generator::L7_RRT_CACHE_CAPACITY,
+        utils::test_utils::{Capture, WrappedDebugStruct},
+    };
     use std::{
         cell::RefCell,
         fmt::{self, Write},
         fs,
         path::Path,
         rc::Rc,
-    };
-
-    use super::*;
-
-    use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
-        flow_generator::L7_RRT_CACHE_CAPACITY,
-        utils::test_utils::{Capture, WrappedDebugStruct},
     };
 
     const FILE_DIR: &str = "resources/test/flow_generator/amqp";
@@ -1272,15 +1259,14 @@ mod tests {
                 match info {
                     L7ParseResult::Single(s) => {
                         let _ = write!(&mut output, "{:?}\n", ValidateInfo(&s));
-                    }
-                    L7ParseResult::Multi(m) => {
+                    },
+                    L7ParseResult::Multi(m) =>
                         for i in m {
                             let _ = write!(&mut output, "{:?}\n", ValidateInfo(&i));
-                        }
-                    }
+                        },
                     L7ParseResult::None => {
                         output.push_str("None\n");
-                    }
+                    },
                 }
             } else {
                 output.push_str("not amqp\n");

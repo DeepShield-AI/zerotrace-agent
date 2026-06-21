@@ -14,33 +14,28 @@
  * limitations under the License.
  */
 
-use serde::Serialize;
-
 use super::super::value_is_default;
-use crate::config::handler::LogParserConfig;
-use crate::flow_generator::{
-    protocol_logs::{
-        pb_adapter::{ExtendedInfo, KeyVal},
-        swap_if, L7ResponseStatus,
-    },
-    Error,
-};
 use crate::{
     common::{
         flow::{L7PerfStats, PacketDirection},
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, LogCache, ParseParam},
     },
+    config::handler::LogParserConfig,
     flow_generator::{
-        protocol_logs::pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
-        AppProtoHead, Result,
+        AppProtoHead, Error, Result,
+        protocol_logs::{
+            L7ResponseStatus,
+            pb_adapter::{ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response},
+            swap_if,
+        },
     },
 };
-
 use enterprise_utils::l7::sql::oracle::{
     Body, CallId, DataFlags, DataId, OracleParseConfig, OracleParser, TnsPacketType,
 };
 use public::l7_protocol::{L7Protocol, LogMessageType};
+use serde::Serialize;
 
 #[derive(Serialize, Debug, Default, Clone, PartialEq)]
 pub struct OracleInfo {
@@ -124,8 +119,8 @@ impl OracleInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::Oracle) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.sql)
-                || t.request_type.is_on_blacklist(self.packet_type.as_str());
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.sql) ||
+                t.request_type.is_on_blacklist(self.packet_type.as_str());
         }
     }
 }

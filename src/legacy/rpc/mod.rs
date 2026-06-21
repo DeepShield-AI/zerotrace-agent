@@ -18,7 +18,7 @@ mod ntp;
 mod session;
 mod synchronizer;
 
-pub use session::{Session, DEFAULT_TIMEOUT};
+pub use session::{DEFAULT_TIMEOUT, Session};
 pub(crate) use synchronizer::{StaticConfig, Status, Synchronizer};
 
 cfg_if::cfg_if! {
@@ -34,10 +34,7 @@ const RPC_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 const RPC_RECONNECT_INTERVAL: Duration = Duration::from_secs(10);
 
 pub fn get_timestamp(ntp_diff: i64) -> Duration {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as i128
-        + ntp_diff as i128;
+    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as i128 +
+        ntp_diff as i128;
     Duration::from_nanos(now as u64)
 }

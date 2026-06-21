@@ -13,22 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::borrow::Cow;
-
-use serde::Serialize;
-
-use enterprise_utils::l7::{
-    custom_policy::{
-        custom_field_policy::{
-            enums::{Op, PayloadType, Source},
-            PolicySlice, Store,
-        },
-        enums::TrafficDirection,
-    },
-    mq::web_sphere_mq::WebSphereMqParser,
-};
-use public::l7_protocol::{L7LogBase, LogMessageType};
-
 use crate::{
     common::{
         flow::{L7PerfStats, L7Protocol},
@@ -40,15 +24,29 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
-            auto_merge_custom_field, estimate_rrt_us_by_beijing_mmss,
+            AppProtoHead, L7ResponseStatus, PLUGIN_FIELD_PRIORITY, auto_merge_custom_field,
+            estimate_rrt_us_by_beijing_mmss,
             pb_adapter::{
                 ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, TraceInfo,
             },
-            set_captured_byte, AppProtoHead, L7ResponseStatus, PLUGIN_FIELD_PRIORITY,
+            set_captured_byte,
         },
     },
     plugin::CustomInfo,
 };
+use enterprise_utils::l7::{
+    custom_policy::{
+        custom_field_policy::{
+            PolicySlice, Store,
+            enums::{Op, PayloadType, Source},
+        },
+        enums::TrafficDirection,
+    },
+    mq::web_sphere_mq::WebSphereMqParser,
+};
+use public::l7_protocol::{L7LogBase, LogMessageType};
+use serde::Serialize;
+use std::borrow::Cow;
 
 #[derive(Serialize, Debug, Default, Clone)]
 pub struct WebSphereMqInfo {
@@ -342,24 +340,24 @@ impl L7ProtocolParserInterface for WebSphereMqLog {
                 match info.base.response_status {
                     L7ResponseStatus::ServerError => {
                         perf_stat.inc_resp_err();
-                    }
+                    },
                     L7ResponseStatus::ClientError => {
                         perf_stat.inc_req_err();
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
                 match info.base.msg_type {
                     LogMessageType::Request => perf_stat.inc_req(),
                     LogMessageType::Response => perf_stat.inc_resp(),
-                    _ => {}
+                    _ => {},
                 }
                 // As the protocol is asynchronous and request/response are not correlated into a session,
                 // RRT cannot be measured using generic methods.
                 // However, the business payload provides the `OrigSendTime` field
                 // represents the request send time (second precision, in the format of "hhmmss", length = 6).
                 // RRT can roughly estimated by (response receive time - OrigSendTime).
-                if info.base.msg_type == LogMessageType::Response
-                    && self.parser.orig_send_time.len() == 6
+                if info.base.msg_type == LogMessageType::Response &&
+                    self.parser.orig_send_time.len() == 6
                 {
                     // get "mmss" part of orig_send_time, and must be in Beijing Time (UTC+8)
                     if let Some(rrt_us) = estimate_rrt_us_by_beijing_mmss(
@@ -450,7 +448,7 @@ impl WebSphereMqLog {
                         key: key.to_string(),
                         val: String::from_utf8_lossy(l7_payload).to_string(),
                     });
-                }
+                },
                 _ => auto_merge_custom_field(op, info),
             }
         }

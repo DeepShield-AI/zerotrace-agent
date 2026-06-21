@@ -14,28 +14,24 @@
  * limitations under the License.
  */
 
-use std::{
-    io::Write,
-    net::{IpAddr, TcpStream},
-    sync::{
-        atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
-        Arc, Mutex,
-    },
-    thread,
-    thread::JoinHandle,
-    time::Duration,
-    time::SystemTime,
-};
-
-use log::{info, warn};
-
 use super::QUEUE_BATCH_SIZE;
-
 use crate::utils::{
     bytes::write_u64_be,
     stats::{Counter, CounterType, CounterValue, RefCountable},
 };
+use log::{info, warn};
 use public::queue::{Error, Receiver};
+use std::{
+    io::Write,
+    net::{IpAddr, TcpStream},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
+    },
+    thread,
+    thread::JoinHandle,
+    time::{Duration, SystemTime},
+};
 
 const SEQUENCE_OFFSET: usize = 8;
 const RCV_TIMEOUT: Duration = Duration::from_secs(1);
@@ -127,8 +123,8 @@ impl TcpPacketSender {
                     match receiver.recv_all(&mut batch, Some(RCV_TIMEOUT)) {
                         Ok(_) => {
                             for mut pkt in batch.drain(..) {
-                                if (socket.is_none() || reconnect.load(Ordering::Relaxed))
-                                    && !Self::connect(
+                                if (socket.is_none() || reconnect.load(Ordering::Relaxed)) &&
+                                    !Self::connect(
                                         &reconnect,
                                         &mut socket,
                                         *dst_ip.lock().unwrap(),
@@ -147,7 +143,7 @@ impl TcpPacketSender {
                                     Ok(n) => {
                                         counter.tx_bytes.fetch_add(n as u64, Ordering::Relaxed);
                                         counter.tx.fetch_add(1, Ordering::Relaxed);
-                                    }
+                                    },
                                     Err(e) => {
                                         let now = SystemTime::now()
                                             .duration_since(SystemTime::UNIX_EPOCH)
@@ -161,10 +157,10 @@ impl TcpPacketSender {
                                             last_err_time = now;
                                             socket.take();
                                         }
-                                    }
+                                    },
                                 }
                             }
-                        }
+                        },
                         Err(Error::Terminated(..)) => break,
                         Err(Error::Timeout) => continue,
                         Err(Error::BatchTooLarge(_)) => unreachable!(),
@@ -205,11 +201,11 @@ impl TcpPacketSender {
                 socket.replace(s);
                 reconnect.swap(false, Ordering::Relaxed);
                 true
-            }
+            },
             Err(e) => {
                 warn!("tcp packet sender connect server: {}", e);
                 false
-            }
+            },
         }
     }
 }

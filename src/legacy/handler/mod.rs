@@ -15,21 +15,16 @@
  */
 
 mod npb;
-pub use npb::NpbBuilder;
-
-use std::net::IpAddr;
-use std::sync::Arc;
-use std::thread::JoinHandle;
-use std::time::Duration;
-
+use crate::{
+    collector::types::U16Set,
+    common::meta_packet::{MetaPacket, RawPacket},
+};
 use log::debug;
-
+pub use npb::NpbBuilder;
 use npb_handler::{NpbHandler, NpbMode};
 use npb_pcap_policy::{NpbTunnelType, PolicyData};
 use public::{enums::HeaderType, packet, queue::DebugSender, utils::net::MacAddr};
-
-use crate::collector::types::U16Set;
-use crate::common::meta_packet::{MetaPacket, RawPacket};
+use std::{net::IpAddr, sync::Arc, thread::JoinHandle, time::Duration};
 
 pub struct IpInfo {
     pub mac: MacAddr,
@@ -125,15 +120,15 @@ impl PacketHandler {
         match self {
             Self::Pcap(sender) => {
                 let mut acl_gids = U16Set::new();
-                if packet.policy.is_none()
-                    || !packet.policy.as_ref().unwrap().contain_pcap()
-                    || packet.flow_id == 0
+                if packet.policy.is_none() ||
+                    !packet.policy.as_ref().unwrap().contain_pcap() ||
+                    packet.flow_id == 0
                 {
                     return;
                 }
-                let payload_offset = packet.header_type.min_packet_size()
-                    + packet.l2_l3_opt_size as usize
-                    + packet.l4_opt_size as usize;
+                let payload_offset = packet.header_type.min_packet_size() +
+                    packet.l2_l3_opt_size as usize +
+                    packet.l4_opt_size as usize;
                 let policy = packet.policy.as_ref().unwrap();
                 let mut max_raw_len = 0;
                 // find longest payload
@@ -170,7 +165,7 @@ impl PacketHandler {
                 if let Err(e) = sender.send(mini_packet) {
                     debug!("send mini packet to pcap assembler error: {e:?}");
                 }
-            }
+            },
             Self::Npb(n) => n.handle(
                 packet.policy.as_ref(),
                 &packet.npb_mode,
@@ -197,9 +192,8 @@ impl PacketHandlerBuilder {
         match self {
             PacketHandlerBuilder::Pcap(s) => PacketHandler::Pcap(s.clone()),
             // high 32 bits is ns_ino
-            PacketHandlerBuilder::Npb(b) => {
-                PacketHandler::Npb(b.build_with(id, if_index as u32, mac))
-            }
+            PacketHandlerBuilder::Npb(b) =>
+                PacketHandler::Npb(b.build_with(id, if_index as u32, mac)),
         }
     }
 
@@ -212,19 +206,19 @@ impl PacketHandlerBuilder {
 
     pub fn stop(&mut self) {
         match self {
-            PacketHandlerBuilder::Pcap(_) => {}
+            PacketHandlerBuilder::Pcap(_) => {},
             PacketHandlerBuilder::Npb(b) => {
                 b.stop();
-            }
+            },
         }
     }
 
     pub fn start(&mut self) {
         match self {
-            PacketHandlerBuilder::Pcap(_) => {}
+            PacketHandlerBuilder::Pcap(_) => {},
             PacketHandlerBuilder::Npb(b) => {
                 b.start();
-            }
+            },
         }
     }
 }

@@ -82,16 +82,16 @@ impl PortRangeList {
                 table[port.min() as usize] = PortStatus::RangeEdge;
                 continue;
             }
-            if table[port.min() as usize] == PortStatus::RangeRight
-                || table[port.min() as usize] == PortStatus::RangeEdge
+            if table[port.min() as usize] == PortStatus::RangeRight ||
+                table[port.min() as usize] == PortStatus::RangeEdge
             {
                 table[port.min() as usize] = PortStatus::RangeEdge;
             } else {
                 table[port.min() as usize] = PortStatus::RangeLeft;
             }
 
-            if table[port.max() as usize] == PortStatus::RangeLeft
-                || table[port.max() as usize] == PortStatus::RangeEdge
+            if table[port.max() as usize] == PortStatus::RangeLeft ||
+                table[port.max() as usize] == PortStatus::RangeEdge
             {
                 table[port.max() as usize] = PortStatus::RangeEdge;
             } else {
@@ -122,31 +122,31 @@ impl PortRangeList {
 
             match status {
                 PortStatus::RangeEdge => {
-                    if last_port >= 0
-                        && last_port != port
-                        && table[last_port as usize] != PortStatus::RangeNone
+                    if last_port >= 0 &&
+                        last_port != port &&
+                        table[last_port as usize] != PortStatus::RangeNone
                     {
                         list.push(PortRange::new(last_port as u16, port as u16 - 1));
                     }
                     list.push(PortRange::new(port as u16, port as u16));
                     last_port = port + 1;
-                }
+                },
                 PortStatus::RangeLeft => {
-                    if last_port >= 0
-                        && last_port != port
-                        && table[last_port as usize] != PortStatus::RangeNone
+                    if last_port >= 0 &&
+                        last_port != port &&
+                        table[last_port as usize] != PortStatus::RangeNone
                     {
                         list.push(PortRange::new(last_port as u16, port as u16 - 1));
                     }
                     last_port = port;
-                }
+                },
                 PortStatus::RangeRight => {
                     if table[last_port as usize] != PortStatus::RangeNone {
                         list.push(PortRange::new(last_port as u16, port as u16));
                     }
                     last_port = port + 1;
-                }
-                _ => {}
+                },
+                _ => {},
             }
             port += 1;
         }
@@ -220,11 +220,7 @@ impl TryFrom<String> for PortRangeList {
 
 impl fmt::Display for PortRangeList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ports = self
-            .0
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
+        let ports = self.0.iter().map(|x| x.to_string()).collect::<Vec<String>>();
         write!(f, "[{}]", ports.join(", "))
     }
 }

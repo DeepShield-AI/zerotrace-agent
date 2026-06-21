@@ -14,20 +14,18 @@
  * limitations under the License.
  */
 
-use std::sync::Arc;
-
-use bincode::{Decode, Encode};
-
 use crate::platform::{ApiWatcher, GenericPoller, Poller};
+use bincode::{Decode, Encode};
+use std::sync::Arc;
 
 /// 平台模块调试消息
 #[derive(PartialEq, Eq, Debug, Encode, Decode)]
 pub enum PlatformMessage {
-    Version(Option<String>),              // API 版本
-    Watcher(Vec<u8>),                     // K8s Watcher 资源数据
+    Version(Option<String>),                 // API 版本
+    Watcher(Vec<u8>),                        // K8s Watcher 资源数据
     MacMappings(Option<Vec<(u32, String)>>), // 容器 MAC 到接口索引映射
-    Fin,                                  // 消息流结束
-    NotFound,                             // 资源未找到
+    Fin,                                     // 消息流结束
+    NotFound,                                // 资源未找到
 }
 
 /// 平台模块调试器
@@ -50,14 +48,12 @@ impl PlatformDebugger {
         match entries {
             Some(es) => {
                 // 将条目映射为 Watcher 消息
-                let mut res = es
-                    .into_iter()
-                    .map(|s| PlatformMessage::Watcher(s))
-                    .collect::<Vec<_>>();
+                let mut res =
+                    es.into_iter().map(|s| PlatformMessage::Watcher(s)).collect::<Vec<_>>();
                 // 追加 Fin 结束消息
                 res.push(PlatformMessage::Fin);
                 res
-            }
+            },
             // 如果条目为 None，返回 NotFound
             None => vec![PlatformMessage::NotFound],
         }

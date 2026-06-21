@@ -14,19 +14,16 @@
  * limitations under the License.
  */
 
+use super::{
+    IMPORT_FUNC_HOST_READ_L7_PROTOCOL_INFO, IMPORT_FUNC_HOST_READ_STR_RESULT,
+    IMPORT_FUNC_VM_READ_CTX_BASE, IMPORT_FUNC_VM_READ_CUSTOM_MESSAGE, IMPORT_FUNC_VM_READ_HTTP_REQ,
+    IMPORT_FUNC_VM_READ_HTTP_RESP, IMPORT_FUNC_VM_READ_PAYLOAD, LOG_LEVEL_ERR, LOG_LEVEL_INFO,
+    LOG_LEVEL_WARN, StoreDataType, VmParseCtx, VmResult, WASM_MODULE_NAME, read_wasm_str,
+};
 use crate::{
-    plugin::{wasm::IMPORT_FUNC_WASM_LOG, CustomInfo},
+    plugin::{CustomInfo, wasm::IMPORT_FUNC_WASM_LOG},
     wasm_error,
 };
-
-use super::{
-    read_wasm_str, StoreDataType, VmParseCtx, VmResult, IMPORT_FUNC_HOST_READ_L7_PROTOCOL_INFO,
-    IMPORT_FUNC_HOST_READ_STR_RESULT, IMPORT_FUNC_VM_READ_CTX_BASE,
-    IMPORT_FUNC_VM_READ_CUSTOM_MESSAGE, IMPORT_FUNC_VM_READ_HTTP_REQ,
-    IMPORT_FUNC_VM_READ_HTTP_RESP, IMPORT_FUNC_VM_READ_PAYLOAD, LOG_LEVEL_ERR, LOG_LEVEL_INFO,
-    LOG_LEVEL_WARN, WASM_MODULE_NAME,
-};
-
 use log::{error, info, warn};
 use public::bytes::read_u16_be;
 use wasmtime::{AsContext, AsContextMut, Caller, Engine, Linker, Store};
@@ -65,9 +62,9 @@ pub(super) fn wasm_log(mut caller: Caller<'_, StoreDataType>, b: u32, len: u32, 
                 LOG_LEVEL_ERR => error!("wasm log: {}", log_data),
                 _ => {
                     warn!("wasm log with unknown level: {}", level);
-                }
+                },
             }
-        }
+        },
         Err(err) => error!("in_fn: {}, log fail: {}", IMPORT_FUNC_WASM_LOG, err),
     }
 }
@@ -323,13 +320,7 @@ pub(super) fn host_read_l7_protocol_info(
     if !check_memory(&mut caller, b, len, IMPORT_FUNC_HOST_READ_L7_PROTOCOL_INFO) {
         return 0;
     }
-    let dir = caller
-        .data()
-        .parse_ctx
-        .as_ref()
-        .unwrap()
-        .get_ctx_base()
-        .direction;
+    let dir = caller.data().parse_ctx.as_ref().unwrap().get_ctx_base().direction;
 
     let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
     let mem = mem.data(caller.as_context());
@@ -433,8 +424,7 @@ pub(super) fn host_read_str_result(mut caller: Caller<'_, StoreDataType>, b: u32
 pub(super) fn get_linker(e: Engine, store: &mut Store<StoreDataType>) -> Linker<StoreDataType> {
     let mut link = Linker::<StoreDataType>::new(&e);
 
-    link.func_wrap(WASM_MODULE_NAME, IMPORT_FUNC_WASM_LOG, wasm_log)
-        .unwrap();
+    link.func_wrap(WASM_MODULE_NAME, IMPORT_FUNC_WASM_LOG, wasm_log).unwrap();
 
     link.func_wrap(
         WASM_MODULE_NAME,
@@ -518,11 +508,8 @@ fn link_wasi(
     ];
 
     for f in link_func {
-        let func = wasi_link
-            .get(&mut *store, "wasi_snapshot_preview1", f)
-            .unwrap();
-        link.define(&mut *store, "wasi_snapshot_preview1", f, func)
-            .unwrap();
+        let func = wasi_link.get(&mut *store, "wasi_snapshot_preview1", f).unwrap();
+        link.define(&mut *store, "wasi_snapshot_preview1", f, func).unwrap();
     }
 }
 

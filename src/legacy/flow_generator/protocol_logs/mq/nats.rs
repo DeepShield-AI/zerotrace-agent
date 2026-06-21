@@ -31,16 +31,15 @@ use crate::{
     flow_generator::{
         error::Result,
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             pb_adapter::{
                 ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, TraceInfo,
             },
-            set_captured_byte, swap_if, value_is_default, AppProtoHead, L7ResponseStatus,
-            PrioFields, BASE_FIELD_PRIORITY,
+            set_captured_byte, swap_if, value_is_default,
         },
     },
-    plugin::wasm::{wasm_plugin::NatsMessage as WasmNatsMessage, WasmData},
+    plugin::wasm::{WasmData, wasm_plugin::NatsMessage as WasmNatsMessage},
 };
-
 use public::l7_protocol::LogMessageType;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -306,9 +305,7 @@ impl Parsable for Info {
         // INFO {"option_name":option_value,...}␍␊
         let (payload, json) = read_line(payload)?;
         let json = str::from_utf8(json).ok()?;
-        serde_json::from_str::<Info>(json)
-            .ok()
-            .map(|x| (payload, x))
+        serde_json::from_str::<Info>(json).ok().map(|x| (payload, x))
     }
 }
 
@@ -317,9 +314,7 @@ impl Parsable for Connect {
         // CONNECT {"option_name":option_value,...}␍␊
         let (payload, json) = read_line(payload)?;
         let json = str::from_utf8(json).ok()?;
-        serde_json::from_str::<Connect>(json)
-            .ok()
-            .map(|x| (payload, x))
+        serde_json::from_str::<Connect>(json).ok().map(|x| (payload, x))
     }
 }
 
@@ -327,20 +322,18 @@ impl Parsable for Pub {
     fn try_parse(payload: &[u8]) -> Option<(&[u8], Self)> {
         // PUB <subject> [reply-to] <#bytes>␍␊[payload]␍␊
         let (payload, line) = read_line(payload)?;
-        let mut gen = line
-            .split(|v| *v == b' ' || *v == b'\t')
-            .filter(|v| !v.is_empty());
+        let mut gen_ = line.split(|v| *v == b' ' || *v == b'\t').filter(|v| !v.is_empty());
         let mut pub_obj = Pub::default();
-        pub_obj.subject = slice_to_string(gen.next()?);
-        match (gen.next(), gen.next(), gen.next()) {
+        pub_obj.subject = slice_to_string(gen_.next()?);
+        match (gen_.next(), gen_.next(), gen_.next()) {
             (_, _, Some(_)) => return None,
             (Some(reply_to), Some(size), _) => {
                 pub_obj.reply_to = Some(slice_to_string(reply_to));
                 pub_obj.payload_size = slice_to_usize(size)?;
-            }
+            },
             (Some(size), _, _) => {
                 pub_obj.payload_size = slice_to_usize(size)?;
-            }
+            },
             _ => return None,
         }
         let (payload, body) = slice_split(payload, pub_obj.payload_size)?;
@@ -357,22 +350,20 @@ impl Parsable for Hpub {
     fn try_parse(payload: &[u8]) -> Option<(&[u8], Self)> {
         // HPUB <subject> [reply-to] <#header bytes> <#total bytes>␍␊[headers]␍␊␍␊[payload]␍␊
         let (payload, line) = read_line(payload)?;
-        let mut gen = line
-            .split(|v| *v == b' ' || *v == b'\t')
-            .filter(|v| !v.is_empty());
+        let mut gen_ = line.split(|v| *v == b' ' || *v == b'\t').filter(|v| !v.is_empty());
         let mut hpub_obj = Hpub::default();
-        hpub_obj.subject = slice_to_string(gen.next()?);
-        match (gen.next(), gen.next(), gen.next(), gen.next()) {
+        hpub_obj.subject = slice_to_string(gen_.next()?);
+        match (gen_.next(), gen_.next(), gen_.next(), gen_.next()) {
             (_, _, _, Some(_)) => return None,
             (Some(reply_to), Some(header_size), Some(total_size), _) => {
                 hpub_obj.reply_to = Some(slice_to_string(reply_to));
                 hpub_obj.header_size = slice_to_usize(header_size)?;
                 hpub_obj.payload_size = slice_to_usize(total_size)? - hpub_obj.header_size;
-            }
+            },
             (Some(header_size), Some(total_size), _, _) => {
                 hpub_obj.header_size = slice_to_usize(header_size)?;
                 hpub_obj.payload_size = slice_to_usize(total_size)? - hpub_obj.header_size;
-            }
+            },
             _ => return None,
         }
         let (payload, headers) =
@@ -392,20 +383,18 @@ impl Parsable for Sub {
     fn try_parse(payload: &[u8]) -> Option<(&[u8], Self)> {
         // SUB <subject> [queue group] <sid>␍␊
         let (payload, line) = read_line(payload)?;
-        let mut gen = line
-            .split(|v| *v == b' ' || *v == b'\t')
-            .filter(|v| !v.is_empty());
+        let mut gen_ = line.split(|v| *v == b' ' || *v == b'\t').filter(|v| !v.is_empty());
         let mut sub_obj = Sub::default();
-        sub_obj.subject = slice_to_string(gen.next()?);
-        match (gen.next(), gen.next(), gen.next()) {
+        sub_obj.subject = slice_to_string(gen_.next()?);
+        match (gen_.next(), gen_.next(), gen_.next()) {
             (_, _, Some(_)) => return None,
             (Some(queue_group), Some(sid), _) => {
                 sub_obj.queue_group = Some(slice_to_string(queue_group));
                 sub_obj.sid = slice_to_string(sid);
-            }
+            },
             (Some(sid), _, _) => {
                 sub_obj.sid = slice_to_string(sid);
-            }
+            },
             _ => return None,
         }
         Some((payload, sub_obj))
@@ -416,17 +405,15 @@ impl Parsable for Unsub {
     fn try_parse(payload: &[u8]) -> Option<(&[u8], Self)> {
         // UNSUB <sid> [max_msgs]␍␊
         let (payload, line) = read_line(payload)?;
-        let mut gen = line
-            .split(|v| *v == b' ' || *v == b'\t')
-            .filter(|v| !v.is_empty());
+        let mut gen_ = line.split(|v| *v == b' ' || *v == b'\t').filter(|v| !v.is_empty());
         let mut unsub_obj = Unsub::default();
-        unsub_obj.sid = slice_to_string(gen.next()?);
-        match (gen.next(), gen.next()) {
+        unsub_obj.sid = slice_to_string(gen_.next()?);
+        match (gen_.next(), gen_.next()) {
             (_, Some(_)) => return None,
             (Some(max_msgs), _) => {
                 unsub_obj.max_msgs = Some(slice_to_usize(max_msgs)?);
-            }
-            _ => {}
+            },
+            _ => {},
         }
         Some((payload, unsub_obj))
     }
@@ -436,21 +423,19 @@ impl Parsable for Msg {
     fn try_parse(payload: &[u8]) -> Option<(&[u8], Self)> {
         // MSG <subject> <sid> [reply-to] <#bytes>␍␊[payload]␍␊
         let (payload, line) = read_line(payload)?;
-        let mut gen = line
-            .split(|v| *v == b' ' || *v == b'\t')
-            .filter(|v| !v.is_empty());
+        let mut gen_ = line.split(|v| *v == b' ' || *v == b'\t').filter(|v| !v.is_empty());
         let mut msg_obj = Msg::default();
-        msg_obj.subject = slice_to_string(gen.next()?);
-        msg_obj.sid = slice_to_string(gen.next()?);
-        match (gen.next(), gen.next(), gen.next()) {
+        msg_obj.subject = slice_to_string(gen_.next()?);
+        msg_obj.sid = slice_to_string(gen_.next()?);
+        match (gen_.next(), gen_.next(), gen_.next()) {
             (_, _, Some(_)) => return None,
             (Some(reply_to), Some(size), _) => {
                 msg_obj.reply_to = Some(slice_to_string(reply_to));
                 msg_obj.payload_size = slice_to_usize(size)?;
-            }
+            },
             (Some(size), _, _) => {
                 msg_obj.payload_size = slice_to_usize(size)?;
-            }
+            },
             _ => return None,
         }
         let (payload, body) = slice_split(payload, msg_obj.payload_size)?;
@@ -467,23 +452,21 @@ impl Parsable for Hmsg {
     fn try_parse(payload: &[u8]) -> Option<(&[u8], Self)> {
         // HMSG <subject> <sid> [reply-to] <#header bytes> <#total bytes>␍␊[headers]␍␊␍␊[payload]␍␊
         let (payload, line) = read_line(payload)?;
-        let mut gen = line
-            .split(|v| *v == b' ' || *v == b'\t')
-            .filter(|v| !v.is_empty());
+        let mut gen_ = line.split(|v| *v == b' ' || *v == b'\t').filter(|v| !v.is_empty());
         let mut hmsg_obj = Hmsg::default();
-        hmsg_obj.subject = slice_to_string(gen.next()?);
-        hmsg_obj.sid = slice_to_string(gen.next()?);
-        match (gen.next(), gen.next(), gen.next(), gen.next()) {
+        hmsg_obj.subject = slice_to_string(gen_.next()?);
+        hmsg_obj.sid = slice_to_string(gen_.next()?);
+        match (gen_.next(), gen_.next(), gen_.next(), gen_.next()) {
             (_, _, _, Some(_)) => return None,
             (Some(reply_to), Some(header_size), Some(total_size), _) => {
                 hmsg_obj.reply_to = Some(slice_to_string(reply_to));
                 hmsg_obj.header_size = slice_to_usize(header_size)?;
                 hmsg_obj.payload_size = slice_to_usize(total_size)? - hmsg_obj.header_size;
-            }
+            },
             (Some(header_size), Some(total_size), _, _) => {
                 hmsg_obj.header_size = slice_to_usize(header_size)?;
                 hmsg_obj.payload_size = slice_to_usize(total_size)? - hmsg_obj.header_size;
-            }
+            },
             _ => return None,
         }
         let (payload, headers) =
@@ -544,9 +527,7 @@ impl Parsable for Err {
 
 impl NatsInfo {
     fn generate_endpoint(&self) -> Option<String> {
-        self.get_subject()
-            .and_then(|x| x.split('.').next())
-            .map(|x| x.to_string())
+        self.get_subject().and_then(|x| x.split('.').next()).map(|x| x.to_string())
     }
 
     fn try_parse<'a>(
@@ -567,73 +548,73 @@ impl NatsInfo {
                 let (payload, obj) = Info::try_parse(payload)?;
                 info.message = NatsMessage::Info(obj);
                 payload
-            }
+            },
             "CONNECT" => {
                 info.msg_type = LogMessageType::Response;
                 let (payload, obj) = Connect::try_parse(payload)?;
                 info.message = NatsMessage::Connect(obj);
                 payload
-            }
+            },
             "PUB" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Pub::try_parse(payload)?;
                 info.message = NatsMessage::Pub(obj);
                 payload
-            }
+            },
             "HPUB" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Hpub::try_parse(payload)?;
                 info.message = NatsMessage::Hpub(obj);
                 payload
-            }
+            },
             "SUB" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Sub::try_parse(payload)?;
                 info.message = NatsMessage::Sub(obj);
                 payload
-            }
+            },
             "UNSUB" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Unsub::try_parse(payload)?;
                 info.message = NatsMessage::Unsub(obj);
                 payload
-            }
+            },
             "MSG" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Msg::try_parse(payload)?;
                 info.message = NatsMessage::Msg(obj);
                 payload
-            }
+            },
             "HMSG" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Hmsg::try_parse(payload)?;
                 info.message = NatsMessage::Hmsg(obj);
                 payload
-            }
+            },
             "PING" => {
                 info.msg_type = LogMessageType::Request;
                 let (payload, obj) = Ping::try_parse(payload)?;
                 info.message = NatsMessage::Ping(obj);
                 payload
-            }
+            },
             "PONG" => {
                 info.msg_type = LogMessageType::Response;
                 let (payload, obj) = Pong::try_parse(payload)?;
                 info.message = NatsMessage::Pong(obj);
                 payload
-            }
+            },
             "+OK" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Ok::try_parse(payload)?;
                 info.message = NatsMessage::Ok(obj);
                 payload
-            }
+            },
             "-ERR" => {
                 info.msg_type = LogMessageType::Session;
                 let (payload, obj) = Err::try_parse(payload)?;
                 info.message = NatsMessage::Err(obj);
                 payload
-            }
+            },
             _ => return None,
         };
         if let Some(config) = config {
@@ -642,20 +623,20 @@ impl NatsInfo {
         match info.msg_type {
             LogMessageType::Request => info.req_len = Some((length_begin - payload.len()) as u32),
             LogMessageType::Response => info.resp_len = Some((length_begin - payload.len()) as u32),
-            _ => {}
+            _ => {},
         }
         Some((payload, info))
     }
 
     fn get_subject(&self) -> Option<&str> {
         match &self.message {
-            NatsMessage::Info(_)
-            | NatsMessage::Connect(_)
-            | NatsMessage::Unsub(_)
-            | NatsMessage::Ping(_)
-            | NatsMessage::Pong(_)
-            | NatsMessage::Ok(_)
-            | NatsMessage::Err(_) => None,
+            NatsMessage::Info(_) |
+            NatsMessage::Connect(_) |
+            NatsMessage::Unsub(_) |
+            NatsMessage::Ping(_) |
+            NatsMessage::Pong(_) |
+            NatsMessage::Ok(_) |
+            NatsMessage::Err(_) => None,
             NatsMessage::Pub(x) => Some(x.subject.as_str()),
             NatsMessage::Hpub(x) => Some(x.subject.as_str()),
             NatsMessage::Sub(x) => Some(x.subject.as_str()),
@@ -712,14 +693,12 @@ impl NatsInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::NATS) {
-            self.is_on_blacklist = t.request_type.is_on_blacklist(self.get_name())
-                || t.request_domain.is_on_blacklist(&self.server_name)
-                || self
-                    .get_subject()
+            self.is_on_blacklist = t.request_type.is_on_blacklist(self.get_name()) ||
+                t.request_domain.is_on_blacklist(&self.server_name) ||
+                self.get_subject()
                     .map(|p| t.request_resource.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .endpoint
+                    .unwrap_or_default() ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -748,10 +727,7 @@ impl From<NatsInfo> for L7ProtocolSendLog {
             flags = flags | ApplicationFlags::REVERSED;
         }
         let name = info.get_name();
-        let subject = info
-            .get_subject()
-            .map(|x| x.to_string())
-            .unwrap_or_default();
+        let subject = info.get_subject().map(|x| x.to_string()).unwrap_or_default();
         let log = L7ProtocolSendLog {
             captured_request_byte: info.captured_request_byte,
             captured_response_byte: info.captured_response_byte,
@@ -1009,18 +985,14 @@ impl L7ProtocolParserInterface for NatsLog {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         config::handler::{L7LogDynamicConfigBuilder, TraceType},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/nats";
 
@@ -1084,15 +1056,14 @@ mod tests {
                 match info {
                     L7ParseResult::Single(s) => {
                         output.push_str(&format!("{:?}\n", s));
-                    }
-                    L7ParseResult::Multi(m) => {
+                    },
+                    L7ParseResult::Multi(m) =>
                         for i in m {
                             output.push_str(&format!("{:?}\n", i));
-                        }
-                    }
+                        },
                     L7ParseResult::None => {
                         output.push_str("None\n");
-                    }
+                    },
                 }
             } else {
                 output.push_str(&format!("{:?}\n", NatsInfo::default()));

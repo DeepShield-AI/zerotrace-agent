@@ -14,23 +14,22 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::sync::{atomic::Ordering, Arc};
-
-use bitflags::bitflags;
-use log::debug;
-
-use super::{FlowPerfCounter, L4FlowPerf, ART_MAX};
-
+use super::{ART_MAX, FlowPerfCounter, L4FlowPerf};
 use crate::{
     common::{
+        Timestamp,
         enums::TcpFlags,
         flow::{FlowPerfStats, L4Protocol},
         lookup_key::LookupKey,
         meta_packet::{MetaPacket, MetaPacketTcpHeader, ProtocolData},
-        Timestamp,
     },
     flow_generator::error::{Error, Result},
+};
+use bitflags::bitflags;
+use log::debug;
+use std::{
+    fmt,
+    sync::{Arc, atomic::Ordering},
 };
 
 const SRT_MAX: Timestamp = Timestamp::from_secs(10);
@@ -38,11 +37,7 @@ const RTT_FULL_MAX: Timestamp = Timestamp::from_secs(30);
 const RTT_MAX: Timestamp = Timestamp::from_secs(30);
 
 fn adjust_rtt(d: Timestamp, max: Timestamp) -> Timestamp {
-    if d > max {
-        Timestamp::ZERO
-    } else {
-        d
-    }
+    if d > max { Timestamp::ZERO } else { d }
 }
 
 const WIN_SCALE_MAX: u8 = 14;
@@ -178,9 +173,9 @@ impl SessionPeer {
         let last_index = 0usize;
         // 前一个包在seq范围的高3/4, 当前包在seq范围的低1/4
         // 意味着seq已循环，需清空array
-        if seg.seq < Self::SEQ_NUMBER_LOW_THRESHOLD
-            && self.seq_list[last_index].seq + self.seq_list[last_index].len
-                > Self::SEQ_NUMBER_HIGH_THRESHOLD
+        if seg.seq < Self::SEQ_NUMBER_LOW_THRESHOLD &&
+            self.seq_list[last_index].seq + self.seq_list[last_index].len >
+                Self::SEQ_NUMBER_HIGH_THRESHOLD
         {
             // 清空list
             self.seq_list = Default::default();
@@ -192,9 +187,9 @@ impl SessionPeer {
 
         // 前一个包在seq范围的低1/4, 当前包在seq范围的高3/4
         // 意味着之前的包重传或乱序了，忽略这类包
-        if seg.seq > Self::SEQ_NUMBER_HIGH_THRESHOLD
-            && self.seq_list[last_index].seq + self.seq_list[last_index].len
-                < Self::SEQ_NUMBER_LOW_THRESHOLD
+        if seg.seq > Self::SEQ_NUMBER_HIGH_THRESHOLD &&
+            self.seq_list[last_index].seq + self.seq_list[last_index].len <
+                Self::SEQ_NUMBER_LOW_THRESHOLD
         {
             // 忽略当前包
             return false;
@@ -213,10 +208,7 @@ impl SessionPeer {
             return (None, None, 0);
         }
         let mut index = self.seq_list_len as usize;
-        for (i, s) in self.seq_list[..self.seq_list_len as usize]
-            .iter()
-            .enumerate()
-        {
+        for (i, s) in self.seq_list[..self.seq_list_len as usize].iter().enumerate() {
             if seg.seq > s.seq {
                 // 查找node在list中的位置
                 index = i;
@@ -285,8 +277,8 @@ impl SessionPeer {
         seg: &SeqSegment,
     ) -> bool {
         if let Some(gte) = gte {
-            if seg.seq < gte.seq && seg.seq + seg.len > gte.seq
-                || seg.seq + seg.len > gte.seq + gte.len
+            if seg.seq < gte.seq && seg.seq + seg.len > gte.seq ||
+                seg.seq + seg.len > gte.seq + gte.len
             {
                 return true;
             }
@@ -338,18 +330,17 @@ impl SessionPeer {
                     } else {
                         PacketSeqType::Discontinuous
                     }
-                }
+                },
                 ContinuousFlags::BOTH_CONTINUOUS => {
                     self.merge_seq_list(index - 1);
                     PacketSeqType::OutOfOrder
-                }
-                _ => {
+                },
+                _ =>
                     if has_gte {
                         PacketSeqType::OutOfOrder
                     } else {
                         PacketSeqType::Continuous
-                    }
-                }
+                    },
             }
         }
     }
@@ -374,8 +365,18 @@ impl SessionPeer {
 
 impl fmt::Display for SessionPeer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "timestamp: {:?}, seq: {}, payload_len: {}, win_size: {}, win_scale: {}, srt_calculable: {}, art_calculable: {}, seq_list: {:?}",
-            self.timestamp, self.seq, self.payload_len, self.win_size, self.win_scale, self.srt_calculable, self.art_calculable, &self.seq_list[..self.seq_list_len as usize])
+        write!(
+            f,
+            "timestamp: {:?}, seq: {}, payload_len: {}, win_size: {}, win_scale: {}, srt_calculable: {}, art_calculable: {}, seq_list: {:?}",
+            self.timestamp,
+            self.seq,
+            self.payload_len,
+            self.win_size,
+            self.win_scale,
+            self.srt_calculable,
+            self.art_calculable,
+            &self.seq_list[..self.seq_list_len as usize]
+        )
     }
 }
 
@@ -726,17 +727,15 @@ impl TcpPerf {
                 // established retrans
                 self.perf_data.calc_retrans(packet_direction);
                 (false, true)
-            }
+            },
             PacketSeqType::Error => {
-                self.counter
-                    .invalid_packet_count
-                    .fetch_add(1, Ordering::Relaxed);
+                self.counter.invalid_packet_count.fetch_add(1, Ordering::Relaxed);
                 (true, false)
-            }
+            },
             PacketSeqType::OutOfOrder => {
                 self.perf_data.calc_ooo(packet_direction);
                 (false, false)
-            }
+            },
             _ => (false, false),
         }
     }
@@ -802,8 +801,8 @@ impl TcpPerf {
                 // - F: ACK
                 // rtt0: TimeStats{Count: 2, Sum: (C-A)+(D-A), Max: D-A}
                 // rtt1: TimeStats{Count: 2, Sum: (E-C)+(F-C), Max: F-C}
-                if (Self::is_handshake_ack_packet(same_dir, oppo_dir, p) || p.is_syn_ack())
-                    && !oppo_dir.first_handshake_timestamp.is_zero()
+                if (Self::is_handshake_ack_packet(same_dir, oppo_dir, p) || p.is_syn_ack()) &&
+                    !oppo_dir.first_handshake_timestamp.is_zero()
                 {
                     let rtt = adjust_rtt(
                         (p.lookup_key.timestamp - oppo_dir.first_handshake_timestamp).into(),
@@ -956,8 +955,8 @@ impl TcpPerf {
                 same_dir.is_handshake_ack_packet = false;
                 let d = p.lookup_key.timestamp - same_dir.timestamp.max(oppo_dir.timestamp);
                 self.perf_data.calc_cit(d.into());
-            } else if oppo_dir.payload_len > 1
-                && (same_dir.payload_len <= 1 || oppo_dir.timestamp > same_dir.timestamp)
+            } else if oppo_dir.payload_len > 1 &&
+                (same_dir.payload_len <= 1 || oppo_dir.timestamp > same_dir.timestamp)
             {
                 let d = p.lookup_key.timestamp - oppo_dir.timestamp;
                 self.perf_data.calc_cit(d.into());
@@ -1025,9 +1024,7 @@ impl TcpPerf {
         }
 
         if Self::is_abnormal_tcp_flags(tcp_data.flags) {
-            self.counter
-                .ignored_packet_count
-                .fetch_add(1, Ordering::Relaxed);
+            self.counter.ignored_packet_count.fetch_add(1, Ordering::Relaxed);
             return false;
         }
 
@@ -1053,12 +1050,10 @@ impl L4FlowPerf for TcpPerf {
             return Ok(());
         }
 
-        if p.lookup_key.timestamp < self.ctrl_info.0.timestamp
-            || p.lookup_key.timestamp < self.ctrl_info.1.timestamp
+        if p.lookup_key.timestamp < self.ctrl_info.0.timestamp ||
+            p.lookup_key.timestamp < self.ctrl_info.1.timestamp
         {
-            self.counter
-                .invalid_packet_count
-                .fetch_add(1, Ordering::Relaxed);
+            self.counter.invalid_packet_count.fetch_add(1, Ordering::Relaxed);
             let (same_dir, oppo_dir) = if fpd {
                 (&self.ctrl_info.0, &self.ctrl_info.1)
             } else {
@@ -1380,12 +1375,9 @@ pub fn _meta_flow_perf_update(perf: &mut TcpPerf) {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::Path;
-
     use super::*;
-
     use crate::utils::test_utils::Capture;
+    use std::{fs, path::Path};
 
     const FILE_DIR: &'static str = "resources/test/flow_generator";
 
@@ -2236,8 +2228,7 @@ mod tests {
                     unreachable!();
                 };
                 assert!(tcp_data.data_offset != 0);
-                perf.parse(&packet, first_packet_src_ip == packet.lookup_key.src_ip)
-                    .unwrap();
+                perf.parse(&packet, first_packet_src_ip == packet.lookup_key.src_ip).unwrap();
             }
             let report = perf.copy_and_reset_data(reverse_flow);
             output.push_str(&format!(

@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-use std::slice;
-use std::time::Duration;
-
 use libc::{c_uint, sockaddr_ll};
+use std::{slice, time::Duration};
 
 const TP_STATUS_KERNEL: u32 = 0;
 const TPACKET_ALIGNMENT: usize = 0x10;
@@ -226,9 +224,9 @@ impl V3Wrapper {
             block: raw as *mut TpacketBlockDesc,
             block_hdr: ((raw as usize) + std::mem::size_of::<TpacketBlockDesc>())
                 as *mut TpacketBlockDescHeader,
-            v3_header: ((raw as usize)
-                + std::mem::size_of::<TpacketBlockDesc>()
-                + std::mem::size_of::<TpacketBlockDescHeader>())
+            v3_header: ((raw as usize) +
+                std::mem::size_of::<TpacketBlockDesc>() +
+                std::mem::size_of::<TpacketBlockDescHeader>())
                 as *mut Tpacket3Hdr,
             used: 0,
         };

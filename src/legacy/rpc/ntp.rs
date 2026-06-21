@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-use std::convert::TryInto;
-use std::mem;
-use std::ptr;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use chrono::{DateTime, TimeZone, Utc};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use std::{
+    convert::TryInto,
+    mem, ptr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
@@ -157,10 +157,10 @@ impl From<&SystemTime> for NtpTime {
         let n = DateTime::<Utc>::from(*t)
             .signed_duration_since(Utc.with_ymd_and_hms(1900, 1, 1, 0, 0, 0).unwrap());
         let secs = n.num_seconds() as u64;
-        let frac = (((n.num_nanoseconds().unwrap() as u64 - secs * NSEC_IN_SEC as u64) << 32)
-            + NSEC_IN_SEC as u64
-            - 1)
-            / NSEC_IN_SEC as u64;
+        let frac = (((n.num_nanoseconds().unwrap() as u64 - secs * NSEC_IN_SEC as u64) << 32) +
+            NSEC_IN_SEC as u64 -
+            1) /
+            NSEC_IN_SEC as u64;
         Self(secs << 32 | frac)
     }
 }

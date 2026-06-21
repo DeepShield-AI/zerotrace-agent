@@ -14,26 +14,25 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net::IpAddr;
-use std::num::NonZeroUsize;
-use std::sync::{Arc, RwLock};
-
+use crate::{
+    common::{
+        TapPort, Timestamp, decapsulate::TunnelType, enums::CaptureNetworkType,
+        lookup_key::LookupKey, platform_data::PlatformData,
+    },
+    utils::environment::is_tt_workload,
+};
 use ahash::AHashMap;
 use ipnetwork::IpNetwork;
 use log::{debug, error};
 use lru::LruCache;
 use pnet::datalink::NetworkInterface;
-
-use crate::{
-    common::{
-        decapsulate::TunnelType, enums::CaptureNetworkType, lookup_key::LookupKey,
-        platform_data::PlatformData, TapPort, Timestamp,
-    },
-    utils::environment::is_tt_workload,
+use public::{proto::agent::AgentType, utils::net::MacAddr};
+use std::{
+    fmt,
+    net::IpAddr,
+    num::NonZeroUsize,
+    sync::{Arc, RwLock},
 };
-use public::proto::agent::AgentType;
-use public::utils::net::MacAddr;
 
 pub const FROM_CONTROLLER: u16 = 1;
 pub const FROM_CONFIG: u16 = 2;
@@ -157,10 +156,7 @@ impl Forward {
             let mac = mac.unwrap();
 
             for ip in &platform.ips {
-                let key = L3Key {
-                    ip: ip.raw_ip,
-                    mac: mac,
-                };
+                let key = L3Key { ip: ip.raw_ip, mac };
                 if let Some(value) = table.get_mut(&key) {
                     value.from |= FROM_CONTROLLER;
                     continue;
@@ -266,8 +262,12 @@ impl Forward {
         interfaces: &Vec<NetworkInterface>,
     ) {
         if platforms.len() + interfaces.len() > self.capacity {
-            error!("The capacity({}) of the Forward table will be exceeded, where platforms is {} and interfaces is {}. ",
-                self.capacity, platforms.len(), interfaces.len());
+            error!(
+                "The capacity({}) of the Forward table will be exceeded, where platforms is {} and interfaces is {}. ",
+                self.capacity,
+                platforms.len(),
+                interfaces.len()
+            );
         }
         let mut mac_ip_table = self.mac_ip_tables.write().unwrap();
         mac_ip_table.clear();
@@ -324,14 +324,10 @@ impl Forward {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
-
-    use pnet::datalink;
-
-    use crate::common::decapsulate::TunnelType;
-    use crate::common::platform_data::IpSubnet;
-
     use super::*;
+    use crate::common::{decapsulate::TunnelType, platform_data::IpSubnet};
+    use pnet::datalink;
+    use std::net::Ipv4Addr;
 
     #[test]
     fn test_forward() {

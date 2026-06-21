@@ -14,20 +14,23 @@
  * limitations under the License.
  */
 
-use std::net::IpAddr;
-use std::sync::{Arc, Weak};
-
-use public::enums::IpProtocol;
-
-use crate::flow_generator::protocol_logs::pb_adapter::KeyVal;
-use crate::plugin::PluginCounterInfo;
-use crate::{common::l7_protocol_log::ParseParam, flow_generator::protocol_logs::L7ResponseStatus};
-
 use super::{
-    shared_obj::SoPluginCounter, CustomInfo, CustomInfoRequest, CustomInfoResp, CustomInfoTrace,
+    CustomInfo, CustomInfoRequest, CustomInfoResp, CustomInfoTrace, shared_obj::SoPluginCounter,
 };
-use public::counter::{Countable, RefCountable};
-use public::l7_protocol::LogMessageType;
+use crate::{
+    common::l7_protocol_log::ParseParam,
+    flow_generator::protocol_logs::{L7ResponseStatus, pb_adapter::KeyVal},
+    plugin::PluginCounterInfo,
+};
+use public::{
+    counter::{Countable, RefCountable},
+    enums::IpProtocol,
+    l7_protocol::LogMessageType,
+};
+use std::{
+    net::IpAddr,
+    sync::{Arc, Weak},
+};
 
 pub const INIT_FUNC_SYM: &'static str = "init";
 pub const CHECK_PAYLOAD_FUNC_SYM: &'static str = "on_check_payload";
@@ -91,12 +94,12 @@ impl From<(&ParseParam<'_>, &[u8])> for ParseCtx {
                 ctx.ip_type = 4;
                 (&mut ctx.ip_src[..4]).copy_from_slice(&src.octets());
                 (&mut ctx.ip_dst[..4]).copy_from_slice(&dst.octets());
-            }
+            },
             (IpAddr::V6(src), IpAddr::V6(dst)) => {
                 ctx.ip_type = 6;
                 (&mut ctx.ip_src).copy_from_slice(&src.octets());
                 (&mut ctx.ip_dst).copy_from_slice(&dst.octets());
-            }
+            },
             _ => unreachable!(),
         };
 
@@ -267,7 +270,7 @@ impl TryFrom<ParseInfo> for CustomInfo {
                     },
                     CustomInfoResp::default(),
                 )
-            }
+            },
             LogMessageType::Response => {
                 // union must use unsafe, correctness depends on plugin implementation
                 let resp = unsafe { v.req_resp.resp };
@@ -283,7 +286,7 @@ impl TryFrom<ParseInfo> for CustomInfo {
                         endpoint: c_str_to_string(&resp.endpoint).unwrap_or_default(),
                     },
                 )
-            }
+            },
             _ => return Err(format!("msg type {} invalid", v.msg_type)),
         };
 

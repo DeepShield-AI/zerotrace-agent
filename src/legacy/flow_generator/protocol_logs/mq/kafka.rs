@@ -14,17 +14,6 @@
  * limitations under the License.
  */
 
-use std::{borrow::Cow, fmt, num::NonZeroUsize, str};
-
-use log::debug;
-use lru::LruCache;
-use nom::{
-    bytes::complete::take,
-    number::complete::{be_i16, be_i32, be_i64, be_u16, be_u32},
-};
-use num_enum::FromPrimitive;
-use serde::{Serialize, Serializer};
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -37,16 +26,24 @@ use crate::{
     flow_generator::{
         error,
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             pb_adapter::{
                 ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, TraceInfo,
             },
-            set_captured_byte, swap_if, value_is_default, value_is_negative, AppProtoHead,
-            L7ResponseStatus, PrioFields, BASE_FIELD_PRIORITY,
+            set_captured_byte, swap_if, value_is_default, value_is_negative,
         },
     },
 };
-
+use log::debug;
+use lru::LruCache;
+use nom::{
+    bytes::complete::take,
+    number::complete::{be_i16, be_i32, be_i64, be_u16, be_u32},
+};
+use num_enum::FromPrimitive;
 use public::l7_protocol::LogMessageType;
+use serde::{Serialize, Serializer};
+use std::{borrow::Cow, fmt, num::NonZeroUsize, str};
 
 // Keys are from:
 //     https://github.com/apache/kafka/blob/56a3c6dde929763aaf74a801bd043fdd474a8ed2/clients/src/main/java/org/apache/kafka/common/protocol/ApiKeys.java#L41
@@ -229,17 +226,16 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 // the format of types can be found in: https://kafka.apache.org/protocol#protocol_types
 mod decoder {
-    use std::str;
-
     use bytes::Buf;
     use log::debug;
     use nom::{
+        Err as NomErr, IResult,
         bytes::complete::take,
         error::{Error as NomError, ErrorKind},
-        number::complete::{be_i16, be_i32, be_i8},
-        Err as NomErr, IResult,
+        number::complete::{be_i8, be_i16, be_i32},
     };
     use prost::encoding::decode_varint;
+    use std::str;
 
     pub fn unsigned_varint(mut input: &[u8]) -> IResult<&[u8], u32> {
         let data = &mut input;
@@ -251,11 +247,11 @@ mod decoder {
                 let remaining = data.remaining();
                 let offset = input.len() - remaining;
                 Ok((&input[offset..], v as u32))
-            }
+            },
             Err(e) => {
                 debug!("varint decode failed: {:?}", e);
                 Err(NomErr::Failure(NomError::new(input, ErrorKind::MapRes)))
-            }
+            },
         }
     }
 
@@ -270,11 +266,11 @@ mod decoder {
                 let remaining = data.remaining();
                 let offset = input.len() - remaining;
                 Ok((&input[offset..], ((v >> 1) as i64) ^ (-((v & 1) as i64))))
-            }
+            },
             Err(e) => {
                 debug!("varint decode failed: {:?}", e);
                 Err(NomErr::Failure(NomError::new(input, ErrorKind::MapRes)))
-            }
+            },
         }
     }
 
@@ -425,7 +421,7 @@ mod decoder {
                 // ref: https://kafka.apache.org/39/documentation/#messageset
                 debug!("failed to parse headers from records: {:?}", e);
                 Ok((input, vec![]))
-            }
+            },
         }
     }
 
@@ -442,7 +438,7 @@ mod decoder {
                 // ref: https://kafka.apache.org/39/documentation/#messageset
                 debug!("failed to parse headers from records: {:?}", e);
                 Ok((input, vec![]))
-            }
+            },
         }
     }
 
@@ -712,18 +708,16 @@ impl KafkaInfo {
                 .command
                 .as_ref()
                 .map(|p| t.request_type.is_on_blacklist(p))
-                .unwrap_or_default()
-                || self
-                    .resource
+                .unwrap_or_default() ||
+                self.resource
                     .as_ref()
                     .map(|p| t.request_resource.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .endpoint
+                    .unwrap_or_default() ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || t.request_domain.is_on_blacklist(&self.topic_name);
+                    .unwrap_or_default() ||
+                t.request_domain.is_on_blacklist(&self.topic_name);
         }
     }
 
@@ -763,9 +757,8 @@ impl From<KafkaInfo> for L7ProtocolSendLog {
                 status: f.status,
                 code: f.status_code,
                 exception: match f.status_code {
-                    Some(KafkaLog::CODE_APIKEY_NOT_SUPPORTED) => {
-                        KafkaLog::EXCEPTION_APIKEY_NOT_SUPPORTED.to_owned()
-                    }
+                    Some(KafkaLog::CODE_APIKEY_NOT_SUPPORTED) =>
+                        KafkaLog::EXCEPTION_APIKEY_NOT_SUPPORTED.to_owned(),
                     _ => String::new(),
                 },
                 ..Default::default()
@@ -850,7 +843,7 @@ impl L7ProtocolParserInterface for KafkaLog {
 
         let mut info = KafkaInfo::default();
         match Self::parse(self, payload, param.direction, &mut info) {
-            Ok(()) => {}
+            Ok(()) => {},
             Err(Error::ParseFailed(e)) => {
                 // buffer may be truncated
                 // if api key is known and correlation id is parsed, treat it as a normal log
@@ -862,14 +855,14 @@ impl L7ProtocolParserInterface for KafkaLog {
                 if info.msg_type == LogMessageType::Response {
                     info.status = L7ResponseStatus::Ok;
                 }
-            }
+            },
             Err(Error::UnsupportedApi(api)) if !matches!(api.key, ApiKey::Unknown(..)) => {
                 debug!("unsupported api: {api}");
                 if info.msg_type == LogMessageType::Response {
                     info.status = L7ResponseStatus::Ok;
                     info.status_code = Some(Self::CODE_APIKEY_NOT_SUPPORTED);
                 }
-            }
+            },
             Err(e) => return Err(e.into()),
         }
         info.is_tls = param.is_tls();
@@ -877,21 +870,17 @@ impl L7ProtocolParserInterface for KafkaLog {
         info.resource = match (info.api.key, info.msg_type) {
             (ApiKey::Fetch, LogMessageType::Request) | (ApiKey::Fetch, LogMessageType::Session)
                 if !info.topic_name.is_empty() =>
-            {
                 Some(format!(
                     "{}-{}:{}",
                     info.topic_name, info.partition, info.offset
-                ))
-            }
-            (ApiKey::Produce, LogMessageType::Response)
-            | (ApiKey::Produce, LogMessageType::Session)
+                )),
+            (ApiKey::Produce, LogMessageType::Response) |
+            (ApiKey::Produce, LogMessageType::Session)
                 if !info.topic_name.is_empty() =>
-            {
                 Some(format!(
                     "{}-{}:{}",
                     info.topic_name, info.partition, info.offset
-                ))
-            }
+                )),
             _ => None,
         };
 
@@ -1522,8 +1511,7 @@ impl KafkaLog {
                 continue;
             }
             if let Some(trace_id) = tp.decode_trace_id(v) {
-                info.trace_ids
-                    .merge_field(BASE_FIELD_PRIORITY, trace_id.to_string());
+                info.trace_ids.merge_field(BASE_FIELD_PRIORITY, trace_id.to_string());
             }
             if let Some(span_id) = tp.decode_span_id(v) {
                 info.span_id = span_id.to_string();
@@ -1623,18 +1611,13 @@ impl KafkaLog {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Write;
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fmt::Write, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/kafka";
 
@@ -1707,7 +1690,7 @@ mod tests {
                 match info.unwrap_single() {
                     L7ProtocolInfo::KafkaInfo(i) => {
                         let _ = write!(&mut output, "{} is_kafka: {is_kafka}\n", ValidateInfo(&i));
-                    }
+                    },
                     _ => unreachable!(),
                 }
             } else {

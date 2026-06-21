@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-use std::{
-    sync::atomic::{AtomicBool, AtomicU32},
-    sync::Arc,
-};
-
 use crate::common::Timestamp;
 use public::proto::agent::AgentType;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32},
+};
 
 pub const TIMEOUT_OTHERS: Timestamp = Timestamp::from_secs(5);
 pub const TIMEOUT_ESTABLISHED: Timestamp = Timestamp::from_secs(300);

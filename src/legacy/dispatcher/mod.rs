@@ -27,62 +27,16 @@ mod local_plus_mode_dispatcher;
 mod mirror_mode_dispatcher;
 mod mirror_plus_mode_dispatcher;
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use std::collections::HashSet;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-        Arc, Mutex, RwLock, Weak,
-    },
-};
-
-#[cfg(target_os = "linux")]
-use arc_swap::access::Access;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use log::error;
-use log::{debug, info, warn};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::sched::CpuSet;
-use packet_dedup::*;
-use public::debug::QueueDebugger;
-use special_recv_engine::Libpcap;
-#[cfg(target_os = "linux")]
-use special_recv_engine::{Dpdk, VhostUser};
-
-use analyzer_mode_dispatcher::{AnalyzerModeDispatcher, AnalyzerModeDispatcherListener}; // Enterprise Edition Feature: analyzer_mode
-use base_dispatcher::{BaseDispatcher, CaptureNetworkTypeHandler, InternalState};
-use error::{Error, Result};
-use local_mode_dispatcher::{LocalModeDispatcher, LocalModeDispatcherListener};
-#[cfg(target_os = "linux")]
-use local_multins_mode_dispatcher::{
-    LocalMultinsModeDispatcher, LocalMultinsModeDispatcherListener,
-};
-use local_plus_mode_dispatcher::{LocalPlusModeDispatcher, LocalPlusModeDispatcherListener};
-use mirror_mode_dispatcher::{MirrorModeDispatcher, MirrorModeDispatcherListener};
-use mirror_plus_mode_dispatcher::{MirrorPlusModeDispatcher, MirrorPlusModeDispatcherListener};
-pub use recv_engine::RecvEngine;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub use recv_engine::{
-    af_packet::{self, bpf::*, BpfSyntax, OptTpacketVersion, RawInstruction, Tpacket},
-    DEFAULT_BLOCK_SIZE, FRAME_SIZE_MAX, FRAME_SIZE_MIN, POLL_TIMEOUT,
-};
-#[cfg(target_os = "linux")]
-use special_recv_engine::DpdkFromEbpf;
-
-use crate::common::decapsulate::TunnelTypeBitmap;
 #[cfg(target_os = "linux")]
 use crate::platform::LibvirtXmlExtractor;
 use crate::{
     common::{
-        enums::CaptureNetworkType, flow::L7Stats, CaptureNetworkTyper, FlowAclListener,
-        FlowAclListenerId, TaggedFlow,
+        CaptureNetworkTyper, FlowAclListener, FlowAclListenerId, TaggedFlow,
+        decapsulate::TunnelTypeBitmap, enums::CaptureNetworkType, flow::L7Stats,
     },
     config::{
-        handler::{CollectorAccess, DispatcherAccess, FlowAccess, LogParserAccess},
         DispatcherConfig, DpdkSource,
+        handler::{CollectorAccess, DispatcherAccess, FlowAccess, LogParserAccess},
     },
     exception::ExceptionHandler,
     flow_generator::AppProto,
@@ -93,16 +47,57 @@ use crate::{
         stats::{self, Collector},
     },
 };
-
+use analyzer_mode_dispatcher::{AnalyzerModeDispatcher, AnalyzerModeDispatcherListener}; // Enterprise Edition Feature: analyzer_mode
+#[cfg(target_os = "linux")]
+use arc_swap::access::Access;
+use base_dispatcher::{BaseDispatcher, CaptureNetworkTypeHandler, InternalState};
+use error::{Error, Result};
+use local_mode_dispatcher::{LocalModeDispatcher, LocalModeDispatcherListener};
+#[cfg(target_os = "linux")]
+use local_multins_mode_dispatcher::{
+    LocalMultinsModeDispatcher, LocalMultinsModeDispatcherListener,
+};
+use local_plus_mode_dispatcher::{LocalPlusModeDispatcher, LocalPlusModeDispatcherListener};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use log::error;
+use log::{debug, info, warn};
+use mirror_mode_dispatcher::{MirrorModeDispatcher, MirrorModeDispatcherListener};
+use mirror_plus_mode_dispatcher::{MirrorPlusModeDispatcher, MirrorPlusModeDispatcherListener};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::sched::CpuSet;
+use packet_dedup::*;
 #[cfg(target_os = "linux")]
 use public::netns::NsFile;
 use public::{
+    LeakyBucket,
     buffer::{BatchedBox, BatchedBuffer},
+    debug::QueueDebugger,
     packet,
     proto::agent::{AgentType, IfMacSource, PacketCaptureType},
     queue::{DebugSender, Receiver},
     utils::net::{Link, MacAddr},
-    LeakyBucket,
+};
+pub use recv_engine::RecvEngine;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub use recv_engine::{
+    DEFAULT_BLOCK_SIZE, FRAME_SIZE_MAX, FRAME_SIZE_MIN, POLL_TIMEOUT,
+    af_packet::{self, BpfSyntax, OptTpacketVersion, RawInstruction, Tpacket, bpf::*},
+};
+#[cfg(target_os = "linux")]
+use special_recv_engine::DpdkFromEbpf;
+use special_recv_engine::Libpcap;
+#[cfg(target_os = "linux")]
+use special_recv_engine::{Dpdk, VhostUser};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::collections::HashSet;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, Mutex, RwLock, Weak,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 #[derive(Debug)]
@@ -340,14 +335,14 @@ impl DispatcherListener {
             // Enterprise Edition Feature: analyzer_mode
             Self::Analyzer(l) => {
                 l.on_vm_change(vm_mac_addrs, gateway_vmac_addrs);
-            }
+            },
             Self::Mirror(l) => {
                 l.on_vm_change(vm_mac_addrs, gateway_vmac_addrs);
-            }
+            },
             Self::MirrorPlus(l) => {
                 l.on_vm_change(vm_mac_addrs, gateway_vmac_addrs);
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -359,26 +354,23 @@ impl DispatcherListener {
         blacklist: &Vec<u64>,
     ) {
         match self {
-            Self::LocalPlus(l) => {
-                l.on_tap_interface_change(interfaces, if_mac_source, agent_type, blacklist)
-            }
+            Self::LocalPlus(l) =>
+                l.on_tap_interface_change(interfaces, if_mac_source, agent_type, blacklist),
             #[cfg(target_os = "linux")]
-            Self::LocalMultins(l) => {
-                l.on_tap_interface_change(interfaces, if_mac_source, agent_type, blacklist)
-            }
-            Self::Local(l) => {
-                l.on_tap_interface_change(interfaces, if_mac_source, agent_type, blacklist)
-            }
+            Self::LocalMultins(l) =>
+                l.on_tap_interface_change(interfaces, if_mac_source, agent_type, blacklist),
+            Self::Local(l) =>
+                l.on_tap_interface_change(interfaces, if_mac_source, agent_type, blacklist),
             // Enterprise Edition Feature: analyzer_mode
             Self::Analyzer(l) => {
                 l.on_tap_interface_change(interfaces, if_mac_source);
-            }
+            },
             Self::Mirror(l) => {
                 l.on_tap_interface_change(interfaces, if_mac_source, agent_type);
-            }
+            },
             Self::MirrorPlus(l) => {
                 l.on_tap_interface_change(interfaces, if_mac_source, agent_type);
-            }
+            },
         }
     }
 }
@@ -499,10 +491,8 @@ impl BpfOptions {
                 0xffff as libc::c_int,
                 1,
                 &mut prog,
-                std::ffi::CString::new(self.capture_bpf.clone())
-                    .unwrap()
-                    .as_c_str()
-                    .as_ptr() as *const libc::c_char,
+                std::ffi::CString::new(self.capture_bpf.clone()).unwrap().as_c_str().as_ptr()
+                    as *const libc::c_char,
                 1,
                 0xffffffff,
             );
@@ -953,16 +943,13 @@ impl DispatcherBuilder {
         // 这样 Dispatcher 才能在容器或虚拟网络环境中抓到正确的包。
         #[cfg(target_os = "linux")]
         let _ = netns.open_and_setns()?;
-        let options = self
-            .options
-            .ok_or(Error::ConfigIncomplete("no options".into()))?;
+        let options = self.options.ok_or(Error::ConfigIncomplete("no options".into()))?;
         let capture_mode = options.lock().unwrap().capture_mode;
         let snap_len = options.lock().unwrap().snap_len;
-        let queue_debugger = self
-            .queue_debugger
-            .ok_or(Error::ConfigIncomplete("no queue debugger".into()))?;
+        let queue_debugger =
+            self.queue_debugger.ok_or(Error::ConfigIncomplete("no queue debugger".into()))?;
         let dispatcher_queue = options.lock().unwrap().dispatcher_queue;
-        
+
         // 1. 创建收包引擎 (RecvEngine)
         // 根据配置 (AF_PACKET, DPDK, Libpcap) 初始化底层的收包模块。
         let engine = Self::get_engine(
@@ -978,9 +965,7 @@ impl DispatcherBuilder {
         let terminated = Arc::new(AtomicBool::new(false));
         // 创建统计计数器，用于监控丢包、包量等
         let stat_counter = Arc::new(PacketCounter::new(terminated.clone(), kernel_counter));
-        let collector = self
-            .stats_collector
-            .ok_or(Error::StatsCollector("no stats collector"))?;
+        let collector = self.stats_collector.ok_or(Error::StatsCollector("no stats collector"))?;
         let src_interface = if capture_mode == PacketCaptureType::Local {
             "".to_string()
         } else {
@@ -991,13 +976,11 @@ impl DispatcherBuilder {
         let local_tap_interfaces = public::netns::link_list_in_netns(&netns).unwrap_or_default();
         #[cfg(any(target_os = "windows", target_os = "android"))]
         let local_tap_interfaces = public::utils::net::link_list().unwrap_or_default();
-        
+
         // 处理 Bond 接口 (链路聚合)
         // 需要建立物理接口与 Bond 接口的映射关系，以便正确标记流量来源。
-        let bond_group = self
-            .bond_group
-            .take()
-            .ok_or(Error::ConfigIncomplete("no bond group".into()))?;
+        let bond_group =
+            self.bond_group.take().ok_or(Error::ConfigIncomplete("no bond group".into()))?;
         let mut bond_group_map = HashMap::new();
         let mut bond_mac = None;
         for sub_iface in &bond_group {
@@ -1036,9 +1019,7 @@ impl DispatcherBuilder {
             id,
             src_interface: src_interface.clone(),
             src_interface_index: 0,
-            ctrl_mac: self
-                .ctrl_mac
-                .ok_or(Error::ConfigIncomplete("no ctrl_mac".into()))?,
+            ctrl_mac: self.ctrl_mac.ok_or(Error::ConfigIncomplete("no ctrl_mac".into()))?,
 
             options,
             bpf_options: self.bpf_options.unwrap_or_default(),
@@ -1058,9 +1039,7 @@ impl DispatcherBuilder {
             tap_interface_whitelist: Default::default(),
 
             tap_type_handler: CaptureNetworkTypeHandler {
-                tap_typer: self
-                    .tap_typer
-                    .ok_or(Error::ConfigIncomplete("no tap_typer".into()))?,
+                tap_typer: self.tap_typer.ok_or(Error::ConfigIncomplete("no tap_typer".into()))?,
                 default_tap_type: self
                     .default_tap_type
                     .ok_or(Error::ConfigIncomplete("no default_tap_type".into()))?,
@@ -1106,19 +1085,14 @@ impl DispatcherBuilder {
                 .dispatcher_config
                 .take()
                 .ok_or(Error::ConfigIncomplete("no dispatcher config".into()))?,
-            policy_getter: self
-                .policy_getter
-                .ok_or(Error::ConfigIncomplete("no policy".into()))?,
+            policy_getter: self.policy_getter.ok_or(Error::ConfigIncomplete("no policy".into()))?,
             #[cfg(target_os = "linux")]
             platform_poller: platform_poller.clone(),
             exception_handler: self
                 .exception_handler
                 .take()
                 .ok_or(Error::ConfigIncomplete("no exception handler".into()))?,
-            ntp_diff: self
-                .ntp_diff
-                .take()
-                .ok_or(Error::ConfigIncomplete("no ntp_diff".into()))?,
+            ntp_diff: self.ntp_diff.take().ok_or(Error::ConfigIncomplete("no ntp_diff".into()))?,
             // Enterprise Edition Feature: packet-sequence
             packet_sequence_output_queue: self
                 .packet_sequence_output_queue
@@ -1168,12 +1142,7 @@ impl DispatcherBuilder {
                     })
                 } else {
                     #[cfg(target_os = "linux")]
-                    if base
-                        .is
-                        .dispatcher_config
-                        .load()
-                        .inner_interface_capture_enabled
-                    {
+                    if base.is.dispatcher_config.load().inner_interface_capture_enabled {
                         DispatcherFlavor::LocalMultins(LocalMultinsModeDispatcher::new(base))
                     } else {
                         DispatcherFlavor::Local(LocalModeDispatcher { base, extractor })
@@ -1181,8 +1150,8 @@ impl DispatcherBuilder {
                     #[cfg(not(target_os = "linux"))]
                     DispatcherFlavor::Local(LocalModeDispatcher { base })
                 }
-            }
-            PacketCaptureType::Mirror => {
+            },
+            PacketCaptureType::Mirror =>
                 if dispatcher_queue {
                     DispatcherFlavor::MirrorPlus(MirrorPlusModeDispatcher {
                         base,
@@ -1226,8 +1195,7 @@ impl DispatcherBuilder {
                         mac: get_mac_by_name(src_interface),
                         last_timestamp_array: vec![],
                     })
-                }
-            }
+                },
             PacketCaptureType::Analyzer => {
                 #[cfg(target_os = "linux")]
                 {
@@ -1255,13 +1223,13 @@ impl DispatcherBuilder {
                         Error::ConfigIncomplete("no analyzer-raw-packet-block-size".into()),
                     )?,
                 })
-            }
+            },
             _ => {
                 return Err(Error::ConfigInvalid(format!(
                     "invalid capture mode {:?}",
                     &base.is.options.lock().unwrap().capture_mode
-                )))
-            }
+                )));
+            },
         };
         dispatcher.init()?;
         #[cfg(target_os = "linux")]
@@ -1298,7 +1266,7 @@ impl DispatcherBuilder {
                     options.vhost_socket_path.clone(),
                     options.vhost_queue_size(),
                 )))
-            }
+            },
             PacketCaptureType::Mirror | PacketCaptureType::Local if options.libpcap_enabled => {
                 #[cfg(target_os = "windows")]
                 let src_ifaces = pcap_interfaces
@@ -1326,7 +1294,7 @@ impl DispatcherBuilder {
                 )
                 .map_err(|e| error::Error::Libpcap(e.to_string()))?;
                 Ok(RecvEngine::Libpcap(Some(libpcap)))
-            }
+            },
             #[cfg(target_os = "linux")]
             PacketCaptureType::Mirror if options.dpdk_source == DpdkSource::PDump => {
                 #[cfg(target_arch = "s390x")]
@@ -1338,7 +1306,7 @@ impl DispatcherBuilder {
                     info!("Dpdk init with: {:?}", options.dpdk_source);
                     Ok(RecvEngine::Dpdk(Dpdk::new(None, None, options.snap_len)))
                 }
-            }
+            },
             #[cfg(target_os = "linux")]
             PacketCaptureType::Mirror | PacketCaptureType::Analyzer
                 if options.dpdk_source == DpdkSource::Ebpf =>
@@ -1366,7 +1334,7 @@ impl DispatcherBuilder {
                         options.dpdk_ebpf_windows,
                     )))
                 }
-            }
+            },
             #[cfg(any(target_os = "linux", target_os = "android"))]
             PacketCaptureType::Local | PacketCaptureType::Mirror | PacketCaptureType::Analyzer => {
                 let afp = af_packet::Options {
@@ -1389,10 +1357,10 @@ impl DispatcherBuilder {
                 };
                 info!("Afpacket init with {:?}", afp);
                 Ok(RecvEngine::AfPacket(Tpacket::new(afp)?))
-            }
+            },
             _ => {
                 return Err(Error::ConfigInvalid("Tap-mode not support.".into()));
-            }
+            },
         }
     }
 }

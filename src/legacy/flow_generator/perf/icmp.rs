@@ -14,23 +14,20 @@
  * limitations under the License.
  */
 
-use std::{cmp::max, collections::VecDeque};
-
+use super::{ART_MAX, L4FlowPerf};
+use crate::{
+    common::{
+        Timestamp,
+        flow::{FlowPerfStats, L4Protocol},
+        meta_packet::{MetaPacket, ProtocolData},
+    },
+    flow_generator::error::{Error, Result},
+};
 use pnet::packet::{
     icmp::{IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Type, Icmpv6Types},
 };
-
-use crate::{
-    common::{
-        flow::{FlowPerfStats, L4Protocol},
-        meta_packet::{MetaPacket, ProtocolData},
-        Timestamp,
-    },
-    flow_generator::error::{Error, Result},
-};
-
-use super::{L4FlowPerf, ART_MAX};
+use std::{cmp::max, collections::VecDeque};
 
 const MAX_CACHE_COUNT: usize = 16;
 
@@ -98,10 +95,8 @@ impl L4FlowPerf for IcmpPerf {
         };
 
         if is_request {
-            if let Some(i) = self
-                .last_replies
-                .iter()
-                .position(|l| l.id_and_seq == icmp_data.echo_id_seq)
+            if let Some(i) =
+                self.last_replies.iter().position(|l| l.id_and_seq == icmp_data.echo_id_seq)
             {
                 if pkt_timestamp <= self.last_replies[i].timestamp {
                     let srt = Timestamp::from(self.last_replies[i].timestamp - pkt_timestamp);
@@ -118,10 +113,8 @@ impl L4FlowPerf for IcmpPerf {
                 });
             }
         } else if is_reply {
-            if let Some(i) = self
-                .last_requests
-                .iter()
-                .position(|l| l.id_and_seq == icmp_data.echo_id_seq)
+            if let Some(i) =
+                self.last_requests.iter().position(|l| l.id_and_seq == icmp_data.echo_id_seq)
             {
                 if pkt_timestamp >= self.last_requests[i].timestamp {
                     let srt = Timestamp::from(pkt_timestamp - self.last_requests[i].timestamp);

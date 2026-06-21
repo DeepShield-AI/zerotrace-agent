@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    fmt::{self, Debug},
-    io::{self, Write},
-    sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        Arc, Weak,
-    },
-    time::{Duration, Instant, SystemTime},
+use super::crd::{
+    calico::IpPool,
+    kruise::{CloneSet, StatefulSet as KruiseStatefulSet},
+    legacy,
+    opengauss::OpenGaussCluster,
+    pingan_cloud::ServiceRule,
+    tkex::StatefulSetPlus,
 };
-
+use crate::utils::stats::{self, Countable, Counter, CounterType, CounterValue, RefCountable};
 use enum_dispatch::enum_dispatch;
-use flate2::{write::ZlibEncoder, Compression};
+use flate2::{Compression, write::ZlibEncoder};
 use futures::StreamExt;
 use k8s_openapi::{
+    Metadata,
     api::{
         apps::v1::{DaemonSet, Deployment, ReplicaSet, ReplicaSetSpec, StatefulSet},
         core::v1::{
@@ -40,32 +39,30 @@ use k8s_openapi::{
     apimachinery::pkg::apis::meta::v1::{
         FieldsV1, ManagedFieldsEntry, ObjectMeta, OwnerReference, Time,
     },
-    Metadata,
 };
 use kube::{
+    Api, Client, Error as ClientErr, Resource as KubeResource, ResourceExt,
     api::{ListParams, WatchEvent, WatchParams},
     error::ErrorResponse,
-    Api, Client, Error as ClientErr, Resource as KubeResource, ResourceExt,
 };
 use log::{debug, info, trace, warn};
-use serde::de::DeserializeOwned;
-use serde::ser::Serialize;
+use serde::{de::DeserializeOwned, ser::Serialize};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fmt::{self, Debug},
+    io::{self, Write},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    },
+    time::{Duration, Instant, SystemTime},
+};
 use tokio::{
     runtime::Handle,
     sync::{Mutex, Semaphore},
     task::JoinHandle,
     time,
 };
-
-use super::crd::{
-    calico::IpPool,
-    kruise::{CloneSet, StatefulSet as KruiseStatefulSet},
-    legacy,
-    opengauss::OpenGaussCluster,
-    pingan_cloud::ServiceRule,
-    tkex::StatefulSetPlus,
-};
-use crate::utils::stats::{self, Countable, Counter, CounterType, CounterValue, RefCountable};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(3600);
 const SLEEP_INTERVAL: Duration = Duration::from_secs(5);
@@ -143,20 +140,12 @@ impl<'de> serde::Deserialize<'de> for Route {
         Ok(Route {
             metadata: ObjectMeta {
                 annotations: os_route.metadata.annotations.take(),
-                creation_timestamp: os_route
-                    .metadata
-                    .creation_timestamp
-                    .take()
-                    .map(|t| Time(t.0)),
+                creation_timestamp: os_route.metadata.creation_timestamp.take().map(|t| Time(t.0)),
                 deletion_grace_period_seconds: os_route
                     .metadata
                     .deletion_grace_period_seconds
                     .take(),
-                deletion_timestamp: os_route
-                    .metadata
-                    .deletion_timestamp
-                    .take()
-                    .map(|t| Time(t.0)),
+                deletion_timestamp: os_route.metadata.deletion_timestamp.take().map(|t| Time(t.0)),
                 finalizers: os_route.metadata.finalizers.take(),
                 generate_name: os_route.metadata.generate_name.take(),
                 generation: os_route.metadata.generation.take(),
@@ -720,11 +709,7 @@ where
     }
 
     fn entries(&self) -> Vec<Vec<u8>> {
-        self.entries
-            .blocking_lock()
-            .values()
-            .map(Clone::clone)
-            .collect::<Vec<_>>()
+        self.entries.blocking_lock().values().map(Clone::clone).collect::<Vec<_>>()
     }
 
     fn ready(&self) -> bool {
@@ -764,10 +749,7 @@ where
                 .api
                 .watch(
                     &WatchParams::default().fields(&ctx.kind.field_selector),
-                    ctx.resource_version
-                        .as_ref()
-                        .map(|s| s as &str)
-                        .unwrap_or(""),
+                    ctx.resource_version.as_ref().map(|s| s as &str).unwrap_or(""),
                 )
                 .await
             {
@@ -775,21 +757,20 @@ where
                 Err(e) => {
                     warn!("{} watch failed: {:?}", ctx.kind, e);
                     return false;
-                }
+                },
             };
             while let Some(ev) = stream.next().await {
                 match ev {
                     Ok(event) => {
                         match &event {
-                            WatchEvent::Added(o)
-                            | WatchEvent::Modified(o)
-                            | WatchEvent::Deleted(o) => {
+                            WatchEvent::Added(o) |
+                            WatchEvent::Modified(o) |
+                            WatchEvent::Deleted(o) =>
                                 if let Some(version) = o.resource_version() {
                                     if version != "" {
                                         ctx.resource_version.replace(version);
                                     }
-                                }
-                            }
+                                },
                             WatchEvent::Bookmark(_) => continue,
                             WatchEvent::Error(e) => {
                                 if e.code == HTTP_FORBIDDEN {
@@ -798,11 +779,11 @@ where
                                     debug!("{} watch error: {:?}", ctx.kind, e);
                                 }
                                 return e.code == HTTP_GONE;
-                            }
+                            },
                         }
                         // handles add/modify/delete
                         Self::resolve_event(&ctx, encoder, event).await;
-                    }
+                    },
                     Err(e) => {
                         if std::matches!(
                             e,
@@ -816,7 +797,7 @@ where
                             debug!("{} watch error: {:?}", ctx.kind, e);
                         }
                         return false;
-                    }
+                    },
                 }
             }
             // recreate watcher and resume watching
@@ -840,9 +821,9 @@ where
             time::sleep(SLEEP_INTERVAL).await;
             let now = SystemTime::now();
             // list and rewatch
-            if need_relist
-                || now < last_update
-                || last_update.elapsed().unwrap() >= ctx.state.config.list_interval
+            if need_relist ||
+                now < last_update ||
+                last_update.elapsed().unwrap() >= ctx.state.config.list_interval
             {
                 debug!("{} watcher relisting", ctx.state.kind);
                 Self::full_sync(&mut ctx, &mut encoder).await;
@@ -858,10 +839,7 @@ where
             .stats_counter
             .list_cost_time_sum
             .fetch_add(now.elapsed().as_nanos() as u64, Ordering::Relaxed);
-        ctx.state
-            .stats_counter
-            .list_count
-            .fetch_add(1, Ordering::Relaxed);
+        ctx.state.stats_counter.list_count.fetch_add(1, Ordering::Relaxed);
     }
 
     async fn serialized_get_list_entry(
@@ -876,7 +854,7 @@ where
                     ctx.state.kind, e
                 );
                 return false;
-            }
+            },
         };
         let r = Self::get_list_entry(&mut ctx.state, encoder).await;
         r
@@ -901,8 +879,8 @@ where
             match ctx.api.list(&params).await {
                 Ok(mut object_list) => {
                     total_count += object_list.items.len();
-                    if ctx.resource_version.is_some()
-                        && ctx.resource_version == object_list.metadata.resource_version
+                    if ctx.resource_version.is_some() &&
+                        ctx.resource_version == object_list.metadata.resource_version
                     {
                         debug!("skip {} list with same resource version", ctx.kind);
                         ctx.stats_counter
@@ -914,10 +892,7 @@ where
                         "{} list returns {} entries, {} remaining",
                         ctx.kind,
                         object_list.items.len(),
-                        object_list
-                            .metadata
-                            .remaining_item_count
-                            .unwrap_or_default()
+                        object_list.metadata.remaining_item_count.unwrap_or_default()
                     );
                     if let Some(r) = object_list.metadata.remaining_item_count {
                         estimated_total = Some(total_count + r as usize);
@@ -943,14 +918,14 @@ where
                                             e
                                         );
                                         continue;
-                                    }
+                                    },
                                 };
                                 total_bytes += compressed_object.len();
                                 all_entries.insert(
                                     trim_object.meta_mut().uid.take().unwrap(),
                                     compressed_object,
                                 );
-                            }
+                            },
                             Err(e) => warn!(
                                 "failed serialized resource {} UID({}) to json Err: {}",
                                 ctx.kind,
@@ -977,11 +952,11 @@ where
                                 .list_length
                                 .fetch_add(total_count as u32, Ordering::Relaxed);
                             return true;
-                        }
+                        },
                         _ => (),
                     }
                     params.continue_token = object_list.metadata.continue_.take();
-                }
+                },
                 Err(err) => {
                     ctx.stats_counter.list_error.fetch_add(1, Ordering::Relaxed);
                     let msg = if matches!(
@@ -1012,7 +987,7 @@ where
                     warn!("{}", msg);
                     ctx.err_msg.lock().await.replace(msg);
                     return false;
-                }
+                },
             }
         }
     }
@@ -1025,21 +1000,17 @@ where
         match event {
             WatchEvent::Added(object) | WatchEvent::Modified(object) => {
                 Self::insert_object(encoder, object, &ctx.entries, &ctx.version, &ctx.kind).await;
-                ctx.stats_counter
-                    .watch_applied
-                    .fetch_add(1, Ordering::Relaxed);
-            }
+                ctx.stats_counter.watch_applied.fetch_add(1, Ordering::Relaxed);
+            },
             WatchEvent::Deleted(mut object) => {
                 if let Some(uid) = object.meta_mut().uid.take() {
                     // 只有删除时检查是否需要更新版本号，其余消息直接更新map内容
                     if ctx.entries.lock().await.remove(&uid).is_some() {
                         ctx.version.fetch_add(1, Ordering::SeqCst);
                     }
-                    ctx.stats_counter
-                        .watch_deleted
-                        .fetch_add(1, Ordering::Relaxed);
+                    ctx.stats_counter.watch_deleted.fetch_add(1, Ordering::Relaxed);
                 }
-            }
+            },
             WatchEvent::Bookmark(_) | WatchEvent::Error(_) => unreachable!(),
         }
     }
@@ -1067,20 +1038,20 @@ where
                                 e
                             );
                             return;
-                        }
+                        },
                     };
                     let mut entries = entries.lock().await;
                     match entries.entry(uid) {
                         Entry::Occupied(o) if o.get() == &compressed_object => return,
                         Entry::Occupied(mut o) => {
                             o.insert(compressed_object);
-                        }
+                        },
                         Entry::Vacant(o) => {
                             o.insert(compressed_object);
-                        }
+                        },
                     }
                     version.fetch_add(1, Ordering::SeqCst);
-                }
+                },
                 Err(e) => debug!(
                     "failed serialized resource {} UID({}) to json Err: {}",
                     kind, uid, e
@@ -1479,7 +1450,7 @@ impl ResourceWatcherFactory {
                         resource.selected_gv.unwrap()
                     );
                     return None;
-                }
+                },
             },
             "daemonsets" => GenericResourceWatcher::DaemonSet(self.new_namespace_resource(
                 resource,
@@ -1531,7 +1502,7 @@ impl ResourceWatcherFactory {
                         resource.selected_gv.unwrap()
                     );
                     return None;
-                }
+                },
             },
             "routes" => GenericResourceWatcher::Route(self.new_namespace_resource(
                 resource,
@@ -1563,7 +1534,7 @@ impl ResourceWatcherFactory {
             _ => {
                 warn!("unsupported resource {}", resource.name);
                 return None;
-            }
+            },
         };
 
         Some(watcher)

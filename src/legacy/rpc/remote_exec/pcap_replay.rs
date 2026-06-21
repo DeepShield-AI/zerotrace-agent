@@ -14,29 +14,10 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::VecDeque,
-    io::{self, Read},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
-use log::{debug, trace};
-use pcap::Linktype;
-use pcap_parser::{
-    pcap::LegacyPcapReader, traits::PcapReaderIterator, LegacyPcapBlock, PcapBlockOwned, PcapError,
-};
-use thiserror::Error;
-
-use public::{
-    enums::PacketDirection,
-    l7_protocol::{L7ProtocolEnum, LogMessageType},
-};
-
 use crate::{
     common::{
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
-        l7_protocol_log::{get_parser, L7ParseResult, L7ProtocolParserInterface, ParseParam},
+        l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, ParseParam, get_parser},
         meta_packet::{MetaPacket, PcapData},
     },
     config::handler::{FlowConfig, LogParserConfig},
@@ -45,6 +26,22 @@ use crate::{
         protocol_logs::{AppProtoLogsBaseInfo, MetaAppProto},
     },
 };
+use log::{debug, trace};
+use pcap::Linktype;
+use pcap_parser::{
+    LegacyPcapBlock, PcapBlockOwned, PcapError, pcap::LegacyPcapReader, traits::PcapReaderIterator,
+};
+use public::{
+    enums::PacketDirection,
+    l7_protocol::{L7ProtocolEnum, LogMessageType},
+};
+use std::{
+    collections::VecDeque,
+    io::{self, Read},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -144,7 +141,7 @@ impl StreamingParser {
             Err(e) => {
                 debug!("failed to create pcap parser: {e:?}");
                 return Err(Error::PcapParseError);
-            }
+            },
         };
         Ok(Self { parser })
     }
@@ -196,13 +193,13 @@ impl ApplicationParser {
                         self.l7_protocol = Some((*protocol).into());
                         self.server_port = Some(p.port_dst);
                         return Ok(());
-                    }
+                    },
                     Some(LogMessageType::Response) => {
                         debug!("{protocol:?} identified on server port {}", p.port_src);
                         self.l7_protocol = Some((*protocol).into());
                         self.server_port = Some(p.port_src);
                         return Ok(());
-                    }
+                    },
                     _ => (),
                 }
             }
@@ -279,12 +276,12 @@ impl ApplicationParser {
                 if parse_param.port_dst != self.server_port.unwrap() =>
             {
                 parse_param = parse_param.reversed();
-            }
+            },
             PacketDirection::ServerToClient
                 if parse_param.port_src != self.server_port.unwrap() =>
             {
                 parse_param = parse_param.reversed();
-            }
+            },
             _ => (),
         }
         let Some(mut l7_parser) = get_parser(self.l7_protocol.clone().unwrap()) else {
@@ -299,7 +296,7 @@ impl ApplicationParser {
                     log,
                 ));
                 Ok(1)
-            }
+            },
             Ok(L7ParseResult::Multi(logs)) => {
                 let n = logs.len();
                 for log in logs {
@@ -310,11 +307,11 @@ impl ApplicationParser {
                     ));
                 }
                 Ok(n)
-            }
+            },
             Err(e) => {
                 debug!("l7 log parse failed: {e:?}");
                 Err(Error::LogParseFailed)
-            }
+            },
         }
     }
 }
@@ -371,7 +368,7 @@ impl Replayer {
             Err(e) => {
                 trace!("failed to generate meta packet: {e:?}");
                 Err(Error::GenerateMetaPacketFailed)
-            }
+            },
         }
     }
 
@@ -395,22 +392,22 @@ impl Replayer {
                             Err(e) => {
                                 debug!("failed to refill pcap parser: {e:?}");
                                 return Err(Error::PcapParseError);
-                            }
+                            },
                         }
                     }
                     trace!("require more data to continue parsing");
                     return Err(Error::RequireMoreData);
-                }
+                },
                 Err(e) => {
                     debug!("failed to parse packet: {e:?}");
                     return Err(Error::PcapParseError);
-                }
+                },
             };
             let block = match block {
                 PcapBlockOwned::Legacy(block) => {
                     self.read_packet_count += 1;
                     block
-                }
+                },
                 PcapBlockOwned::LegacyHeader(header) => {
                     self.link_type = Some(match header.network {
                         pcap_parser::Linktype::ETHERNET => Linktype::ETHERNET,
@@ -420,12 +417,12 @@ impl Replayer {
                     });
                     self.pcap_parser.consume(offset);
                     continue;
-                }
+                },
                 PcapBlockOwned::NG(_) => {
                     debug!("unsupported pcapng format");
                     self.pcap_parser.consume(offset);
                     return Err(Error::UnsupportedPcapFormat);
-                }
+                },
             };
             let packet_id = self.read_packet_count;
             trace!("parsing packet #{packet_id}");
@@ -438,7 +435,7 @@ impl Replayer {
                 Err(e) => {
                     debug!("failed to generate meta packet for packet #{packet_id}: {e:?}");
                     continue;
-                }
+                },
             };
             let result = self.app_parser.parse(&mut self.cached, config, meta_packet);
             self.pcap_parser.consume(offset);
@@ -447,31 +444,25 @@ impl Replayer {
                 Ok(n) if n == 0 => {
                     trace!("parsed packet #{packet_id} ended without producing any log");
                     continue;
-                }
+                },
                 Ok(n) => {
                     self.parsed_log_count += n;
                     if n == 1 {
                         debug!(
                             "parsed packet #{packet_id} into log #{}: {:?}",
                             self.parsed_log_count,
-                            self.cached
-                                .iter()
-                                .map(|log| &log.l7_info)
-                                .collect::<Vec<_>>(),
+                            self.cached.iter().map(|log| &log.l7_info).collect::<Vec<_>>(),
                         );
                     } else {
                         debug!(
                             "parsed packet #{packet_id} into logs #{}-{}: {:?}",
                             self.parsed_log_count + 1 - n,
                             self.parsed_log_count,
-                            self.cached
-                                .iter()
-                                .map(|log| &log.l7_info)
-                                .collect::<Vec<_>>(),
+                            self.cached.iter().map(|log| &log.l7_info).collect::<Vec<_>>(),
                         );
                     }
                     return Ok(self.cached.pop_front());
-                }
+                },
                 Err(e) => debug!("parse log from packet #{packet_id} failed: {e:?}"),
             }
         }
@@ -481,12 +472,9 @@ impl Replayer {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::{fs::File, path::Path};
-
-    use rand::Rng;
-
     use crate::{config::UserConfig, flow_generator::protocol_logs::pb_adapter::L7ProtocolSendLog};
+    use rand::Rng;
+    use std::{fs::File, path::Path};
 
     const PCAP_BASE_PATH: &str = "resources/test/flow_generator";
 
@@ -519,12 +507,12 @@ mod tests {
                         _ => (),
                     }
                     parser.consume(offset);
-                }
+                },
                 Err(PcapError::Eof) => break,
                 Err(PcapError::UnexpectedEof | PcapError::Incomplete(_)) => {
                     parser.refill().unwrap();
                     continue;
-                }
+                },
                 Err(e) => panic!("unexpected error: {e:?}"),
             }
         }

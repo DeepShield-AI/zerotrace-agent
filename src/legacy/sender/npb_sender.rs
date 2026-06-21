@@ -14,56 +14,58 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::io::{Error as IOError, ErrorKind, Result as IOResult};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddrV4, SocketAddrV6};
-#[cfg(unix)]
-use std::os::unix::io::FromRawFd;
-#[cfg(windows)]
-use std::os::windows::io::{FromRawSocket, RawSocket};
-use std::sync::atomic::AtomicU64;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
-    Arc, Mutex, RwLock, Weak,
-};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime};
-
-#[cfg(unix)]
-use libc::{c_int, socket, AF_INET, AF_INET6, SOCK_RAW};
-use log::{info, warn};
-use socket2::{Domain, SockAddr, Socket, Type};
-#[cfg(windows)]
-use windows::Win32::Networking::WinSock::socket;
-
 use super::QUEUE_BATCH_SIZE;
-
-use crate::common::{
-    enums::IpProtocol, erspan, vxlan, IPV4_ADDR_LEN, IPV4_DST_OFFSET, IPV4_PACKET_SIZE,
-    IPV4_PROTO_OFFSET, IPV6_ADDR_LEN, IPV6_DST_OFFSET, IPV6_PACKET_SIZE, IPV6_PROTO_OFFSET,
-    TCP6_PACKET_SIZE, TCP_PACKET_SIZE, UDP6_PACKET_SIZE, UDP_PACKET_SIZE,
-};
 #[cfg(unix)]
 use crate::common::{
     ETH_HEADER_SIZE, IPV4_CSUM_OFFSET, IPV4_HEADER_SIZE, IPV4_SRC_OFFSET, IPV6_SRC_OFFSET,
     UDP6_CHKSUM_OFFSET,
 };
-use crate::config::NpbConfig;
 #[cfg(unix)]
 use crate::dispatcher::af_packet::{Options, Tpacket};
-use crate::exception::ExceptionHandler;
-use crate::utils::stats;
-use npb_handler::{NpbHeader, NOT_SUPPORT};
+use crate::{
+    common::{
+        IPV4_ADDR_LEN, IPV4_DST_OFFSET, IPV4_PACKET_SIZE, IPV4_PROTO_OFFSET, IPV6_ADDR_LEN,
+        IPV6_DST_OFFSET, IPV6_PACKET_SIZE, IPV6_PROTO_OFFSET, TCP_PACKET_SIZE, TCP6_PACKET_SIZE,
+        UDP_PACKET_SIZE, UDP6_PACKET_SIZE, enums::IpProtocol, erspan, vxlan,
+    },
+    config::NpbConfig,
+    exception::ExceptionHandler,
+    utils::stats,
+};
+#[cfg(unix)]
+use libc::{AF_INET, AF_INET6, SOCK_RAW, c_int, socket};
+use log::{info, warn};
+use npb_handler::{NOT_SUPPORT, NpbHeader};
 use npb_sender::ZmqSender;
-use public::counter::{Countable, CounterType, CounterValue, OwnedCountable};
-use public::proto::agent::{Exception, SocketType};
-use public::queue::Receiver;
 #[cfg(unix)]
 use public::utils::net::MAC_ADDR_LEN;
-use public::utils::net::{
-    get_route_src_ip_and_mac, get_route_src_ip_interface_name, neighbor_lookup, MacAddr,
+use public::{
+    counter::{Countable, CounterType, CounterValue, OwnedCountable},
+    proto::agent::{Exception, SocketType},
+    queue::Receiver,
+    utils::net::{
+        MacAddr, get_route_src_ip_and_mac, get_route_src_ip_interface_name, neighbor_lookup,
+    },
 };
+use socket2::{Domain, SockAddr, Socket, Type};
+#[cfg(unix)]
+use std::os::unix::io::FromRawFd;
+#[cfg(windows)]
+use std::os::windows::io::{FromRawSocket, RawSocket};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    io::{Error as IOError, ErrorKind, Result as IOResult},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddrV4, SocketAddrV6},
+    sync::{
+        Arc, Mutex, RwLock, Weak,
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, SystemTime},
+};
+#[cfg(windows)]
+use windows::Win32::Networking::WinSock::socket;
 
 #[cfg(windows)]
 const AF_INET: i32 = 2;
@@ -162,7 +164,7 @@ impl AfpacketSender {
                 let checksum_offset = IPV4_CSUM_OFFSET + underlay_l2_opt_size;
                 packet[checksum_offset..checksum_offset + 2]
                     .copy_from_slice(&checksum.to_be_bytes());
-            }
+            },
             IpAddr::V6(addr) => {
                 let src_ip_offset = IPV6_SRC_OFFSET + underlay_l2_opt_size;
                 packet[src_ip_offset..src_ip_offset + IPV6_ADDR_LEN]
@@ -176,7 +178,7 @@ impl AfpacketSender {
                     packet[checksum_offset..checksum_offset + 2]
                         .copy_from_slice(&checksum.to_be_bytes());
                 }
-            }
+            },
         }
     }
 
@@ -331,8 +333,7 @@ impl IpSender {
             underlay_l2_opt_size,
             self.underlay_is_ipv6,
         );
-        self.socket
-            .send_to(&packet.as_slice()[header_size..], &self.remote)
+        self.socket.send_to(&packet.as_slice()[header_size..], &self.remote)
     }
 
     fn close(&mut self) {}
@@ -393,10 +394,8 @@ impl TcpSender {
         if self.socket.is_some() {
             return Ok(());
         }
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as u32;
+        let now =
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as u32;
         // If the local timestamp adjustment requires recalculating the interval
         if self.last_connect > now {
             self.last_connect = now;
@@ -432,15 +431,14 @@ impl TcpSender {
             Err(e) => {
                 match e.kind() {
                     // When the server receives slowly.
-                    ErrorKind::WouldBlock => {}
-                    _ => {
+                    ErrorKind::WouldBlock => {},
+                    _ =>
                         if let Some(socket) = self.socket.take() {
                             let _ = socket.shutdown(Shutdown::Both);
-                        }
-                    }
+                        },
                 }
                 Err(e)
-            }
+            },
         }
     }
 
@@ -473,7 +471,7 @@ impl NpbSender {
             Self::ZmqSender(s) => {
                 let _ = arp.lookup_counter(&s.dst_ip);
                 s.send(underlay_l2_opt_size, packet)
-            }
+            },
         }
     }
 }
@@ -512,7 +510,7 @@ impl OwnedCountable for StatsNpbSenderCounter {
                         CounterValue::Unsigned(x.tx_dropped.swap(0, Ordering::Relaxed) as u64),
                     ),
                 ]
-            }
+            },
             None => vec![],
         }
     }
@@ -538,10 +536,10 @@ impl ArpEntry {
     fn update(&mut self, new_entry: Self) {
         self.aging = new_entry.aging;
 
-        if self.dst_mac == new_entry.dst_mac
-            && self.src_mac == new_entry.src_mac
-            && self.src_ip == new_entry.src_ip
-            && self.if_name == new_entry.if_name
+        if self.dst_mac == new_entry.dst_mac &&
+            self.src_mac == new_entry.src_mac &&
+            self.src_ip == new_entry.src_ip &&
+            self.if_name == new_entry.if_name
         {
             return;
         }
@@ -670,16 +668,11 @@ impl NpbArpTable {
 
     pub fn lookup_counter(&self, remote: &IpAddr) -> u32 {
         let table = self.table.read().unwrap();
-        return table
-            .get(&remote)
-            .unwrap()
-            .counter
-            .fetch_add(1, Ordering::Relaxed);
+        return table.get(&remote).unwrap().counter.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn set_need_resolve_mac(&self, need_resolve_mac: bool) {
-        self.need_resolve_mac
-            .store(need_resolve_mac, Ordering::Relaxed);
+        self.need_resolve_mac.store(need_resolve_mac, Ordering::Relaxed);
     }
 
     fn run(
@@ -826,22 +819,19 @@ impl NpbConnectionPool {
         self.arp.add(remote);
         match self.socket_type {
             #[cfg(unix)]
-            SocketType::RawUdp if protocol != IpProtocol::TCP => {
-                Ok(NpbSender::RawSender(AfpacketSender::new(remote)))
-            }
+            SocketType::RawUdp if protocol != IpProtocol::TCP =>
+                Ok(NpbSender::RawSender(AfpacketSender::new(remote))),
             _ if protocol != IpProtocol::TCP => {
                 let sender = IpSender::new(remote, protocol);
                 if sender.is_err() {
                     return Err(format!("IpSender error: {:?}.", sender.unwrap_err()));
                 }
                 Ok(NpbSender::IpSender(sender.unwrap()))
-            }
-            SocketType::Zmq if protocol == IpProtocol::TCP => {
-                Ok(NpbSender::ZmqSender(ZmqSender::new(remote, self.npb_port)))
-            }
-            _ if protocol == IpProtocol::TCP => {
-                Ok(NpbSender::TcpSender(TcpSender::new(remote, self.npb_port)))
-            }
+            },
+            SocketType::Zmq if protocol == IpProtocol::TCP =>
+                Ok(NpbSender::ZmqSender(ZmqSender::new(remote, self.npb_port))),
+            _ if protocol == IpProtocol::TCP =>
+                Ok(NpbSender::TcpSender(TcpSender::new(remote, self.npb_port))),
             _ => Err(format!(
                 "NPB socket type {:?} not support tunnel ip {} and protocol {}.",
                 self.socket_type, remote, protocol
@@ -883,10 +873,7 @@ impl NpbConnectionPool {
 
         let mut conn = self.connections.get_mut(&key);
         if conn.is_some() {
-            return conn
-                .as_mut()
-                .unwrap()
-                .send(timestamp, underlay_l2_opt_size, packet, &self.arp);
+            return conn.as_mut().unwrap().send(timestamp, underlay_l2_opt_size, packet, &self.arp);
         }
 
         let conn = self.create_sender(&remote, key.1);
@@ -954,20 +941,13 @@ impl NpbPacketSender {
         let mut last_timestamp = 0;
         let mut batch = Vec::with_capacity(QUEUE_BATCH_SIZE);
         while !self.disable.load(Ordering::Relaxed) {
-            if self
-                .receiver
-                .recv_all(&mut batch, Some(Duration::from_secs(1)))
-                .is_err()
-            {
+            if self.receiver.recv_all(&mut batch, Some(Duration::from_secs(1))).is_err() {
                 continue;
             }
             for packet in batch.drain(..) {
                 let (timestamp, underlay_l2_opt_size, packet) = packet;
                 let ret =
-                    self.connections
-                        .lock()
-                        .unwrap()
-                        .send(timestamp, underlay_l2_opt_size, packet);
+                    self.connections.lock().unwrap().send(timestamp, underlay_l2_opt_size, packet);
                 if ret.is_err() && last_timestamp + Self::LOG_INTERVAL < timestamp {
                     last_timestamp = timestamp;
                     warn!("Npb packet sender error: {:?}.", ret);

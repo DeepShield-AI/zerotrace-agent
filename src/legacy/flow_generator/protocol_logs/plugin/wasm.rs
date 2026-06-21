@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
-use public::l7_protocol::{CustomProtocol, L7Protocol, LogMessageType};
-
 use crate::{
     common::{
         flow::L7PerfStats,
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, ParseParam},
     },
-    flow_generator::{protocol_logs::set_captured_byte, Error, Result},
+    flow_generator::{Error, Result, protocol_logs::set_captured_byte},
 };
+use public::l7_protocol::{CustomProtocol, L7Protocol, LogMessageType};
 
 #[derive(Default)]
 pub struct WasmLog {

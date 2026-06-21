@@ -1,40 +1,38 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ffi::CString,
-    mem,
-    sync::{
-        atomic::{AtomicBool, AtomicI64, Ordering},
-        Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
-    time::Duration,
+use super::{
+    BaseDispatcher, BpfOptions, DispatcherBuilder, DispatcherConfig, LocalModeDispatcher, Options,
+    Packet, PacketCaptureType, PacketCounter, RecvEngine,
+    base_dispatcher::{BaseDispatcherListener, TapInterfaceWhitelist},
 };
-
+use crate::{
+    config::handler::DispatcherAccess,
+    exception::ExceptionHandler,
+    flow_generator::{FlowMap, flow_map::Config},
+    rpc::get_timestamp,
+    utils::stats::QueueStats,
+};
 use arc_swap::access::Access;
 use log::{debug, error, info, trace, warn};
 use public::{
+    LeakyBucket,
     buffer::Allocator,
     counter::Countable,
     debug::QueueDebugger,
     netns::{self, NsFile},
     proto::agent::{AgentType, IfMacSource},
-    queue::{self, bounded_with_debug, DebugSender},
-    utils::net::{links_by_name_regex, Link, MacAddr},
-    LeakyBucket,
+    queue::{self, DebugSender, bounded_with_debug},
+    utils::net::{Link, MacAddr, links_by_name_regex},
 };
 use regex::Regex;
-
-use super::{
-    base_dispatcher::{BaseDispatcherListener, TapInterfaceWhitelist},
-    BaseDispatcher, BpfOptions, DispatcherBuilder, DispatcherConfig, LocalModeDispatcher, Options,
-    Packet, PacketCaptureType, PacketCounter, RecvEngine,
-};
-use crate::{
-    config::handler::DispatcherAccess,
-    exception::ExceptionHandler,
-    flow_generator::{flow_map::Config, FlowMap},
-    rpc::get_timestamp,
-    utils::stats::QueueStats,
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::CString,
+    mem,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 const PACKET_BATCH_SIZE: usize = 64;
@@ -129,7 +127,7 @@ impl LocalMultinsModeDispatcher {
             }
 
             match packet_output.recv_all(&mut batch, Some(Duration::from_secs(1))) {
-                Ok(_) => {}
+                Ok(_) => {},
                 Err(queue::Error::Timeout) => {
                     flow_map.inject_flush_ticker(&config, Duration::ZERO);
                     let mut bpf_controls = bpf_controls.lock().unwrap();
@@ -154,12 +152,12 @@ impl LocalMultinsModeDispatcher {
                                     ctrl.need_update.store(true, Ordering::Relaxed);
                                 }
                                 true
-                            }
+                            },
                             None => false,
                         }
                     });
                     continue;
-                }
+                },
                 Err(queue::Error::Terminated(..)) => break,
                 Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
             }
@@ -186,9 +184,8 @@ impl LocalMultinsModeDispatcher {
 
                 if let Some(policy) = meta_packet.policy_data.as_ref() {
                     if policy.acl_id > 0 {
-                        let whitelist = tap_interface_whitelists
-                            .entry(packet.ns_ino as u64)
-                            .or_default();
+                        let whitelist =
+                            tap_interface_whitelists.entry(packet.ns_ino as u64).or_default();
                         if !whitelist.has(packet.if_index as usize) {
                             // 如果匹配策略则认为需要拷贝整个包
                             whitelist.add(packet.if_index as usize);
@@ -219,7 +216,7 @@ impl LocalMultinsModeDispatcher {
                                 ctrl.need_update.store(true, Ordering::Relaxed);
                             }
                             true
-                        }
+                        },
                         None => false,
                     }
                 });
@@ -297,7 +294,7 @@ impl PktReceiver {
             Err(e) => {
                 warn!("{log_prefix} failed to get links: {e}");
                 return Some(ExitStatus::NoTapInterfaces);
-            }
+            },
         };
         if links.is_empty() {
             info!("{log_prefix} no tap interfaces found, stop receiving thread");
@@ -322,10 +319,7 @@ impl PktReceiver {
             return Some(ExitStatus::UpdateFailed);
         }
 
-        let if_indices = links
-            .iter()
-            .map(|i| i.if_index as i32)
-            .collect::<Vec<i32>>();
+        let if_indices = links.iter().map(|i| i.if_index as i32).collect::<Vec<i32>>();
         // When the configuration is changed, the zerotrace-agent will restart,
         // and the NIC configured in promiscuous mode will be retired
         if options.promisc && *promisc_if_indices != if_indices {
@@ -365,7 +359,7 @@ impl PktReceiver {
                     Err(e) => {
                         debug!("{log_prefix} setns failed {i} time(s): {e}");
                         e
-                    }
+                    },
                 };
                 if i == SETNS_RETRIES {
                     info!("{log_prefix} setns failed, unable to start receiver: {e}");
@@ -384,7 +378,7 @@ impl PktReceiver {
                 Err(e) => {
                     warn!("{log_prefix} failed to get links: {e}");
                     return ExitStatus::NoTapInterfaces;
-                }
+                },
             };
             if links.is_empty() {
                 info!("{log_prefix} no tap interfaces found, stop receiving thread");
@@ -402,7 +396,7 @@ impl PktReceiver {
                 Err(e) => {
                     warn!("{log_prefix} get_engine failed, stop receiving thread: {e}");
                     return ExitStatus::InitFailed;
-                }
+                },
             };
             if let Err(e) = engine.init() {
                 warn!("{log_prefix} recv_engine init error, stop receiving thread: {e}");
@@ -572,7 +566,7 @@ impl ReceiverManager {
                             Ok(status) => debug!("PktReceiver for {ns} is finished {status:?}"),
                             Err(e) => {
                                 warn!("PktReceiver for {ns} is finished but join error: {e:?}")
-                            }
+                            },
                         }
                         bpf_controls.remove(ns);
                         false
@@ -590,7 +584,7 @@ impl ReceiverManager {
                                 Ok(status) => debug!("PktReceiver for {ns} is finished {status:?}"),
                                 Err(e) => {
                                     warn!("PktReceiver for {ns} is finished but join error: {e:?}")
-                                }
+                                },
                             }
                             false
                         } else {
@@ -609,14 +603,14 @@ impl ReceiverManager {
                             config.inner_tap_interface_regex
                         );
                         continue;
-                    }
+                    },
                 };
                 let mut new_namespaces = match Self::find_tap_namespaces(&re) {
                     Ok(namespaces) => namespaces,
                     Err(e) => {
                         error!("Failed to find tap namespaces: {e}");
                         continue;
-                    }
+                    },
                 };
                 match netns::links_by_name_regex_in_netns(
                     &config.tap_interface_regex,
@@ -633,7 +627,7 @@ impl ReceiverManager {
                             config.tap_interface_regex,
                             NsFile::Root,
                         );
-                    }
+                    },
                     _ => new_namespaces.push(NsFile::Root),
                 }
                 trace!("Found {} tap namespaces", new_namespaces.len());
@@ -666,10 +660,7 @@ impl ReceiverManager {
                         .name(format!("pr-{ns}"))
                         .spawn(receiver.run())
                         .unwrap();
-                    self.bpf_controls
-                        .lock()
-                        .unwrap()
-                        .insert(ns.clone(), bpf_control);
+                    self.bpf_controls.lock().unwrap().insert(ns.clone(), bpf_control);
                     receiver_threads.insert(
                         ns.clone(),
                         PktReceiverHandle {
@@ -697,7 +688,7 @@ impl ReceiverManager {
                     Err(e) => {
                         debug!("Failed to get proc cache: {e}");
                         continue;
-                    }
+                    },
                 };
                 let mut bpf_controls = self.bpf_controls.lock().unwrap();
                 receiver_threads.retain(|ns, handle| {
@@ -722,7 +713,7 @@ impl ReceiverManager {
                             Err(e) => {
                                 warn!("get interfaces by name regex in {ns:?} failed: {e}");
                                 true
-                            }
+                            },
                             Ok(links) => links.is_empty(),
                         }
                     };
@@ -734,7 +725,7 @@ impl ReceiverManager {
                                 Ok(status) => debug!("PktReceiver for {ns} is finished {status:?}"),
                                 Err(e) => {
                                     warn!("PktReceiver for {ns} is finished but join error: {e:?}")
-                                }
+                                },
                             }
                         } else {
                             zombie_threads.push((ns.clone(), Some(h)));
@@ -815,8 +806,7 @@ impl LocalMultinsModeDispatcherListener {
 
         trace!(
             "tap_interface_regex = /{}/, inner_tap_interface_regex = /{}/",
-            config.tap_interface_regex,
-            config.inner_tap_interface_regex
+            config.tap_interface_regex, config.inner_tap_interface_regex
         );
 
         let mut new_interface_indices = vec![];
@@ -827,8 +817,8 @@ impl LocalMultinsModeDispatcherListener {
                     "get interfaces by name regex in {:?} failed: {e}",
                     NsFile::Root
                 );
-            }
-            Ok(mut links) => {
+            },
+            Ok(mut links) =>
                 if links.is_empty() {
                     warn!(
                         "tap-interface-regex({}) do not match any interface in {:?}",
@@ -847,8 +837,7 @@ impl LocalMultinsModeDispatcherListener {
                         keys.push(link.if_index as u64);
                         macs.push(link.mac_addr);
                     }
-                }
-            }
+                },
         }
 
         let Ok(inner_regex) = Regex::new(&config.inner_tap_interface_regex) else {
@@ -863,7 +852,7 @@ impl LocalMultinsModeDispatcherListener {
             Err(e) => {
                 warn!("Failed to get interfaces with peer in root namespace: {e}");
                 return;
-            }
+            },
         };
         let root_inode = NsFile::Root.get_inode().unwrap();
         let mut inodes: Vec<u64> = interfaces
@@ -888,7 +877,7 @@ impl LocalMultinsModeDispatcherListener {
                     Err(e) => {
                         debug!("setns failed {i} time(s): {e}");
                         e
-                    }
+                    },
                 };
                 if i == SETNS_RETRIES {
                     info!("setns failed, unable to find links in namespace {ns_file}: {e}");
@@ -901,7 +890,7 @@ impl LocalMultinsModeDispatcherListener {
                 Err(e) => {
                     warn!("Failed to find links in namespace {ns_file}: {e}");
                     continue;
-                }
+                },
             };
             if links.is_empty() {
                 debug!("No links found in namespace {ns_file}");

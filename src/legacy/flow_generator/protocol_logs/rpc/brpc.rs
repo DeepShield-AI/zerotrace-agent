@@ -2,9 +2,6 @@
 #[rustfmt::skip]
 mod brpc_policy;
 
-use brpc_policy::RpcMeta;
-use public::l7_protocol::LogMessageType;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -17,15 +14,16 @@ use crate::{
     flow_generator::{
         error::Result,
         protocol_logs::{
+            AppProtoHead, BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
             pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
-            set_captured_byte, swap_if, AppProtoHead, L7ResponseStatus, PrioFields,
-            BASE_FIELD_PRIORITY,
+            set_captured_byte, swap_if,
         },
     },
     utils::bytes::read_u32_be,
 };
-
+use brpc_policy::RpcMeta;
 use prost::Message;
+use public::l7_protocol::LogMessageType;
 use serde::Serialize;
 
 #[derive(Serialize, Debug, Default, Clone)]
@@ -118,8 +116,8 @@ impl BrpcInfo {
                 for (index, tt) in config.trace_types.iter().enumerate() {
                     let prio = index as u8 + BASE_FIELD_PRIORITY;
                     if tt.check(k) {
-                        if info.trace_ids.highest_priority() <= prio
-                            || !config.multiple_trace_id_collection
+                        if info.trace_ids.highest_priority() <= prio ||
+                            !config.multiple_trace_id_collection
                         {
                             if let Some(trace_id) = tt.decode_trace_id(v) {
                                 info.trace_ids.merge_field(prio, trace_id.to_string())
@@ -158,14 +156,12 @@ impl BrpcInfo {
                 .req_method_name
                 .as_ref()
                 .map(|p| t.request_type.is_on_blacklist(p))
-                .unwrap_or_default()
-                || self
-                    .req_service_name
+                .unwrap_or_default() ||
+                self.req_service_name
                     .as_ref()
                     .map(|p| t.request_resource.is_on_blacklist(p))
-                    .unwrap_or_default()
-                || self
-                    .endpoint
+                    .unwrap_or_default() ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -206,7 +202,7 @@ impl From<BrpcInfo> for L7ProtocolSendLog {
                 ..Default::default()
             }),
             ext_info: Some(ExtendedInfo {
-                request_id: request_id,
+                request_id,
                 x_request_id_0: info.req_log_id.map(|x| x.to_string()),
                 ..Default::default()
             }),
@@ -357,19 +353,15 @@ impl L7ProtocolParserInterface for BrpcLog {
 
 #[cfg(test)]
 mod tests {
-    use serde_json;
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         config::handler::{L7LogDynamicConfigBuilder, LogParserConfig, TraceType},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use serde_json;
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/brpc";
 
@@ -430,16 +422,15 @@ mod tests {
                     L7ParseResult::Single(s) => {
                         output.push_str(&serde_json::to_string(&s).unwrap());
                         output.push_str("\n");
-                    }
-                    L7ParseResult::Multi(m) => {
+                    },
+                    L7ParseResult::Multi(m) =>
                         for i in m {
                             output.push_str(&serde_json::to_string(&i).unwrap());
                             output.push_str("\n");
-                        }
-                    }
+                        },
                     L7ParseResult::None => {
                         output.push_str("None\n");
-                    }
+                    },
                 }
             } else {
                 output.push_str(&format!("{:?}\n", BrpcInfo::default()));

@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-use std::{fs, os::unix::io::AsRawFd};
-
 use arc_swap::access::Access;
 use enum_dispatch::enum_dispatch;
 use log::{info, warn};
-use nix::sched::{setns, CloneFlags};
+use nix::sched::{CloneFlags, setns};
 use regex::Regex;
+use std::{fs, os::unix::io::AsRawFd};
 
 mod active_poller;
 mod api_watcher;
@@ -34,9 +33,8 @@ pub use sidecar_poller::SidecarPoller;
 
 mod resource_watcher;
 
+use crate::config::{KubernetesPollerType, handler::PlatformAccess};
 use public::netns::{self, InterfaceInfo, NsFile};
-
-use crate::config::{handler::PlatformAccess, KubernetesPollerType};
 
 #[enum_dispatch(Poller)]
 pub enum GenericPoller {
@@ -56,8 +54,8 @@ pub trait Poller {
 }
 
 pub fn check_set_ns() -> bool {
-    netns::supported()
-        && match fs::File::open("/proc/self/ns/net") {
+    netns::supported() &&
+        match fs::File::open("/proc/self/ns/net") {
             Ok(f) => setns(f.as_raw_fd(), CloneFlags::CLONE_NEWNET).is_ok(),
             Err(_) => false,
         }
@@ -94,19 +92,16 @@ impl GenericPoller {
         let sync_interval = config.load().sync_interval;
         let kubernetes_poller_type = config.load().kubernetes_poller_type;
         match kubernetes_poller_type {
-            KubernetesPollerType::Adaptive => {
+            KubernetesPollerType::Adaptive =>
                 if can_set_ns && can_read_link_ns {
                     ActivePoller::new(sync_interval, extra_netns_regex.clone()).into()
                 } else {
                     PassivePoller::new(sync_interval, config.clone()).into()
-                }
-            }
-            KubernetesPollerType::Active => {
-                ActivePoller::new(sync_interval, extra_netns_regex.clone()).into()
-            }
-            KubernetesPollerType::Passive => {
-                PassivePoller::new(sync_interval, config.clone()).into()
-            }
+                },
+            KubernetesPollerType::Active =>
+                ActivePoller::new(sync_interval, extra_netns_regex.clone()).into(),
+            KubernetesPollerType::Passive =>
+                PassivePoller::new(sync_interval, config.clone()).into(),
         }
     }
 }

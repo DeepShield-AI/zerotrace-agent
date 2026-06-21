@@ -14,25 +14,25 @@
  * limitations under the License.
  */
 
-use std::{net::IpAddr, sync::Arc};
-
-use super::{perf::FlowLog, FlowState, FLOW_METRICS_PEER_DST, FLOW_METRICS_PEER_SRC};
-use crate::common::{
-    decapsulate::TunnelType,
-    endpoint::EndpointDataPov,
-    enums::{CaptureNetworkType, EthernetType, TcpFlags},
-    flow::{FlowMetricsPeer, L7PerfStats, PacketDirection, SignalSource, TcpPerfStats},
-    lookup_key::LookupKey,
-    meta_packet::MetaPacket,
-    tagged_flow::TaggedFlow,
-    TapPort, Timestamp,
+use super::{FLOW_METRICS_PEER_DST, FLOW_METRICS_PEER_SRC, FlowState, perf::FlowLog};
+use crate::{
+    common::{
+        TapPort, Timestamp,
+        decapsulate::TunnelType,
+        endpoint::EndpointDataPov,
+        enums::{CaptureNetworkType, EthernetType, TcpFlags},
+        flow::{FlowMetricsPeer, L7PerfStats, PacketDirection, SignalSource, TcpPerfStats},
+        lookup_key::LookupKey,
+        meta_packet::MetaPacket,
+        tagged_flow::TaggedFlow,
+    },
+    utils::environment::{is_tt_hyper_v, is_tt_pod},
 };
-use crate::utils::environment::{is_tt_hyper_v, is_tt_pod};
-use public::{proto::agent::AgentType, utils::net::MacAddr};
-
 use npb_pcap_policy::PolicyData;
 use packet_segmentation_reassembly::PacketSegmentationReassembly;
 use packet_sequence_block::PacketSequenceBlock;
+use public::{proto::agent::AgentType, utils::net::MacAddr};
+use std::{net::IpAddr, sync::Arc};
 
 #[repr(u8)]
 enum MatchMac {
@@ -61,15 +61,13 @@ impl FlowMapKey {
             ),
             (IpAddr::V6(s), IpAddr::V6(d)) => {
                 let (src, dst) = (s.octets(), d.octets());
-                src.chunks(4)
-                    .zip(dst.chunks(4))
-                    .fold((0, 0), |(hash1, hash2), (b1, b2)| {
-                        (
-                            hash1 ^ u32::from_le_bytes(*<&[u8; 4]>::try_from(b1).unwrap()),
-                            hash2 ^ u32::from_le_bytes(*<&[u8; 4]>::try_from(b2).unwrap()),
-                        )
-                    })
-            }
+                src.chunks(4).zip(dst.chunks(4)).fold((0, 0), |(hash1, hash2), (b1, b2)| {
+                    (
+                        hash1 ^ u32::from_le_bytes(*<&[u8; 4]>::try_from(b1).unwrap()),
+                        hash2 ^ u32::from_le_bytes(*<&[u8; 4]>::try_from(b2).unwrap()),
+                    )
+                })
+            },
             _ => unreachable!(),
         };
 
@@ -101,26 +99,26 @@ impl FlowMapKey {
         match lookup_key.eth_type {
             EthernetType::IPV4 | EthernetType::IPV6 => {
                 let lhs = Self::l3_hash(lookup_key);
-                let rhs = ((u16::from(lookup_key.tap_type) as u64) << 24
-                    | tap_port.ignore_nat_source())
-                    << 32
-                    | Self::l4_hash(lookup_key);
+                let rhs = ((u16::from(lookup_key.tap_type) as u64) << 24 |
+                    tap_port.ignore_nat_source()) <<
+                    32 |
+                    Self::l4_hash(lookup_key);
                 Self { lhs, rhs }
-            }
+            },
             EthernetType::ARP => {
                 let lhs = Self::l3_hash(lookup_key);
-                let rhs = ((u16::from(lookup_key.tap_type) as u64) << 24
-                    | tap_port.ignore_nat_source())
-                    << 32
-                    | (u64::from(lookup_key.src_mac) ^ u64::from(lookup_key.dst_mac));
+                let rhs = ((u16::from(lookup_key.tap_type) as u64) << 24 |
+                    tap_port.ignore_nat_source()) <<
+                    32 |
+                    (u64::from(lookup_key.src_mac) ^ u64::from(lookup_key.dst_mac));
                 Self { lhs, rhs }
-            }
+            },
             _ => {
                 let lhs =
                     (u16::from(lookup_key.tap_type) as u64) << 24 | tap_port.ignore_nat_source();
                 let rhs = u64::from(lookup_key.src_mac) ^ u64::from(lookup_key.dst_mac);
                 Self { lhs, rhs }
-            }
+            },
         }
     }
 }
@@ -179,7 +177,7 @@ impl FlowNode {
         flow_metrics_peer_dst.l4_byte_count = 0;
         flow_metrics_peer_dst.tcp_flags = TcpFlags::empty();
 
-        if let Some(ref mut flow_perf_stats) = &mut flow.flow_perf_stats {
+        if let Some(flow_perf_stats) = &mut flow.flow_perf_stats {
             flow_perf_stats.tcp = TcpPerfStats::default();
             flow_perf_stats.l7 = L7PerfStats::default();
         }
@@ -209,8 +207,8 @@ impl FlowNode {
             }
 
             // After matching to the node, the packet needs to obtain the direction based on the IP and port
-            if self.tagged_flow.flow.flow_key.ip_src == meta_packet.lookup_key.src_ip
-                && self.tagged_flow.flow.flow_key.port_src == meta_packet.lookup_key.src_port
+            if self.tagged_flow.flow.flow_key.ip_src == meta_packet.lookup_key.src_ip &&
+                self.tagged_flow.flow.flow_key.port_src == meta_packet.lookup_key.src_port
             {
                 meta_packet.lookup_key.direction = PacketDirection::ClientToServer;
             } else {
@@ -226,8 +224,8 @@ impl FlowNode {
         // TapPort comparison ignored tunnel_type and nat_source:
         //   tunnel_type: support aggregation of packets with and without tunnels(eg: weave cni)
         //   nat_source: possible extraction from TCP options address, can be ignored
-        if flow_key.tap_port.get_tap_mac() != meta_packet.tap_port.get_tap_mac()
-            || flow_key.tap_type != meta_lookup_key.tap_type
+        if flow_key.tap_port.get_tap_mac() != meta_packet.tap_port.get_tap_mac() ||
+            flow_key.tap_type != meta_lookup_key.tap_type
         {
             return false;
         }
@@ -236,9 +234,9 @@ impl FlowNode {
             return false;
         }
 
-        if flow.vlan != meta_packet.vlan
-            && meta_lookup_key.tap_type != CaptureNetworkType::Cloud
-            && !ignore_idc_vlan
+        if flow.vlan != meta_packet.vlan &&
+            meta_lookup_key.tap_type != CaptureNetworkType::Cloud &&
+            !ignore_idc_vlan
         {
             return false;
         }
@@ -246,19 +244,19 @@ impl FlowNode {
         // other ethernet type
         if flow.eth_type != EthernetType::IPV4 && meta_lookup_key.eth_type != EthernetType::IPV6 {
             // direction = ClientToServer
-            if flow_key.mac_src == meta_lookup_key.src_mac
-                && flow_key.mac_dst == meta_lookup_key.dst_mac
-                && flow_key.ip_src == meta_lookup_key.src_ip
-                && flow_key.ip_dst == meta_lookup_key.dst_ip
+            if flow_key.mac_src == meta_lookup_key.src_mac &&
+                flow_key.mac_dst == meta_lookup_key.dst_mac &&
+                flow_key.ip_src == meta_lookup_key.src_ip &&
+                flow_key.ip_dst == meta_lookup_key.dst_ip
             {
                 meta_packet.lookup_key.direction = PacketDirection::ClientToServer;
                 return true;
             }
             // direction = ServerToClient
-            if flow_key.mac_src == meta_lookup_key.dst_mac
-                && flow_key.mac_dst == meta_lookup_key.src_mac
-                && flow_key.ip_src == meta_lookup_key.dst_ip
-                && flow_key.ip_dst == meta_lookup_key.src_ip
+            if flow_key.mac_src == meta_lookup_key.dst_mac &&
+                flow_key.mac_dst == meta_lookup_key.src_mac &&
+                flow_key.ip_src == meta_lookup_key.dst_ip &&
+                flow_key.ip_dst == meta_lookup_key.src_ip
             {
                 meta_packet.lookup_key.direction = PacketDirection::ServerToClient;
                 return true;
@@ -271,9 +269,9 @@ impl FlowNode {
             return false;
         }
 
-        if (meta_packet.tunnel.is_some()
-            && flow.tunnel.tunnel_type != meta_packet.tunnel.unwrap().tunnel_type)
-            || (meta_packet.tunnel.is_none() && flow.tunnel.tunnel_type != TunnelType::None)
+        if (meta_packet.tunnel.is_some() &&
+            flow.tunnel.tunnel_type != meta_packet.tunnel.unwrap().tunnel_type) ||
+            (meta_packet.tunnel.is_none() && flow.tunnel.tunnel_type != TunnelType::None)
         {
             // 微软ACS存在非对称隧道流量，需要排除
             if !is_tt_hyper_v(agent_type) && !is_tt_pod(agent_type) {
@@ -283,23 +281,23 @@ impl FlowNode {
 
         // Ipv4/Ipv6 solve
         let mac_match = Self::mac_match(meta_packet, ignore_l2_end, ignore_tor_mac, agent_type);
-        if flow_key.ip_src == meta_lookup_key.src_ip
-            && flow_key.ip_dst == meta_lookup_key.dst_ip
-            && flow_key.port_src == meta_lookup_key.src_port
-            && flow_key.port_dst == meta_lookup_key.dst_port
+        if flow_key.ip_src == meta_lookup_key.src_ip &&
+            flow_key.ip_dst == meta_lookup_key.dst_ip &&
+            flow_key.port_src == meta_lookup_key.src_port &&
+            flow_key.port_dst == meta_lookup_key.dst_port
         {
             meta_packet.lookup_key.direction = PacketDirection::ClientToServer;
-        } else if flow_key.ip_src == meta_lookup_key.dst_ip
-            && flow_key.ip_dst == meta_lookup_key.src_ip
-            && flow_key.port_src == meta_lookup_key.dst_port
-            && flow_key.port_dst == meta_lookup_key.src_port
+        } else if flow_key.ip_src == meta_lookup_key.dst_ip &&
+            flow_key.ip_dst == meta_lookup_key.src_ip &&
+            flow_key.port_src == meta_lookup_key.dst_port &&
+            flow_key.port_dst == meta_lookup_key.src_port
         {
             meta_packet.lookup_key.direction = PacketDirection::ServerToClient;
         } else {
             return false;
         }
-        Self::endpoint_match_with_direction(&flow.flow_metrics_peers, meta_packet)
-            && Self::mac_match_with_direction(
+        Self::endpoint_match_with_direction(&flow.flow_metrics_peers, meta_packet) &&
+            Self::mac_match_with_direction(
                 meta_packet,
                 flow_key.mac_src,
                 flow_key.mac_dst,
@@ -322,10 +320,10 @@ impl FlowNode {
         ignore_tor_mac: bool,
         agent_type: AgentType,
     ) -> MatchMac {
-        let ignore_mac = meta_packet.tunnel.is_some()
-            && ((is_tt_hyper_v(agent_type) && meta_packet.tunnel.unwrap().tier < 2)
-                || meta_packet.tunnel.unwrap().tunnel_type == TunnelType::TencentGre
-                || meta_packet.tunnel.unwrap().tunnel_type == TunnelType::Ipip);
+        let ignore_mac = meta_packet.tunnel.is_some() &&
+            ((is_tt_hyper_v(agent_type) && meta_packet.tunnel.unwrap().tier < 2) ||
+                meta_packet.tunnel.unwrap().tunnel_type == TunnelType::TencentGre ||
+                meta_packet.tunnel.unwrap().tunnel_type == TunnelType::Ipip);
         let is_from_gateway = meta_packet.tap_port.is_from(TapPort::FROM_GATEWAY_MAC);
 
         // return value stands different match type, defined by MAC_MATCH_*
@@ -335,8 +333,8 @@ impl FlowNode {
             return MatchMac::None;
         }
 
-        let is_from_trident = meta_packet.lookup_key.tap_type == CaptureNetworkType::Cloud
-            && meta_packet.tap_port.split_fields().0 > 0;
+        let is_from_trident = meta_packet.lookup_key.tap_type == CaptureNetworkType::Cloud &&
+            meta_packet.tap_port.split_fields().0 > 0;
 
         if !ignore_l2_end && is_from_trident {
             if !meta_packet.lookup_key.l2_end_0 && !meta_packet.lookup_key.l2_end_1 {
@@ -364,10 +362,9 @@ impl FlowNode {
         match match_mac {
             MatchMac::Dst => dst_mac == meta_packet.lookup_key.dst_mac,
             MatchMac::Src => src_mac == meta_packet.lookup_key.src_mac,
-            MatchMac::All => {
-                dst_mac == meta_packet.lookup_key.dst_mac
-                    && src_mac == meta_packet.lookup_key.src_mac
-            }
+            MatchMac::All =>
+                dst_mac == meta_packet.lookup_key.dst_mac &&
+                    src_mac == meta_packet.lookup_key.src_mac,
             MatchMac::None => true,
         }
     }
@@ -384,14 +381,12 @@ impl FlowNode {
         // 此时需要额外比较L2End确定哪股是进入的哪股是出去的
         let lookup_key = &meta_packet.lookup_key;
         match meta_packet.lookup_key.direction {
-            PacketDirection::ClientToServer => {
-                lookup_key.l2_end_0 == peers[0].is_l2_end
-                    && lookup_key.l2_end_1 == peers[1].is_l2_end
-            }
-            PacketDirection::ServerToClient => {
-                lookup_key.l2_end_0 == peers[1].is_l2_end
-                    && lookup_key.l2_end_1 == peers[0].is_l2_end
-            }
+            PacketDirection::ClientToServer =>
+                lookup_key.l2_end_0 == peers[0].is_l2_end &&
+                    lookup_key.l2_end_1 == peers[1].is_l2_end,
+            PacketDirection::ServerToClient =>
+                lookup_key.l2_end_0 == peers[1].is_l2_end &&
+                    lookup_key.l2_end_1 == peers[0].is_l2_end,
         }
     }
 
@@ -410,11 +405,12 @@ impl FlowNode {
 
 #[cfg(test)]
 mod tests {
-    use public::proto::agent::AgentType;
-
     use super::{FlowNode, PacketSegmentationReassembly};
-    use crate::common::{decapsulate::TunnelType, MetaPacket, TapPort};
-    use crate::utils::test_utils::Capture;
+    use crate::{
+        common::{MetaPacket, TapPort, decapsulate::TunnelType},
+        utils::test_utils::Capture,
+    };
+    use public::proto::agent::AgentType;
 
     #[test]
     fn test_packet_segmentation_reassembly() {

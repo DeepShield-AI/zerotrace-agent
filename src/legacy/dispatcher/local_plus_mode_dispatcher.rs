@@ -14,40 +14,22 @@
  * limitations under the License.
  */
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use std::collections::HashMap;
-use std::mem::drop;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use std::process::Command;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use std::str;
-use std::sync::{atomic::Ordering, Arc};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-
-use arc_swap::access::Access;
-use log::{debug, info, log_enabled, warn};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use nix::{
-    sched::{sched_setaffinity, CpuSet},
-    unistd::Pid,
+use super::{
+    Packet,
+    base_dispatcher::{BaseDispatcher, BaseDispatcherListener},
+    error::Result,
+    local_mode_dispatcher::{LocalModeDispatcherListener, MacRewriter, skip_by_blacklist},
 };
-
-use super::base_dispatcher::{BaseDispatcher, BaseDispatcherListener};
-use super::error::Result;
-use super::local_mode_dispatcher::{skip_by_blacklist, LocalModeDispatcherListener, MacRewriter};
-use super::Packet;
-
 #[cfg(target_os = "linux")]
 use crate::platform::LibvirtXmlExtractor;
 use crate::{
     common::{
+        FIELD_OFFSET_ETH_TYPE, MAC_ADDR_LEN, MetaPacket, TapPort, VLAN_HEADER_SIZE,
         decapsulate::{TunnelInfo, TunnelType},
         enums::{CaptureNetworkType, EthernetType},
-        MetaPacket, TapPort, FIELD_OFFSET_ETH_TYPE, MAC_ADDR_LEN, VLAN_HEADER_SIZE,
     },
     config::DispatcherConfig,
-    flow_generator::{flow_map::Config, FlowMap},
+    flow_generator::{FlowMap, flow_map::Config},
     handler::MiniPacket,
     rpc::get_timestamp,
     utils::{
@@ -55,12 +37,31 @@ use crate::{
         stats::{self, Countable, QueueStats},
     },
 };
+use arc_swap::access::Access;
+use log::{debug, info, log_enabled, warn};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use nix::{
+    sched::{CpuSet, sched_setaffinity},
+    unistd::Pid,
+};
 use public::{
     buffer::Allocator,
     debug::QueueDebugger,
     proto::agent::{AgentType, IfMacSource},
-    queue::{self, bounded_with_debug, DebugSender, Receiver},
+    queue::{self, DebugSender, Receiver, bounded_with_debug},
     utils::net::{Link, MacAddr},
+};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::collections::HashMap;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::process::Command;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::str;
+use std::{
+    mem::drop,
+    sync::{Arc, atomic::Ordering},
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 const HANDLER_BATCH_SIZE: usize = 64;
@@ -151,11 +152,11 @@ impl LocalPlusModeDispatcher {
                         };
 
                         match receiver.recv_all(&mut batch, Some(Duration::from_secs(1))) {
-                            Ok(_) => {}
+                            Ok(_) => {},
                             Err(queue::Error::Timeout) => {
                                 flow_map.inject_flush_ticker(&config, Duration::ZERO);
                                 continue;
-                            }
+                            },
                             Err(queue::Error::Terminated(..)) => break,
                             Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
                         }
@@ -197,13 +198,13 @@ impl LocalPlusModeDispatcher {
                             // compare 3 low bytes
                             let mac_low = &pipeline.vm_mac.octets()[Self::VALID_MAC_INDEX..];
                             // src mac
-                            let src_local = mac_low
-                                == &packet.raw[MAC_ADDR_LEN + Self::VALID_MAC_INDEX
-                                    ..MAC_ADDR_LEN + MAC_ADDR_LEN];
+                            let src_local = mac_low ==
+                                &packet.raw[MAC_ADDR_LEN + Self::VALID_MAC_INDEX..
+                                    MAC_ADDR_LEN + MAC_ADDR_LEN];
                             // dst mac
-                            let dst_local = !src_local
-                                && (mac_low == &packet.raw[Self::VALID_MAC_INDEX..MAC_ADDR_LEN]
-                                    || MacAddr::is_multicast(&packet.raw));
+                            let dst_local = !src_local &&
+                                (mac_low == &packet.raw[Self::VALID_MAC_INDEX..MAC_ADDR_LEN] ||
+                                    MacAddr::is_multicast(&packet.raw));
 
                             // LOCAL模式L2END使用underlay网络的MAC地址，实际流量解析使用overlay
                             let cur_tunnel_type_bitmap = tunnel_type_bitmap.read().unwrap().clone();
@@ -219,7 +220,7 @@ impl LocalPlusModeDispatcher {
                                     counter.invalid_packets.fetch_add(1, Ordering::Relaxed);
                                     warn!("decap_tunnel failed: {:?}", e);
                                     continue;
-                                }
+                                },
                             };
                             let original_length = packet.raw.len() - decap_length;
                             let raw_length = (packet.raw_length as usize)
@@ -243,8 +244,8 @@ impl LocalPlusModeDispatcher {
 
                             if tunnel_info.tunnel_type != TunnelType::None {
                                 meta_packet.tunnel = Some(tunnel_info);
-                                if tunnel_info.tunnel_type == TunnelType::TencentGre
-                                    || tunnel_info.tunnel_type == TunnelType::Vxlan
+                                if tunnel_info.tunnel_type == TunnelType::TencentGre ||
+                                    tunnel_info.tunnel_type == TunnelType::Vxlan
                                 {
                                     // 腾讯TCE、青云私有云需要通过TunnelID查询云平台信息
                                     // 这里只需要考虑单层隧道封装的情况
@@ -253,8 +254,8 @@ impl LocalPlusModeDispatcher {
                                 }
                             } else {
                                 // 无隧道并且MAC地址都是0一定是loopback流量
-                                if meta_packet.lookup_key.src_mac == MacAddr::ZERO
-                                    && meta_packet.lookup_key.dst_mac == MacAddr::ZERO
+                                if meta_packet.lookup_key.src_mac == MacAddr::ZERO &&
+                                    meta_packet.lookup_key.dst_mac == MacAddr::ZERO
                                 {
                                     meta_packet.lookup_key.l2_end_0 = true;
                                     meta_packet.lookup_key.l2_end_1 = true;
@@ -311,7 +312,7 @@ impl LocalPlusModeDispatcher {
                     let mut batch = Vec::with_capacity(HANDLER_BATCH_SIZE);
                     while !terminated.load(Ordering::Relaxed) {
                         match receiver.recv_all(&mut batch, Some(Duration::from_secs(1))) {
-                            Ok(_) => {}
+                            Ok(_) => {},
                             Err(queue::Error::Timeout) => continue,
                             Err(queue::Error::Terminated(..)) => break,
                             Err(queue::Error::BatchTooLarge(_)) => unreachable!(),
@@ -422,9 +423,7 @@ impl LocalPlusModeDispatcher {
             let (packet, timestamp) = recved.unwrap();
 
             base.counter.rx.fetch_add(1, Ordering::Relaxed);
-            base.counter
-                .rx_bytes
-                .fetch_add(packet.capture_length as u64, Ordering::Relaxed);
+            base.counter.rx_bytes.fetch_add(packet.capture_length as u64, Ordering::Relaxed);
             if base.tap_interface_whitelist.next_sync(timestamp.into()) {
                 base.need_update_bpf.store(true, Ordering::Relaxed);
             }
@@ -571,7 +570,7 @@ impl LocalPlusModeDispatcherListener {
                         mac = octets.into();
                     }
                     mac
-                }
+                },
                 IfMacSource::IfName => {
                     let new_mac = self.rewriter.regenerate_mac(iface);
                     if log_enabled!(log::Level::Debug) && new_mac != iface.mac_addr {
@@ -581,11 +580,10 @@ impl LocalPlusModeDispatcherListener {
                         );
                     }
                     new_mac
-                }
+                },
                 #[cfg(target_os = "linux")]
-                IfMacSource::IfLibvirtXml => {
-                    *name_to_mac_map.get(&iface.name).unwrap_or(&iface.mac_addr)
-                }
+                IfMacSource::IfLibvirtXml =>
+                    *name_to_mac_map.get(&iface.name).unwrap_or(&iface.mac_addr),
                 #[cfg(any(target_os = "windows", target_os = "android"))]
                 IfMacSource::IfLibvirtXml => MacAddr::ZERO,
             });

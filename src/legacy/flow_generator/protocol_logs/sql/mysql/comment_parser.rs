@@ -43,19 +43,16 @@ impl<'a> Iterator for MysqlCommentParserIter<'a> {
                 (ParserState::PlainText, b'\'') | (ParserState::PlainText, b'"') => {
                     state = ParserState::Quoted(*c);
                     offset += 1;
-                }
+                },
                 // comment type "# comment" "-- comment" and "/* comment */"
-                (ParserState::PlainText, b'#')
-                | (ParserState::PlainText, b'-')
-                | (ParserState::PlainText, b'/') => {
+                (ParserState::PlainText, b'#') |
+                (ParserState::PlainText, b'-') |
+                (ParserState::PlainText, b'/') => {
                     // line comment: find next \n or end of str
                     if *c == b'#' || (*c == b'-' && self.sql.get(offset + 1) == Some(&b'-')) {
                         let start = if *c == b'#' { offset + 1 } else { offset + 2 };
                         let comment = &self.sql[start..];
-                        let end = comment
-                            .iter()
-                            .position(|b| *b == b'\n')
-                            .unwrap_or(comment.len());
+                        let end = comment.iter().position(|b| *b == b'\n').unwrap_or(comment.len());
                         let comment = unsafe {
                             // SAFTY:
                             // 1. The contents in self.sql is from &str.to_bytes(), which is valid utf-8
@@ -70,25 +67,21 @@ impl<'a> Iterator for MysqlCommentParserIter<'a> {
                     } else {
                         offset += 1;
                     }
-                }
+                },
                 // escaped character (2B) in quoted text, skip the next character
                 (ParserState::Quoted(_), b'\\') => {
                     // also check the next character (after '\') to be a valid ascii char
-                    let is_ascii = self
-                        .sql
-                        .get(offset + 1)
-                        .map(|c| c.is_ascii())
-                        .unwrap_or(false);
+                    let is_ascii = self.sql.get(offset + 1).map(|c| c.is_ascii()).unwrap_or(false);
                     if !is_ascii {
                         self.sql = &self.sql[self.sql.len()..];
                         return None;
                     }
                     offset += 2;
-                }
+                },
                 (ParserState::Quoted(q), _) if q == c => {
                     state = ParserState::PlainText;
                     offset += 1;
-                }
+                },
                 (ParserState::MultilineComment(start), b'*')
                     if self.sql.get(offset + 1) == Some(&b'/') =>
                 {
@@ -100,7 +93,7 @@ impl<'a> Iterator for MysqlCommentParserIter<'a> {
                     };
                     self.sql = &self.sql[offset + 2..];
                     return Some(comment.trim());
-                }
+                },
                 _ => offset += 1,
             }
         }

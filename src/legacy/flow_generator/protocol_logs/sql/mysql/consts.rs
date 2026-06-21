@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-use std::fmt::Write;
-
 use public::bytes::{
     read_f32_le, read_f64_le, read_i16_le, read_i32_le, read_i64_le, read_u16_le, read_u32_le,
 };
+use std::fmt::Write;
 
 pub const PROTOCOL_VERSION: u8 = 10;
 
@@ -92,12 +91,12 @@ impl From<u8> for FieldType {
 impl FieldType {
     fn header_length(&self) -> usize {
         match self {
-            FieldType::Tiny
-            | FieldType::String
-            | FieldType::Date
-            | FieldType::Time
-            | FieldType::Timestamp
-            | FieldType::Datetime => 1,
+            FieldType::Tiny |
+            FieldType::String |
+            FieldType::Date |
+            FieldType::Time |
+            FieldType::Timestamp |
+            FieldType::Datetime => 1,
             FieldType::Short | FieldType::Year => 2,
             FieldType::Long | FieldType::Float | FieldType::Int24 => 4,
             FieldType::Double | FieldType::Longlong => 8,
@@ -122,55 +121,55 @@ impl FieldType {
 
                 output.push_str(&String::from_utf8_lossy(&payload[offset..offset + len]));
                 offset += len;
-            }
+            },
             FieldType::Longlong => {
                 let n = read_i64_le(&payload[offset..]);
 
                 let _ = write!(output, "LongLong({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Long => {
                 let n = read_i32_le(&payload[offset..]);
 
                 let _ = write!(output, "Long({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Int24 => {
                 let n = read_i32_le(&payload[offset..]);
 
                 let _ = write!(output, "Int24({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Short => {
                 let n = read_i16_le(&payload[offset..]);
 
                 let _ = write!(output, "Short({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Year => {
                 let n = read_i16_le(&payload[offset..]);
 
                 let _ = write!(output, "Years({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Tiny => {
                 let n = payload[offset] as i8;
 
                 let _ = write!(output, "Tiny({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Double => {
                 let n = read_f64_le(&payload[offset..]);
 
                 let _ = write!(output, "Double({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Float => {
                 let n = read_f32_le(&payload[offset..]);
 
                 let _ = write!(output, "Float({})", n);
                 offset += header_length;
-            }
+            },
             FieldType::Date | FieldType::Datetime | FieldType::Timestamp => {
                 let len = payload[offset] as usize;
                 offset += header_length;
@@ -189,7 +188,7 @@ impl FieldType {
                         let day = payload[offset + 3];
                         offset += len;
                         let _ = write!(output, "datetime {:04}-{:02}-{:02}", year, month, day);
-                    }
+                    },
                     // if microseconds is 0, length is 7 and micro_seconds is not sent.
                     7 => {
                         let year = read_u16_le(&payload[offset..]);
@@ -204,7 +203,7 @@ impl FieldType {
                             "datetime {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
                             year, month, day, hour, minute, second
                         );
-                    }
+                    },
                     // otherwise the length is 11
                     11 => {
                         let year = read_u16_le(&payload[offset..]);
@@ -220,10 +219,10 @@ impl FieldType {
                             "datetime {:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
                             year, month, day, hour, minute, second, microsecond
                         );
-                    }
+                    },
                     _ => offset += len,
                 }
-            }
+            },
             FieldType::Time => {
                 let len = payload[offset] as usize;
                 offset += header_length;
@@ -255,7 +254,7 @@ impl FieldType {
                                 days, hour, minute, second
                             );
                         }
-                    }
+                    },
                     12 => {
                         if offset + len > payload.len() {
                             return None;
@@ -281,10 +280,10 @@ impl FieldType {
                                 days, hour, minute, second, microsecond
                             );
                         }
-                    }
+                    },
                     _ => offset += len,
                 }
-            }
+            },
             FieldType::Null => output.push_str("NULL"),
             FieldType::Unknown(_) => return None,
         }

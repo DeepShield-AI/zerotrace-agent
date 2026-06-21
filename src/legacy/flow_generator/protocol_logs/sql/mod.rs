@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
+use lru::LruCache;
 use std::{
     cell::RefCell,
     iter::{Enumerate, Peekable},
     rc::Rc,
     slice::Iter,
 };
-
-use lru::LruCache;
 
 mod memcached;
 mod mongo;

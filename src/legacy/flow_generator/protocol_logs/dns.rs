@@ -14,17 +14,9 @@
  * limitations under the License.
  */
 
-use std::fmt::Write;
-use std::mem;
-use std::net::{Ipv4Addr, Ipv6Addr};
-
-use log::debug;
-use serde::{ser::SerializeStruct, Serialize, Serializer};
-use simple_dns::{rdata::RData, Packet, PacketFlag, SimpleDnsError, OPCODE, QTYPE, RCODE, TYPE};
-
 use super::{
-    pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
     AppProtoHead, L7ResponseStatus,
+    pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
 };
 use crate::{
     common::{
@@ -41,7 +33,15 @@ use crate::{
     },
     utils::bytes::read_u16_be,
 };
+use log::debug;
 use public::l7_protocol::{L7Protocol, LogMessageType};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
+use simple_dns::{OPCODE, Packet, PacketFlag, QTYPE, RCODE, SimpleDnsError, TYPE, rdata::RData};
+use std::{
+    fmt::Write,
+    mem,
+    net::{Ipv4Addr, Ipv6Addr},
+};
 
 const TCP_PAYLOAD_OFFSET: usize = 2;
 const DNS_HEADER_LEN: usize = 12;
@@ -193,9 +193,7 @@ impl DnsInfo {
             (None, Some(code)) => self.status_code = Some(code),
             (Some(code), Some(other_code))
                 if code != other_code && RCODE::from(code as u16) == RCODE::NoError =>
-            {
-                self.status_code = Some(other_code)
-            }
+                self.status_code = Some(other_code),
             _ => (),
         }
         self.captured_response_byte = other.captured_response_byte;
@@ -213,9 +211,9 @@ impl DnsInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::DNS) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.query_name)
-                || t.request_domain.is_on_blacklist(&self.query_name)
-                || t.endpoint.is_on_blacklist(&self.query_name);
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.query_name) ||
+                t.request_domain.is_on_blacklist(&self.query_name) ||
+                t.endpoint.is_on_blacklist(&self.query_name);
             if let Some(qtype) = self.query_type {
                 self.is_on_blacklist |= t.request_type.is_on_blacklist(&qtype_to_string(qtype));
             }
@@ -291,9 +289,8 @@ impl DnsInfo {
         let p = Packet::parse(payload)?;
         let mut info = if p.has_flags(PacketFlag::RESPONSE) {
             let nxdomain_trie = match params.parse_config.as_ref() {
-                Some(c) if !c.unconcerned_dns_nxdomain_trie.is_empty() => {
-                    Some(&c.unconcerned_dns_nxdomain_trie)
-                }
+                Some(c) if !c.unconcerned_dns_nxdomain_trie.is_empty() =>
+                    Some(&c.unconcerned_dns_nxdomain_trie),
                 _ => None,
             };
             Self::parse_response(nxdomain_trie, &p)?
@@ -348,10 +345,7 @@ impl From<DnsInfo> for L7ProtocolSendLog {
             captured_request_byte: f.captured_request_byte,
             captured_response_byte: f.captured_response_byte,
             req: L7Request {
-                req_type: f
-                    .query_type
-                    .map(|qtype| qtype_to_string(qtype))
-                    .unwrap_or_default(),
+                req_type: f.query_type.map(|qtype| qtype_to_string(qtype)).unwrap_or_default(),
                 resource: f.query_name.clone(),
                 domain: if f.is_query_address() {
                     f.query_name.clone()
@@ -410,9 +404,7 @@ impl L7ProtocolParserInterface for DnsLog {
             Ok(info) => match info.get(0) {
                 Some(info)
                     if info.msg_type == LogMessageType::Request && !info.query_name.is_empty() =>
-                {
-                    Some(LogMessageType::Request)
-                }
+                    Some(LogMessageType::Request),
                 _ => None,
             },
             _ => None,
@@ -442,10 +434,7 @@ impl L7ProtocolParserInterface for DnsLog {
 
         if param.parse_log {
             Ok(L7ParseResult::Multi(
-                infos
-                    .drain(..)
-                    .map(|i| L7ProtocolInfo::DnsInfo(i))
-                    .collect(),
+                infos.drain(..).map(|i| L7ProtocolInfo::DnsInfo(i)).collect(),
             ))
         } else {
             Ok(L7ParseResult::None)
@@ -529,7 +518,7 @@ impl DnsLog {
                 }
 
                 Ok(all_info)
-            }
+            },
             _ => return Err(Error::InvalidIpProtocol),
         }
     }
@@ -539,24 +528,21 @@ impl DnsLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::{cell::RefCell, collections::HashMap, fs, path::Path, rc::Rc, time::Duration};
-
-    use public::{buffer::BatchedBox, proto::agent::AgentType};
-
     use crate::{
         common::{
+            MetaPacket,
             flow::{L7Stats, PacketDirection},
             l7_protocol_log::L7PerfCache,
-            MetaPacket,
         },
         config::{
             config::{TagFilterOperator, UserConfig},
             handler::{BlacklistTrie, FlowConfig, LogParserConfig, ModuleConfig},
         },
-        flow_generator::{flow_map, L7_RRT_CACHE_CAPACITY},
-        utils::test_utils::{load_packets, FlowMapTesterBuilder},
+        flow_generator::{L7_RRT_CACHE_CAPACITY, flow_map},
+        utils::test_utils::{FlowMapTesterBuilder, load_packets},
     };
+    use public::{buffer::BatchedBox, proto::agent::AgentType};
+    use std::{cell::RefCell, collections::HashMap, fs, path::Path, rc::Rc, time::Duration};
 
     const FILE_DIR: &str = "resources/test/flow_generator/dns";
 
@@ -711,12 +697,10 @@ mod tests {
         for item in expected.iter() {
             assert_eq!(
                 item.1,
-                run_perf(item.0, None)
-                    .iter()
-                    .fold(L7PerfStats::default(), |mut s, i| {
-                        s.sequential_merge(&i);
-                        s
-                    }),
+                run_perf(item.0, None).iter().fold(L7PerfStats::default(), |mut s, i| {
+                    s.sequential_merge(&i);
+                    s
+                }),
                 "parse pcap {} unexcepted",
                 item.0
             );
@@ -840,9 +824,7 @@ mod tests {
         };
         let mut tester = FlowMapTesterBuilder::with_config(module_config.flow.clone()).build();
         let mut packets = load_packets(Path::new(FILE_DIR).join("udp-from-same-socket.log"));
-        tester
-            .flow_map
-            .reset_start_time(packets[0].lookup_key.timestamp.into());
+        tester.flow_map.reset_start_time(packets[0].lookup_key.timestamp.into());
 
         let config = flow_map::Config {
             flow: &module_config.flow,
@@ -856,9 +838,7 @@ mod tests {
         }
         let last_timestamp =
             packets.last().unwrap().lookup_key.timestamp + Duration::from_secs(600);
-        tester
-            .flow_map
-            .inject_flush_ticker(&config, last_timestamp.into());
+        tester.flow_map.inject_flush_ticker(&config, last_timestamp.into());
 
         let output = tester.l7_stats_output.take().unwrap();
         mem::drop(tester);
@@ -866,8 +846,6 @@ mod tests {
         let perf_stats: Vec<BatchedBox<L7Stats>> =
             output.map(|l7_stats| l7_stats.clone()).collect();
         assert!(!perf_stats.is_empty());
-        assert!(perf_stats
-            .iter()
-            .all(|l7_stats| l7_stats.stats == L7PerfStats::default()));
+        assert!(perf_stats.iter().all(|l7_stats| l7_stats.stats == L7PerfStats::default()));
     }
 }

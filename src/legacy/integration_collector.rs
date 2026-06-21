@@ -14,29 +14,67 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::fmt::{self, Debug, Formatter};
-use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::time::Duration;
-
-use flate2::{read::GzDecoder, write::ZlibEncoder, Compression};
-use http::header::{CONTENT_ENCODING, CONTENT_TYPE};
-use http::HeaderMap;
+use crate::{
+    common::{
+        TaggedFlow, Timestamp,
+        flow::{Flow, FlowPerfStats, L7PerfStats, L7Stats, SignalSource},
+        lookup_key::LookupKey,
+    },
+    config::{PrometheusExtraLabels, handler::LogParserConfig},
+    exception::ExceptionHandler,
+    flow_generator::protocol_logs::{L7ResponseStatus, http::handle_endpoint},
+    metric::document::{Direction, TapSide},
+    policy::PolicyGetter,
+};
+use flate2::{Compression, read::GzDecoder, write::ZlibEncoder};
+use http::{
+    HeaderMap,
+    header::{CONTENT_ENCODING, CONTENT_TYPE},
+};
 use hyper::{
-    body::{aggregate, Buf},
+    Body, Method, Request, Response, Server, StatusCode,
+    body::{Buf, aggregate},
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Method, Request, Response, Server, StatusCode,
 };
-use log::{debug, error, info, log_enabled, warn, Level};
+#[cfg(feature = "enterprise-integration")]
+use integration_skywalking::{
+    SkyWalkingExtra, handle_skywalking_request, handle_skywalking_streaming_request,
+};
+use log::{Level, debug, error, info, log_enabled, warn};
 use prost::Message;
 use public::{
     buffer::{Allocator, BatchedBox},
+    counter::{Counter, CounterType, CounterValue, OwnedCountable},
+    enums::{CaptureNetworkType, EthernetType, L4Protocol},
+    l7_protocol::L7Protocol,
+    proto::{
+        agent::Exception,
+        flow_log,
+        integration::opentelemetry::proto::{
+            common::v1::{
+                AnyValue, KeyValue,
+                any_value::Value::{IntValue, StringValue},
+            },
+            trace::v1::{Span, TracesData, span::SpanKind},
+        },
+        metric,
+    },
+    queue::DebugSender,
     sender::{SendMessageType, Sendable},
+    utils::net::ipv6_enabled,
+};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug, Formatter},
+    io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, Ordering},
+    },
+    thread::sleep,
+    time::Duration,
 };
 use tokio::{
     runtime::Runtime,
@@ -46,43 +84,6 @@ use tokio::{
     time,
 };
 use zstd::bulk::compress;
-
-use crate::{
-    common::{
-        flow::{Flow, FlowPerfStats, L7PerfStats, L7Stats, SignalSource},
-        lookup_key::LookupKey,
-        TaggedFlow, Timestamp,
-    },
-    config::{handler::LogParserConfig, PrometheusExtraLabels},
-    exception::ExceptionHandler,
-    flow_generator::protocol_logs::{http::handle_endpoint, L7ResponseStatus},
-    metric::document::{Direction, TapSide},
-    policy::PolicyGetter,
-};
-
-#[cfg(feature = "enterprise-integration")]
-use integration_skywalking::{
-    handle_skywalking_request, handle_skywalking_streaming_request, SkyWalkingExtra,
-};
-use public::{
-    counter::{Counter, CounterType, CounterValue, OwnedCountable},
-    enums::{CaptureNetworkType, EthernetType, L4Protocol},
-    l7_protocol::L7Protocol,
-    proto::{
-        agent::Exception,
-        flow_log,
-        integration::opentelemetry::proto::{
-            common::v1::{
-                any_value::Value::{IntValue, StringValue},
-                AnyValue, KeyValue,
-            },
-            trace::v1::{span::SpanKind, Span, TracesData},
-        },
-        metric,
-    },
-    queue::DebugSender,
-    utils::net::ipv6_enabled,
-};
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -188,11 +189,7 @@ impl Sendable for Profile {
 }
 
 fn decode_metric(mut whole_body: impl Buf, headers: &HeaderMap) -> Result<Vec<u8>, GenericError> {
-    let metric = if headers
-        .get(CONTENT_ENCODING)
-        .filter(|&v| v == GZIP)
-        .is_some()
-    {
+    let metric = if headers.get(CONTENT_ENCODING).filter(|&v| v == GZIP).is_some() {
         let mut metric = vec![];
         let mut gz = GzDecoder::new(whole_body.reader());
         gz.read_to_end(&mut metric)?;
@@ -300,7 +297,7 @@ fn decode_otel_trace_data(
                                 }
                             }
                         }
-                    }
+                    },
                     "service.name" => {
                         // the format such as: ResourceSpans { resource: Some(Resource {attributes:[KeyValue { key: "service.name", value: Some(AnyValue { value: Some(StringValue("someservice")) }) }]
                         if let Some(value) = attr.value.clone() {
@@ -308,7 +305,7 @@ fn decode_otel_trace_data(
                                 otel_service = Some(val);
                             }
                         }
-                    }
+                    },
                     "service.instance.id" => {
                         // the format such as: ResourceSpans { resource: Some(Resource {attributes:[KeyValue { key: "service.instance.id", value: Some(AnyValue { value: Some(StringValue("someserviceinstabceid")) }) }]
                         if let Some(value) = attr.value.clone() {
@@ -316,8 +313,8 @@ fn decode_otel_trace_data(
                                 otel_instance = Some(val);
                             }
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
             if skip_verify_ip {
@@ -421,14 +418,14 @@ fn fill_l7_stats(
             //         }
             //     ]
             // }
-            "http.scheme" | "db.system" | "rpc.system" | "messaging.system"
-            | "messaging.protocol" => {
+            "http.scheme" | "db.system" | "rpc.system" | "messaging.system" |
+            "messaging.protocol" => {
                 if let Some(StringValue(val)) = attr.value.as_ref().and_then(|v| v.value.as_ref()) {
                     l7_protocol = L7Protocol::from(val);
                 }
-            }
+            },
             // Format as above, "net.peer.ip": "0.0.0.0"
-            "net.peer.ip" => {
+            "net.peer.ip" =>
                 if let Some(value) = attr.value.as_ref() {
                     if let Some(StringValue(val)) = value.value.as_ref() {
                         if let Ok(ip_addr) = val.parse::<IpAddr>() {
@@ -440,43 +437,38 @@ fn fill_l7_stats(
                             }
                         }
                     }
-                }
-            }
+                },
             // Format as above, "net.transport": "ip_tcp"
-            "net.transport" => {
+            "net.transport" =>
                 if let Some(value) = attr.value.as_ref() {
                     if let Some(StringValue(val)) = value.value.as_ref() {
                         l4_protocol = L4Protocol::from(val);
                     }
-                }
-            }
+                },
             // Format as above, "http.status_code": 200
-            "http.status_code" => {
+            "http.status_code" =>
                 if let Some(value) = attr.value.as_ref() {
                     if let Some(IntValue(val)) = value.value.as_ref() {
                         status = http_code_to_response_status(*val);
                     }
-                }
-            }
+                },
             // Format as above, "http.flavor": "1.1"
-            "http.flavor" => {
+            "http.flavor" =>
                 if let Some(value) = attr.value.as_ref() {
                     if let Some(StringValue(val)) = value.value.as_ref() {
                         if val == "2.0" {
                             is_http2 = true;
                         }
                     }
-                }
-            }
-            _ => {}
+                },
+            _ => {},
         }
         match l7_protocol {
-            L7Protocol::Http1 | L7Protocol::Http2 => {
-                last_endpoint = Some(handle_endpoint(log_parser_config.as_ref(), &span.name))
-            }
+            L7Protocol::Http1 | L7Protocol::Http2 =>
+                last_endpoint = Some(handle_endpoint(log_parser_config.as_ref(), &span.name)),
             _ => {
                 last_endpoint = Some(span.name.clone());
-            }
+            },
         }
     }
 
@@ -546,9 +538,8 @@ fn fill_l7_stats(
         l2_end_1,
         ..Default::default()
     };
-    let (endpoint, _) = policy_getter
-        .policy()
-        .lookup_from_otel(&mut lookup_key, local_epc_id as i32);
+    let (endpoint, _) =
+        policy_getter.policy().lookup_from_otel(&mut lookup_key, local_epc_id as i32);
     let (src_info, dst_info) = (endpoint.src_info, endpoint.dst_info);
     let peer_src = &mut flow.flow_metrics_peers[0];
     peer_src.l3_epc_id = src_info.l3_epc_id;
@@ -637,7 +628,7 @@ async fn handler(
                 .header("Content-Type", "application/pdf")
                 .body(doc_bytes.as_slice().into())
                 .unwrap())
-        }
+        },
         // OpenTelemetry trace integration
         (&Method::POST, "/api/v1/otel/trace") => {
             if external_trace_integration_disabled {
@@ -648,7 +639,7 @@ async fn handler(
                 Ok(b) => b,
                 Err(e) => {
                     return Ok(e);
-                }
+                },
             };
             let tracing_data = decode_metric(whole_body, &part.headers)?;
             let time_diff = time_diff.load(Ordering::Relaxed);
@@ -671,13 +662,9 @@ async fn handler(
                 }
             }
             if compressed {
-                counter
-                    .uncompressed
-                    .fetch_add(decode_data.0.len() as u64, Ordering::Relaxed);
+                counter.uncompressed.fetch_add(decode_data.0.len() as u64, Ordering::Relaxed);
                 let compressed_data = compress_data(decode_data.0)?;
-                counter
-                    .compressed
-                    .fetch_add(compressed_data.len() as u64, Ordering::Relaxed);
+                counter.compressed.fetch_add(compressed_data.len() as u64, Ordering::Relaxed);
                 if let Err(e) =
                     compressed_otel_sender.send(OpenTelemetryCompressed(compressed_data))
                 {
@@ -693,7 +680,7 @@ async fn handler(
             }
 
             Ok(Response::builder().body(Body::empty()).unwrap())
-        }
+        },
         // Prometheus integration
         (&Method::POST, "/api/v1/prometheus") => {
             if external_metric_integration_disabled {
@@ -711,16 +698,15 @@ async fn handler(
             if prometheus_extra_config.enabled {
                 for label in labels {
                     if headers.contains_key(label) {
-                        let value = headers
-                            .get(label)
-                            .unwrap()
-                            .to_str()
-                            .unwrap_or_default()
-                            .to_string();
+                        let value =
+                            headers.get(label).unwrap().to_str().unwrap_or_default().to_string();
                         labels_count += label.len();
                         values_count += value.len();
                         if labels_count > labels_limit || values_count > values_limit {
-                            debug!("labels_count exceeds the labels limit:{} or values_count exceeds the values limit:{} ", labels_limit, values_limit);
+                            debug!(
+                                "labels_count exceeds the labels limit:{} or values_count exceeds the values limit:{} ",
+                                labels_limit, values_limit
+                            );
                             break;
                         }
                         extra_label_names.push(label.to_string());
@@ -734,7 +720,7 @@ async fn handler(
                     Ok(b) => b,
                     Err(e) => {
                         return Ok(e);
-                    }
+                    },
                 };
             let mut metric = vec![0u8; whole_body.remaining()];
             whole_body.copy_to_slice(metric.as_mut_slice());
@@ -751,7 +737,7 @@ async fn handler(
             }
 
             Ok(Response::builder().body(Body::empty()).unwrap())
-        }
+        },
         // Telegraf integration
         (&Method::POST, "/api/v1/telegraf") => {
             if external_metric_integration_disabled {
@@ -762,7 +748,7 @@ async fn handler(
                 Ok(b) => b,
                 Err(e) => {
                     return Ok(e);
-                }
+                },
             };
             let metric = decode_metric(whole_body, &part.headers)?;
             if log_enabled!(Level::Debug) {
@@ -774,7 +760,7 @@ async fn handler(
                 warn!("telegraf_sender failed to send data, because {:?}", e);
             }
             Ok(Response::builder().body(Body::empty()).unwrap())
-        }
+        },
         // profile integration
         (&Method::POST, "/api/v1/profile/ingest") => {
             if external_profile_integration_disabled {
@@ -789,7 +775,7 @@ async fn handler(
                 Ok(b) => b,
                 Err(e) => {
                     return Ok(e);
-                }
+                },
             };
             profile.data = decode_metric(whole_body, &part.headers)?;
             if profile_compressed {
@@ -803,7 +789,7 @@ async fn handler(
                             .compressed
                             .fetch_add(compressed_data.len() as u64, Ordering::Relaxed);
                         profile.data = compressed_data;
-                    }
+                    },
                     Err(e) => debug!("failed to compress: {:?}", e),
                 }
             }
@@ -822,7 +808,7 @@ async fn handler(
             }
 
             Ok(Response::builder().body(Body::empty()).unwrap())
-        }
+        },
         // log integration
         (&Method::POST, "/api/v1/log") => {
             if external_log_integration_disabled {
@@ -833,7 +819,7 @@ async fn handler(
                 Ok(b) => b,
                 Err(e) => {
                     return Ok(e);
-                }
+                },
             };
             let log_data = decode_metric(whole_body, &part.headers)?;
             if let Err(e) = application_log_sender.send(ApplicationLog(log_data)) {
@@ -844,13 +830,13 @@ async fn handler(
             }
 
             Ok(Response::builder().body(Body::empty()).unwrap())
-        }
+        },
         #[cfg(feature = "enterprise-integration")]
         (
             &Method::POST,
-            "/v3/segments"
-            | "/skywalking.v3.TraceSegmentReportService/collectInSync"
-            | "/TraceSegmentReportService/collectInSync",
+            "/v3/segments" |
+            "/skywalking.v3.TraceSegmentReportService/collectInSync" |
+            "/TraceSegmentReportService/collectInSync",
         ) => {
             if external_trace_integration_disabled {
                 return Ok(Response::builder().body(Body::empty()).unwrap());
@@ -860,19 +846,19 @@ async fn handler(
                 Ok(b) => b,
                 Err(e) => {
                     return Ok(e);
-                }
+                },
             };
             let data = decode_metric(whole_body, &part.headers)?;
             Ok(
                 handle_skywalking_request(peer_addr, data, part.uri.path(), skywalking_sender)
                     .await,
             )
-        }
+        },
         #[cfg(feature = "enterprise-integration")]
         (
             &Method::POST,
-            "/skywalking.v3.TraceSegmentReportService/collect"
-            | "/TraceSegmentReportService/collect",
+            "/skywalking.v3.TraceSegmentReportService/collect" |
+            "/TraceSegmentReportService/collect",
         ) => {
             if external_trace_integration_disabled {
                 return Ok(Response::builder().body(Body::empty()).unwrap());
@@ -885,7 +871,7 @@ async fn handler(
                 skywalking_sender,
             )
             .await)
-        }
+        },
         (
             &Method::POST,
             // https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.114.0/receiver/datadogreceiver/README.md?plain=1#L65
@@ -899,7 +885,7 @@ async fn handler(
                 Ok(b) => b,
                 Err(e) => {
                     return Ok(e);
-                }
+                },
             };
 
             let mut third_party_data = flow_log::ThirdPartyTrace::default();
@@ -916,7 +902,7 @@ async fn handler(
             }
 
             Ok(Response::builder().body(Body::empty()).unwrap())
-        }
+        },
         // Return the 404 Not Found for other routes.
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -938,10 +924,7 @@ fn parse_profile_time_to_seconds(t: &str) -> u32 {
 fn parse_profile_query(query: &str, profile: &mut metric::Profile) {
     let query_hash: HashMap<String, String> = query
         .split('&')
-        .filter_map(|s| {
-            s.split_once('=')
-                .and_then(|t| Some((t.0.to_owned(), t.1.to_owned())))
-        })
+        .filter_map(|s| s.split_once('=').and_then(|t| Some((t.0.to_owned(), t.1.to_owned()))))
         .collect();
     if let Some(name) = query_hash.get("name") {
         profile.name = name.to_string();
@@ -1177,53 +1160,69 @@ impl MetricServer {
         let external_metric_integration_disabled = self.external_metric_integration_disabled;
         let external_log_integration_disabled = self.external_log_integration_disabled;
         let (tx, mut rx) = mpsc::channel(8);
-        self.runtime
-            .spawn(Self::alive_check(monitor_port.clone(), tx.clone(), mon_rx));
+        self.runtime.spawn(Self::alive_check(monitor_port.clone(), tx.clone(), mon_rx));
         self.server_shutdown_tx.lock().unwrap().replace(tx);
 
-        self.thread
-            .lock()
-            .unwrap()
-            .replace(self.runtime.spawn(async move {
-                info!("integration collector starting");
-                while running.load(Ordering::Relaxed) {
-                    let mut max_tries = 0;
-                    let (server_builder, addr) = loop {
-                        if !running.load(Ordering::Relaxed) {
-                            return;
-                        }
-                        while let Ok(_) = rx.try_recv() {} // drain useless messages
-                        let port = port.load(Ordering::Acquire);
-                        let addr = if ipv6_enabled() {
-                            (Ipv6Addr::UNSPECIFIED, port).into()
-                        } else {
-                            (Ipv4Addr::UNSPECIFIED, port).into()
-                        };
-                        match Server::try_bind(&addr) {
-                            Ok(s) => {
-                                monitor_port.store(port, Ordering::Release);
-                                break (s, addr);
-                            }
-                            Err(e) => {
-                                // 因为有场景是停止server之后立刻开启server，Server::stop采用丢弃线程的方法会直接返回，而操作系统回收监听端口资源需要时间，
-                                // 为了没有spurious error log，需要睡眠一会等待操作系统完成回收资源。
-                                // =================================================================================================
-                                // Because there is a scenario where the server is started immediately after the server is stopped, Server::stop will return directly
-                                // by discarding the thread, and it takes time for the operating system to recycle the listening port resources.
-                                // In order to have no spurious error log, you need to sleep for a while and wait for the operating system to finish recycling resources.
-                                if max_tries < 2 {
-                                    max_tries += 1;
-                                    sleep(Duration::from_secs(1));
-                                    continue;
-                                }
-                                error!("integration collector error: {} with addr={}", e, addr);
-                                exception_handler.set(Exception::IntegrationSocketError);
-                                sleep(Duration::from_secs(60));
+        self.thread.lock().unwrap().replace(self.runtime.spawn(async move {
+            info!("integration collector starting");
+            while running.load(Ordering::Relaxed) {
+                let mut max_tries = 0;
+                let (server_builder, addr) = loop {
+                    if !running.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    while let Ok(_) = rx.try_recv() {} // drain useless messages
+                    let port = port.load(Ordering::Acquire);
+                    let addr = if ipv6_enabled() {
+                        (Ipv6Addr::UNSPECIFIED, port).into()
+                    } else {
+                        (Ipv4Addr::UNSPECIFIED, port).into()
+                    };
+                    match Server::try_bind(&addr) {
+                        Ok(s) => {
+                            monitor_port.store(port, Ordering::Release);
+                            break (s, addr);
+                        },
+                        Err(e) => {
+                            // 因为有场景是停止server之后立刻开启server，Server::stop采用丢弃线程的方法会直接返回，而操作系统回收监听端口资源需要时间，
+                            // 为了没有spurious error log，需要睡眠一会等待操作系统完成回收资源。
+                            // =================================================================================================
+                            // Because there is a scenario where the server is started immediately after the server is stopped, Server::stop will return directly
+                            // by discarding the thread, and it takes time for the operating system to recycle the listening port resources.
+                            // In order to have no spurious error log, you need to sleep for a while and wait for the operating system to finish recycling resources.
+                            if max_tries < 2 {
+                                max_tries += 1;
+                                sleep(Duration::from_secs(1));
                                 continue;
                             }
-                        }
-                    };
+                            error!("integration collector error: {} with addr={}", e, addr);
+                            exception_handler.set(Exception::IntegrationSocketError);
+                            sleep(Duration::from_secs(60));
+                            continue;
+                        },
+                    }
+                };
 
+                let otel_sender = otel_sender.clone();
+                let compressed_otel_sender = compressed_otel_sender.clone();
+                let otel_l7_stats_sender = otel_l7_stats_sender.clone();
+                let prometheus_sender = prometheus_sender.clone();
+                let telegraf_sender = telegraf_sender.clone();
+                let profile_sender = profile_sender.clone();
+                let application_log_sender = application_log_sender.clone();
+                #[cfg(feature = "enterprise-integration")]
+                let skywalking_sender = skywalking_sender.clone();
+                let datadog_sender = datadog_sender.clone();
+                let exception_handler_inner = exception_handler.clone();
+                let counter = counter.clone();
+                let compressed = compressed.clone();
+                let profile_compressed = profile_compressed.clone();
+                let local_epc_id = local_epc_id.clone();
+                let policy_getter = policy_getter.clone();
+                let time_diff = time_diff.clone();
+                let prometheus_extra_config = prometheus_extra_config.clone();
+                let log_parser_config = log_parser_config.clone();
+                let service = make_service_fn(move |conn: &AddrStream| {
                     let otel_sender = otel_sender.clone();
                     let compressed_otel_sender = compressed_otel_sender.clone();
                     let otel_l7_stats_sender = otel_l7_stats_sender.clone();
@@ -1234,7 +1233,8 @@ impl MetricServer {
                     #[cfg(feature = "enterprise-integration")]
                     let skywalking_sender = skywalking_sender.clone();
                     let datadog_sender = datadog_sender.clone();
-                    let exception_handler_inner = exception_handler.clone();
+                    let exception_handler = exception_handler_inner.clone();
+                    let peer_addr = conn.remote_addr();
                     let counter = counter.clone();
                     let compressed = compressed.clone();
                     let profile_compressed = profile_compressed.clone();
@@ -1243,76 +1243,55 @@ impl MetricServer {
                     let time_diff = time_diff.clone();
                     let prometheus_extra_config = prometheus_extra_config.clone();
                     let log_parser_config = log_parser_config.clone();
-                    let service = make_service_fn(move |conn: &AddrStream| {
-                        let otel_sender = otel_sender.clone();
-                        let compressed_otel_sender = compressed_otel_sender.clone();
-                        let otel_l7_stats_sender = otel_l7_stats_sender.clone();
-                        let prometheus_sender = prometheus_sender.clone();
-                        let telegraf_sender = telegraf_sender.clone();
-                        let profile_sender = profile_sender.clone();
-                        let application_log_sender = application_log_sender.clone();
-                        #[cfg(feature = "enterprise-integration")]
-                        let skywalking_sender = skywalking_sender.clone();
-                        let datadog_sender = datadog_sender.clone();
-                        let exception_handler = exception_handler_inner.clone();
-                        let peer_addr = conn.remote_addr();
-                        let counter = counter.clone();
-                        let compressed = compressed.clone();
-                        let profile_compressed = profile_compressed.clone();
-                        let local_epc_id = local_epc_id.clone();
-                        let policy_getter = policy_getter.clone();
-                        let time_diff = time_diff.clone();
-                        let prometheus_extra_config = prometheus_extra_config.clone();
-                        let log_parser_config = log_parser_config.clone();
-                        let flow_id = Arc::new(AtomicU64::new(0));
-                        async move {
-                            Ok::<_, GenericError>(service_fn(move |req| {
-                                handler(
-                                    peer_addr,
-                                    req,
-                                    otel_sender.clone(),
-                                    compressed_otel_sender.clone(),
-                                    otel_l7_stats_sender.clone(),
-                                    prometheus_sender.clone(),
-                                    telegraf_sender.clone(),
-                                    profile_sender.clone(),
-                                    application_log_sender.clone(),
-                                    #[cfg(feature = "enterprise-integration")]
-                                    skywalking_sender.clone(),
-                                    datadog_sender.clone(),
-                                    exception_handler.clone(),
-                                    compressed.load(Ordering::Relaxed),
-                                    profile_compressed.load(Ordering::Relaxed),
-                                    counter.clone(),
-                                    local_epc_id,
-                                    policy_getter.clone(),
-                                    time_diff.clone(),
-                                    prometheus_extra_config.clone(),
-                                    log_parser_config.clone(),
-                                    flow_id.clone(),
-                                    external_profile_integration_disabled,
-                                    external_trace_integration_disabled,
-                                    external_metric_integration_disabled,
-                                    external_log_integration_disabled,
-                                )
-                            }))
-                        }
-                    });
-
-                    let server = server_builder.serve(service).with_graceful_shutdown(async {
-                        let _ = rx.recv().await;
-                    });
-
-                    info!("integration collector started");
-                    info!("integration collector listening on http://{}", addr);
-                    if let Err(e) = server.await {
-                        error!("external metric collector error: {}", e);
-                        exception_handler.set(Exception::IntegrationSocketError);
+                    let flow_id = Arc::new(AtomicU64::new(0));
+                    async move {
+                        Ok::<_, GenericError>(service_fn(move |req| {
+                            handler(
+                                peer_addr,
+                                req,
+                                otel_sender.clone(),
+                                compressed_otel_sender.clone(),
+                                otel_l7_stats_sender.clone(),
+                                prometheus_sender.clone(),
+                                telegraf_sender.clone(),
+                                profile_sender.clone(),
+                                application_log_sender.clone(),
+                                #[cfg(feature = "enterprise-integration")]
+                                skywalking_sender.clone(),
+                                datadog_sender.clone(),
+                                exception_handler.clone(),
+                                compressed.load(Ordering::Relaxed),
+                                profile_compressed.load(Ordering::Relaxed),
+                                counter.clone(),
+                                local_epc_id,
+                                policy_getter.clone(),
+                                time_diff.clone(),
+                                prometheus_extra_config.clone(),
+                                log_parser_config.clone(),
+                                flow_id.clone(),
+                                external_profile_integration_disabled,
+                                external_trace_integration_disabled,
+                                external_metric_integration_disabled,
+                                external_log_integration_disabled,
+                            )
+                        }))
                     }
-                }
+                });
 
-                let _ = mon_tx.send(());
-            }));
+                let server = server_builder.serve(service).with_graceful_shutdown(async {
+                    let _ = rx.recv().await;
+                });
+
+                info!("integration collector started");
+                info!("integration collector listening on http://{}", addr);
+                if let Err(e) = server.await {
+                    error!("external metric collector error: {}", e);
+                    exception_handler.set(Exception::IntegrationSocketError);
+                }
+            }
+
+            let _ = mon_tx.send(());
+        }));
     }
 
     pub fn stop(&self) {

@@ -14,53 +14,49 @@
  * limitations under the License.
  */
 
-use std::{
-    collections::HashMap,
-    mem::drop,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, RwLock,
+use super::CaptureNetworkTypeHandler;
+#[cfg(target_os = "linux")]
+use crate::platform::{GenericPoller, Poller};
+use crate::{
+    common::{
+        MetaPacket, TapPort,
+        decapsulate::{TunnelInfo, TunnelType, TunnelTypeBitmap},
+        enums::CaptureNetworkType,
     },
-    time::Duration,
+    config::DispatcherConfig,
+    dispatcher::{
+        PacketCounter,
+        base_dispatcher::{BaseDispatcher, BaseDispatcherListener},
+        error::{Error, Result},
+    },
+    flow_generator::{FlowMap, flow_map::Config},
+    handler::{MiniPacket, PacketHandler, PacketHandlerBuilder},
+    rpc::get_timestamp,
+    utils::environment::is_tt_hyper_v_compute,
 };
-
 use arc_swap::access::Access;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use log::debug;
 use log::{info, warn};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use nix::{
-    sched::{sched_setaffinity, CpuSet},
+    sched::{CpuSet, sched_setaffinity},
     unistd::Pid,
 };
-
-use super::CaptureNetworkTypeHandler;
-use crate::common::decapsulate::TunnelTypeBitmap;
-#[cfg(target_os = "linux")]
-use crate::platform::{GenericPoller, Poller};
-use crate::{
-    common::{
-        decapsulate::{TunnelInfo, TunnelType},
-        enums::CaptureNetworkType,
-        MetaPacket, TapPort,
-    },
-    config::DispatcherConfig,
-    dispatcher::{
-        base_dispatcher::{BaseDispatcher, BaseDispatcherListener},
-        error::{Error, Result},
-        PacketCounter,
-    },
-    flow_generator::{flow_map::Config, FlowMap},
-    handler::PacketHandlerBuilder,
-    handler::{MiniPacket, PacketHandler},
-    rpc::get_timestamp,
-    utils::environment::is_tt_hyper_v_compute,
-};
 use packet_dedup::PacketDedupMap;
-use public::packet::Packet;
 use public::{
+    packet::Packet,
     proto::agent::{AgentType, IfMacSource},
     utils::net::{Link, MacAddr},
+};
+use std::{
+    collections::HashMap,
+    mem::drop,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 const IF_INDEX_MAX_SIZE: usize = 1000;
@@ -84,8 +80,7 @@ impl MirrorModeDispatcherListener {
     pub fn on_tap_interface_change(&self, links: &[Link], _: IfMacSource, agent_type: AgentType) {
         let mut old_agent_type = self.agent_type.write().unwrap();
         *old_agent_type = agent_type;
-        self.base
-            .on_tap_interface_change(links.to_vec(), IfMacSource::IfMac);
+        self.base.on_tap_interface_change(links.to_vec(), IfMacSource::IfMac);
     }
 
     pub fn on_vm_change_with_bridge_macs(
@@ -96,12 +91,9 @@ impl MirrorModeDispatcherListener {
     ) {
         let mut new_vm_mac_set = HashMap::new();
 
-        vm_mac_addrs
-            .iter()
-            .zip(gateway_vmac_addrs)
-            .for_each(|(vm_mac, gw_vmac)| {
-                new_vm_mac_set.insert(vm_mac.to_lower_32b(), gw_vmac.clone());
-            });
+        vm_mac_addrs.iter().zip(gateway_vmac_addrs).for_each(|(vm_mac, gw_vmac)| {
+            new_vm_mac_set.insert(vm_mac.to_lower_32b(), gw_vmac.clone());
+        });
         tap_bridge_macs.iter().for_each(|e| {
             let key = e.to_lower_32b();
             new_vm_mac_set.insert(key, *e);
@@ -222,26 +214,16 @@ pub fn get_key(
     let (da_key, sa_key) =
         if tunnel_info.tier == 0 && overlay_packet.len() >= super::L2_MAC_ADDR_OFFSET {
             (
-                MacAddr::try_from(&overlay_packet[..6])
-                    .unwrap()
-                    .to_lower_32b(),
-                MacAddr::try_from(&overlay_packet[6..12])
-                    .unwrap()
-                    .to_lower_32b(),
+                MacAddr::try_from(&overlay_packet[..6]).unwrap().to_lower_32b(),
+                MacAddr::try_from(&overlay_packet[6..12]).unwrap().to_lower_32b(),
             )
         } else {
             (tunnel_info.mac_dst, tunnel_info.mac_src)
         };
 
     let vm_mac_set = vm_mac_set.read().unwrap();
-    let da_gateway_vmac = vm_mac_set
-        .get(&da_key)
-        .unwrap_or(&MacAddr::ZERO)
-        .to_lower_32b();
-    let sa_gateway_vmac = vm_mac_set
-        .get(&sa_key)
-        .unwrap_or(&MacAddr::ZERO)
-        .to_lower_32b();
+    let da_gateway_vmac = vm_mac_set.get(&da_key).unwrap_or(&MacAddr::ZERO).to_lower_32b();
+    let sa_gateway_vmac = vm_mac_set.get(&sa_key).unwrap_or(&MacAddr::ZERO).to_lower_32b();
 
     return (da_key, sa_key, da_gateway_vmac, sa_gateway_vmac);
 }
@@ -471,14 +453,8 @@ impl MirrorModeDispatcher {
             };
 
         let vm_mac_set = vm_mac_set.read().unwrap();
-        let da_gateway_vmac = vm_mac_set
-            .get(&da_key)
-            .unwrap_or(&MacAddr::ZERO)
-            .to_lower_32b();
-        let sa_gateway_vmac = vm_mac_set
-            .get(&sa_key)
-            .unwrap_or(&MacAddr::ZERO)
-            .to_lower_32b();
+        let da_gateway_vmac = vm_mac_set.get(&da_key).unwrap_or(&MacAddr::ZERO).to_lower_32b();
+        let sa_gateway_vmac = vm_mac_set.get(&sa_key).unwrap_or(&MacAddr::ZERO).to_lower_32b();
 
         return (da_key, sa_key, da_gateway_vmac, sa_gateway_vmac);
     }
@@ -509,7 +485,7 @@ impl MirrorModeDispatcher {
                 pipelines.insert(key, value);
 
                 pipelines.get_mut(&key).unwrap()
-            }
+            },
         }
     }
 
@@ -617,9 +593,7 @@ impl MirrorModeDispatcher {
             }
 
             base.counter.rx.fetch_add(1, Ordering::Relaxed);
-            base.counter
-                .rx_bytes
-                .fetch_add(packet.capture_length as u64, Ordering::Relaxed);
+            base.counter.rx_bytes.fetch_add(packet.capture_length as u64, Ordering::Relaxed);
 
             let decap_length = {
                 // Mirror Mode运行于Windows环境下时目前只有Hyper-V一个场景，由于Hyper-V加了VXLAN隧道，
@@ -758,7 +732,7 @@ impl MirrorModeDispatcher {
                 counter.invalid_packets.fetch_add(1, Ordering::Relaxed);
                 warn!("decap_tunnel failed: {:?}", e);
                 return 0;
-            }
+            },
         };
 
         return decap_length;

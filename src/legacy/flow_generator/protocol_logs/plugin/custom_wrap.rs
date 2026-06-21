@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-use public::l7_protocol::{L7Protocol, LogMessageType};
-
+use super::{CustomLog, all_plugin_log_parser};
 use crate::common::l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface};
-
-use super::{all_plugin_log_parser, CustomLog};
+use public::l7_protocol::{L7Protocol, LogMessageType};
 
 #[derive(Default)]
 pub struct CustomWrapLog {

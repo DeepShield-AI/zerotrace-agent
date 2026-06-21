@@ -15,15 +15,7 @@
  */
 mod hessian;
 
-use std::borrow::Cow;
-
-use nom::InputTakeAtPosition;
-use public::{
-    bytes::{read_u16_be, read_u32_be},
-    l7_protocol::{L7Protocol, LogMessageType},
-};
-use serde::Serialize;
-
+use self::hessian::{FieldEnum, HessianObjIterator};
 use crate::{
     common::{
         flow::L7PerfStats,
@@ -33,15 +25,21 @@ use crate::{
     },
     config::handler::{LogParserConfig, TraceType},
     flow_generator::{
-        protocol_logs::{
-            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
-            set_captured_byte, swap_if, L7ResponseStatus, PrioFields, BASE_FIELD_PRIORITY,
-        },
         AppProtoHead, Error, Result,
+        protocol_logs::{
+            BASE_FIELD_PRIORITY, L7ResponseStatus, PrioFields,
+            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response, TraceInfo},
+            set_captured_byte, swap_if,
+        },
     },
 };
-
-use self::hessian::{FieldEnum, HessianObjIterator};
+use nom::InputTakeAtPosition;
+use public::{
+    bytes::{read_u16_be, read_u32_be},
+    l7_protocol::{L7Protocol, LogMessageType},
+};
+use serde::Serialize;
+use std::borrow::Cow;
 
 const REQ_HDR_LEN: usize = 22;
 const RESP_HDR_LEN: usize = 20;
@@ -136,7 +134,7 @@ impl TryFrom<&[u8]> for Hdr {
                     hdr_len,
                     content_len,
                 })
-            }
+            },
             TYPE_RESP => {
                 if payload.len() < RESP_HDR_LEN {
                     return Err(Error::L7ProtocolUnknown);
@@ -160,7 +158,7 @@ impl TryFrom<&[u8]> for Hdr {
                     hdr_len,
                     content_len,
                 })
-            }
+            },
             _ => return Err(Error::L7ProtocolUnknown),
         }
     }
@@ -208,8 +206,7 @@ impl SofaRpcInfo {
     fn fill_with_trace_ctx(&mut self, ctx: String) {
         let ctx = decode_new_rpc_trace_context(ctx.as_bytes());
         if !ctx.trace_id.is_empty() {
-            self.trace_ids
-                .merge_field(BASE_FIELD_PRIORITY, ctx.trace_id);
+            self.trace_ids.merge_field(BASE_FIELD_PRIORITY, ctx.trace_id);
         }
         if !ctx.span_id.is_empty() {
             self.span_id = ctx.span_id;
@@ -221,10 +218,9 @@ impl SofaRpcInfo {
 
     fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::SofaRPC) {
-            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.target_serv)
-                || t.request_type.is_on_blacklist(&self.method)
-                || self
-                    .endpoint
+            self.is_on_blacklist = t.request_resource.is_on_blacklist(&self.target_serv) ||
+                t.request_type.is_on_blacklist(&self.method) ||
+                self.endpoint
                     .as_ref()
                     .map(|p| t.endpoint.is_on_blacklist(p))
                     .unwrap_or_default();
@@ -332,9 +328,9 @@ pub struct SofaRpcLog {
 impl L7ProtocolParserInterface for SofaRpcLog {
     fn check_payload(&mut self, payload: &[u8], param: &ParseParam) -> Option<LogMessageType> {
         let mut info = SofaRpcInfo::default();
-        if self.parse(payload, true, &mut info, param).is_ok()
-            && info.msg_type == LogMessageType::Request
-            && info.cmd_code != CMD_CODE_HEARTBEAT
+        if self.parse(payload, true, &mut info, param).is_ok() &&
+            info.msg_type == LogMessageType::Request &&
+            info.cmd_code != CMD_CODE_HEARTBEAT
         {
             Some(LogMessageType::Request)
         } else {
@@ -375,7 +371,7 @@ impl L7ProtocolParserInterface for SofaRpcLog {
                 } else {
                     Ok(L7ParseResult::None)
                 }
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -423,7 +419,7 @@ impl SofaRpcLog {
                 payload = &payload[REQ_HDR_LEN..];
                 info.req_len = hdr.content_len + (hdr.hdr_len as u32) + (hdr.class_len as u32);
                 LogMessageType::Request
-            }
+            },
             TYPE_RESP => {
                 payload = &payload[RESP_HDR_LEN..];
                 info.resp_code = hdr.resp_code;
@@ -434,7 +430,7 @@ impl SofaRpcLog {
                     _ => L7ResponseStatus::ServerError,
                 };
                 LogMessageType::Response
-            }
+            },
             _ => return Err(Error::L7ProtocolUnknown),
         };
 
@@ -449,8 +445,8 @@ impl SofaRpcLog {
         // due to sofa is susceptible to mischeck, need to check the class name is ascii when is strict
         if check {
             // java class name is not empty
-            if hdr.class_len == 0
-                || (&payload[0..hdr.class_len as usize]).iter().any(|b| {
+            if hdr.class_len == 0 ||
+                (&payload[0..hdr.class_len as usize]).iter().any(|b| {
                     *b == 0 || b.is_ascii_whitespace() || b.is_ascii_control() || !b.is_ascii()
                 })
             {
@@ -483,8 +479,7 @@ impl SofaRpcLog {
             info.target_serv = sofa_hdr.service;
             info.method = sofa_hdr.method;
             if !sofa_hdr.trace_id.is_empty() {
-                info.trace_ids
-                    .merge_field(BASE_FIELD_PRIORITY, sofa_hdr.trace_id);
+                info.trace_ids.merge_field(BASE_FIELD_PRIORITY, sofa_hdr.trace_id);
             }
 
             if !sofa_hdr.new_rpc_trace_context.is_empty() {
@@ -501,24 +496,23 @@ impl SofaRpcLog {
                     };
                     match k {
                         METHOD_KEY if info.method.is_empty() => info.method = val.to_string(),
-                        SERVICE_KEY if info.target_serv.is_empty() => {
-                            info.target_serv = val.to_string()
-                        }
+                        SERVICE_KEY if info.target_serv.is_empty() =>
+                            info.target_serv = val.to_string(),
                         TRACE_ID_KEY => {
                             got_trace_id = true;
                             if multiple_trace_id_collection || info.trace_ids.is_empty() {
                                 info.trace_ids
                                     .merge_field(BASE_FIELD_PRIORITY + 1, val.to_string());
                             }
-                        }
+                        },
                         _ => {
-                            if got_trace_id
-                                && !info.target_serv.is_empty()
-                                && !info.method.is_empty()
+                            if got_trace_id &&
+                                !info.target_serv.is_empty() &&
+                                !info.method.is_empty()
                             {
                                 break;
                             }
-                        }
+                        },
                     }
                 }
             }
@@ -528,11 +522,7 @@ impl SofaRpcLog {
             return Err(Error::L7ProtocolUnknown);
         }
 
-        if check {
-            Ok(false)
-        } else {
-            Ok(true)
-        }
+        if check { Ok(false) } else { Ok(true) }
     }
 }
 
@@ -572,10 +562,9 @@ impl From<&[u8]> for SofaHdr {
                 HDR_SERVICE_KEY => ret.service = String::from_utf8_lossy(val).to_string(),
                 HDR_METHOD_KEY => ret.method = String::from_utf8_lossy(val).to_string(),
                 HDR_TRACE_ID_KEY => ret.trace_id = String::from_utf8_lossy(val).to_string(),
-                SOFA_NEW_RPC_TRACE_CTX_KEY => {
-                    ret.new_rpc_trace_context = String::from_utf8_lossy(val).to_string()
-                }
-                _ => {}
+                SOFA_NEW_RPC_TRACE_CTX_KEY =>
+                    ret.new_rpc_trace_context = String::from_utf8_lossy(val).to_string(),
+                _ => {},
             }
         }
         ret
@@ -627,10 +616,9 @@ pub fn decode_new_rpc_trace_context(mut payload: &[u8]) -> RpcTraceContext {
         match key {
             RPC_TRACE_CONTEXT_TCID => ctx.trace_id = String::from_utf8_lossy(val).to_string(),
             RPC_TRACE_CONTEXT_SPID => ctx.span_id = String::from_utf8_lossy(val).to_string(),
-            RPC_TRACE_CONTEXT_PSPID => {
-                ctx.parent_span_id = String::from_utf8_lossy(val).to_string()
-            }
-            _ => {}
+            RPC_TRACE_CONTEXT_PSPID =>
+                ctx.parent_span_id = String::from_utf8_lossy(val).to_string(),
+            _ => {},
         }
     }
     ctx
@@ -643,12 +631,12 @@ pub fn decode_new_rpc_trace_context_with_type(
     while let Some((key, val)) = read_url_param_kv(&mut payload) {
         match key {
             RPC_TRACE_CONTEXT_TCID if id_type == TraceType::TRACE_ID => {
-                return Some(String::from_utf8_lossy(val))
-            }
+                return Some(String::from_utf8_lossy(val));
+            },
             RPC_TRACE_CONTEXT_SPID if id_type == TraceType::SPAN_ID => {
-                return Some(String::from_utf8_lossy(val))
-            }
-            _ => {}
+                return Some(String::from_utf8_lossy(val));
+            },
+            _ => {},
         }
     }
     None
@@ -667,10 +655,7 @@ fn read_url_param_kv<'a>(payload: &mut &'a [u8]) -> Option<(&'a [u8], &'a [u8])>
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, path::Path, rc::Rc};
-
-    use public::l7_protocol::LogMessageType;
-
+    use super::{SofaRpcLog, decode_new_rpc_trace_context};
     use crate::{
         common::{
             flow::{L7PerfStats, PacketDirection},
@@ -678,16 +663,16 @@ mod test {
             l7_protocol_log::{L7PerfCache, L7ProtocolParserInterface, ParseParam},
         },
         flow_generator::{
-            protocol_logs::{
-                rpc::sofa_rpc::{CMD_CODE_REQ, CMD_CODE_RESP, PROTO_BOLT_V1},
-                L7ResponseStatus,
-            },
             L7_RRT_CACHE_CAPACITY,
+            protocol_logs::{
+                L7ResponseStatus,
+                rpc::sofa_rpc::{CMD_CODE_REQ, CMD_CODE_RESP, PROTO_BOLT_V1},
+            },
         },
         utils::test_utils::Capture,
     };
-
-    use super::{decode_new_rpc_trace_context, SofaRpcLog};
+    use public::l7_protocol::LogMessageType;
+    use std::{cell::RefCell, path::Path, rc::Rc};
 
     #[test]
     fn test_decode_new_rpc_trace_context() {
@@ -742,10 +727,7 @@ mod test {
             parser.check_payload(req_payload, req_param),
             Some(LogMessageType::Request)
         );
-        let req_info = parser
-            .parse_payload(req_payload, req_param)
-            .unwrap()
-            .unwrap_single();
+        let req_info = parser.parse_payload(req_payload, req_param).unwrap().unwrap_single();
         for i in parser.perf_stats() {
             perf_stat.sequential_merge(&i);
         }
@@ -780,10 +762,7 @@ mod test {
         let resp_payload = p[1].get_l4_payload().unwrap();
         resp_param.set_captured_byte(resp_payload.len());
 
-        let resp_info = parser
-            .parse_payload(resp_payload, resp_param)
-            .unwrap()
-            .unwrap_single();
+        let resp_info = parser.parse_payload(resp_payload, resp_param).unwrap().unwrap_single();
         for i in parser.perf_stats() {
             perf_stat.sequential_merge(&i);
         }
@@ -841,10 +820,7 @@ mod test {
             parser.check_payload(req_payload, req_param),
             Some(LogMessageType::Request)
         );
-        let req_info = parser
-            .parse_payload(req_payload, req_param)
-            .unwrap()
-            .unwrap_single();
+        let req_info = parser.parse_payload(req_payload, req_param).unwrap().unwrap_single();
         for i in parser.perf_stats() {
             perf_stat.sequential_merge(&i);
         }
@@ -878,10 +854,7 @@ mod test {
         let resp_payload = p[1].get_l4_payload().unwrap();
         resp_param.set_captured_byte(resp_payload.len());
 
-        let resp_info = parser
-            .parse_payload(resp_payload, resp_param)
-            .unwrap()
-            .unwrap_single();
+        let resp_info = parser.parse_payload(resp_payload, resp_param).unwrap().unwrap_single();
         for i in parser.perf_stats() {
             perf_stat.sequential_merge(&i);
         }

@@ -17,16 +17,15 @@
 extern crate libc;
 extern crate trace_utils;
 
-pub use libc::c_char;
-pub use libc::c_int;
 pub use libc::c_uchar; // u8
 pub use libc::c_uint; // u32
-pub use libc::c_ulonglong;
-pub use libc::c_void;
+pub use libc::{c_char, c_int, c_ulonglong, c_void};
 use log::info;
 pub use std::ffi::CStr;
-use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    fmt,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 // 最大长度
 pub const CAP_LEN_MAX: usize = 16384;
@@ -399,9 +398,8 @@ impl fmt::Display for SK_BPF_DATA {
             (self.tuple.rport, self.tuple.lport)
         };
         unsafe {
-            let process_kname = CStr::from_ptr(self.process_kname.as_ptr() as *const c_char)
-                .to_str()
-                .unwrap();
+            let process_kname =
+                CStr::from_ptr(self.process_kname.as_ptr() as *const c_char).to_str().unwrap();
 
             let data_slice =
                 std::slice::from_raw_parts(self.cap_data, self.cap_len.min(32) as usize);
@@ -558,7 +556,7 @@ pub struct stack_profile_data {
     pub stack_data: *mut c_char,
 }
 
-extern "C" {
+unsafe extern "C" {
     /*
      * Set maximum amount of data passed to the agent by eBPF program.
      * @limit_size : The maximum length of data. If @limit_size exceeds 8192,
@@ -945,7 +943,7 @@ extern "C" {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn rust_info_wrapper(msg: *const libc::c_char) {
     unsafe {
         let cstr = std::ffi::CStr::from_ptr(msg);
@@ -955,7 +953,7 @@ extern "C" fn rust_info_wrapper(msg: *const libc::c_char) {
                 let bs = cstr.to_bytes();
                 let (valid, after_valid) = (&bs[..e.valid_up_to()], &bs[e.valid_up_to()..]);
                 info!("{} {:?}", std::str::from_utf8_unchecked(valid), after_valid);
-            }
+            },
         }
     }
 }

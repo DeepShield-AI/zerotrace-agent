@@ -14,32 +14,31 @@
  * limitations under the License.
  */
 
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc, Weak,
-};
-use std::time::{Duration, Instant};
-
-use anyhow::{anyhow, Result};
-use log::{debug, error, info};
-use md5::{Digest, Md5};
-use parking_lot::RwLock;
-use prost::Message;
-use tonic::transport::Channel;
-
 use crate::{
     common::{DEFAULT_CONTROLLER_PORT, DEFAULT_CONTROLLER_TLS_PORT},
     exception::ExceptionHandler,
     trident::AgentId,
     utils::stats::{self, AtomicTimeStats},
 };
+use anyhow::{Result, anyhow};
 use grpc::dial as grpc_dial;
-use zerotrace_forwarder::Forwarder;
-
+use log::{debug, error, info};
+use md5::{Digest, Md5};
+use parking_lot::RwLock;
+use prost::Message;
 use public::{
     counter::{Countable, Counter, CounterType, CounterValue, RefCountable},
     proto::agent::{self, Exception, PluginType, Status},
 };
+use std::{
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
+use tonic::transport::Channel;
+use zerotrace_forwarder::Forwarder;
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -80,10 +79,7 @@ macro_rules! response_size {
     ($_:ident,  $response:ident) => {
         format!(
             "{}B",
-            $response
-                .as_ref()
-                .map(|r| r.get_ref().encoded_len())
-                .unwrap_or_default(),
+            $response.as_ref().map(|r| r.get_ref().encoded_len()).unwrap_or_default(),
         )
     };
 }
@@ -99,7 +95,7 @@ macro_rules! sync_grpc_call {
             Some(c) => c,
             None => {
                 return Err(tonic::Status::cancelled("grpc client not connected"));
-            }
+            },
         };
         let mut client = agent::synchronizer_client::SynchronizerClient::new(channel)
             .max_decoding_message_size(rx_size);
@@ -252,18 +248,16 @@ impl Session {
             Ok(fwd) => {
                 *self.http_forwarder.write() = Some((ip, fwd.clone()));
                 Some(fwd)
-            }
+            },
             Err(e) => {
                 error!("build http control forwarder failed: {}", e);
                 None
-            }
+            },
         }
     }
 
     pub fn reset_server_ip(&self, controller_ips: Vec<String>) {
-        self.server_dispatcher
-            .write()
-            .update_controller_ips(controller_ips);
+        self.server_dispatcher.write().update_controller_ips(controller_ips);
     }
 
     pub fn reset(&self) {
@@ -275,11 +269,11 @@ impl Session {
         match grpc_dial(remote, remote_port, controller_cert_file_prefix).await {
             Ok(channel) => {
                 self.client.write().channel.replace(channel);
-            }
+            },
             Err(e) => {
                 self.exception_handler.set(Exception::ControllerSocketError);
                 error!("{}", e);
-            }
+            },
         }
     }
 
@@ -299,9 +293,7 @@ impl Session {
         let mut c = self.client.write();
         if c.rx_size != size {
             c.rx_size = size;
-            self.message_counter
-                .max_capacity
-                .store(size as u64, Ordering::Relaxed);
+            self.message_counter.max_capacity.store(size as u64, Ordering::Relaxed);
             self.version.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -336,8 +328,7 @@ impl Session {
             self.reset_client();
 
             let (ip, port) = self.server_dispatcher.read().get_current_ip();
-            self.dial(&ip, port, &self.controller_cert_file_prefix)
-                .await;
+            self.dial(&ip, port, &self.controller_cert_file_prefix).await;
             self.version.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -393,11 +384,11 @@ impl Session {
                         self.update_message_counter(resp.encoded_len());
                     }
                     Ok(tonic::Response::new(resp))
-                }
+                },
                 Err(e) => {
                     self.set_request_failed(true);
                     Err(tonic::Status::unavailable(format!("http sync: {}", e)))
-                }
+                },
             };
         }
         let (channel, rx_size) = match self.get_client() {
@@ -405,7 +396,7 @@ impl Session {
             None => {
                 self.set_request_failed(true);
                 return Err(tonic::Status::cancelled("grpc client not connected"));
-            }
+            },
         };
         let mut client = agent::synchronizer_client::SynchronizerClient::new(channel)
             .max_decoding_message_size(rx_size);
@@ -582,13 +573,13 @@ impl Session {
         let md5_digest = Md5::new().chain_update(&data[..]).finalize();
         match hex::decode(msg_md5.as_bytes()) {
             Ok(bs) if &bs[..] != md5_digest.as_slice() => {
-                return Err(anyhow!("fetch wasm prog fail, md5 checksum incorrect"))
-            }
+                return Err(anyhow!("fetch wasm prog fail, md5 checksum incorrect"));
+            },
             Err(_) => {
                 return Err(anyhow!(
                     "fetch wasm prog fail, invalid md5 checksum in message"
-                ))
-            }
+                ));
+            },
             _ => (),
         }
         debug!(
@@ -739,7 +730,7 @@ impl ServerDispatcher {
                 self.current_port = self.get_port(false);
                 self.proxied = false;
                 true
-            }
+            },
             // 成功访问代理控制器
             (true, false) => {
                 let proxy_port = self.get_proxy_port();
@@ -756,7 +747,7 @@ impl ServerDispatcher {
                 } else {
                     false
                 }
-            }
+            },
             // 访问控制器失败，更新控制器IP地址
             (false, true) => {
                 self.next_controller_ip();
@@ -773,10 +764,13 @@ impl ServerDispatcher {
 
                     true
                 } else {
-                    info!("grpc server controller {} {} change is consistent before and after, not updated", ip, port);
+                    info!(
+                        "grpc server controller {} {} change is consistent before and after, not updated",
+                        ip, port
+                    );
                     false
                 }
-            }
+            },
             // 访问控制器成功，切换为代理控制器
             (false, false) => {
                 let Some(proxy_ip) = self.get_proxy_ip() else {
@@ -800,7 +794,7 @@ impl ServerDispatcher {
                     );
                     false
                 }
-            }
+            },
         }
     }
 }

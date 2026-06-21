@@ -14,42 +14,40 @@
  * limitations under the License.
  */
 
-use std::fs::{create_dir_all, rename, File, OpenOptions};
-use std::io::{BufWriter, ErrorKind, Write};
-use std::marker::PhantomData;
-use std::net::{Shutdown, TcpStream};
-use std::path::Path;
-use std::sync::Mutex;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Weak,
+use super::{QUEUE_BATCH_SIZE, get_sender_id};
+use crate::{
+    config::{
+        TrafficOverflowAction,
+        handler::{SenderAccess, SenderConfig},
+    },
+    exception::ExceptionHandler,
+    reporters::http::HttpForwarder,
+    trident::SenderEncoder,
+    utils::stats::{self, Collector, Countable, Counter, CounterType, CounterValue, RefCountable},
 };
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime};
-
 use arc_swap::access::Access;
 use lazy_static::lazy_static;
 use log::{debug, error, info, warn};
 use public::{
     leaky_bucket::LeakyBucket,
+    proto::agent::{Exception, SocketType},
+    queue::{Error, Receiver},
     sender::{SendMessageType, Sendable},
 };
-use rand::{thread_rng, RngCore};
-
-use super::{get_sender_id, QUEUE_BATCH_SIZE};
-
-use crate::config::{
-    handler::{SenderAccess, SenderConfig},
-    TrafficOverflowAction,
+use rand::{RngCore, thread_rng};
+use std::{
+    fs::{File, OpenOptions, create_dir_all, rename},
+    io::{BufWriter, ErrorKind, Write},
+    marker::PhantomData,
+    net::{Shutdown, TcpStream},
+    path::Path,
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant, SystemTime},
 };
-use crate::exception::ExceptionHandler;
-use crate::reporters::http::HttpForwarder;
-use crate::trident::SenderEncoder;
-use crate::utils::stats::{
-    self, Collector, Countable, Counter, CounterType, CounterValue, RefCountable,
-};
-use public::proto::agent::{Exception, SocketType};
-use public::queue::{Error, Receiver};
 
 const PRE_FILE_SUFFIX: &str = ".pre";
 const MAX_WAIT_TIMES: u32 = 100;
@@ -208,16 +206,20 @@ impl<T: Sendable> Encoder<T> {
     }
 
     pub fn update_header(&mut self, name: &str, id: usize, config: &SenderConfig) {
-        if self.header.agent_id != config.agent_id
-            || self.header.team_id != config.team_id
-            || self.header.organization_id != config.organize_id as u16
+        if self.header.agent_id != config.agent_id ||
+            self.header.team_id != config.team_id ||
+            self.header.organization_id != config.organize_id as u16
         {
             info!(
                 "{} id {} update agent id from {:?} to {:?}, team id from {:?} to {:?}, organization id from {:?} to {:?}.",
-                name, id,
-                self.header.agent_id, config.agent_id,
-                self.header.team_id, config.team_id,
-                self.header.organization_id, config.organize_id,
+                name,
+                id,
+                self.header.agent_id,
+                config.agent_id,
+                self.header.team_id,
+                config.team_id,
+                self.header.organization_id,
+                config.organize_id,
             );
             self.header.agent_id = config.agent_id;
             self.header.team_id = config.team_id;
@@ -240,10 +242,10 @@ impl<T: Sendable> Encoder<T> {
                     buffer_len,
                     self.compressed_buffer.len()
                 );
-            }
+            },
             Err(e) => {
                 error!("compression failed {}", e);
-            }
+            },
         };
     }
 
@@ -488,9 +490,9 @@ impl<T: Sendable> UniformSender<T> {
     }
 
     fn update_connection(&mut self, cfg: &SenderConfig) {
-        if self.multiple_sockets_to_ingester != cfg.multiple_sockets_to_ingester
-            || self.dest_ip != cfg.dest_ip
-            || self.dest_port != cfg.dest_port
+        if self.multiple_sockets_to_ingester != cfg.multiple_sockets_to_ingester ||
+            self.dest_ip != cfg.dest_ip ||
+            self.dest_port != cfg.dest_port
         {
             self.multiple_sockets_to_ingester = cfg.multiple_sockets_to_ingester;
             self.dest_ip = cfg.dest_ip.clone();
@@ -521,9 +523,8 @@ impl<T: Sendable> UniformSender<T> {
 
             let mut new_conn = match self.connection_type {
                 ConnectionType::Global => self.global_shared_conn.lock().unwrap(),
-                ConnectionType::PrivateShared => {
-                    self.private_shared_conn.as_mut().unwrap().lock().unwrap()
-                }
+                ConnectionType::PrivateShared =>
+                    self.private_shared_conn.as_mut().unwrap().lock().unwrap(),
                 ConnectionType::Private => self.private_conn.lock().unwrap(),
             };
 
@@ -571,7 +572,7 @@ impl<T: Sendable> UniformSender<T> {
                     error!("{} http forwarder init failed: {}", self.name, e);
                     self.counter.dropped.fetch_add(1, Ordering::Relaxed);
                     return;
-                }
+                },
             }
         }
         let buffer = self.encoder.get_buffer();
@@ -579,17 +580,15 @@ impl<T: Sendable> UniformSender<T> {
         match result {
             Ok(()) => {
                 self.counter.tx.fetch_add(1, Ordering::Relaxed);
-                self.counter
-                    .tx_bytes
-                    .fetch_add(buffer.len() as u64, Ordering::Relaxed);
-            }
+                self.counter.tx_bytes.fetch_add(buffer.len() as u64, Ordering::Relaxed);
+            },
             Err(e) => {
                 if self.counter.dropped.load(Ordering::Relaxed) == 0 {
                     self.exception_handler.set(Exception::AnalyzerSocketError);
                     error!("{} http forwarder upload failed: {}", self.name, e);
                 }
                 self.counter.dropped.fetch_add(1, Ordering::Relaxed);
-            }
+            },
         }
     }
 
@@ -606,9 +605,8 @@ impl<T: Sendable> UniformSender<T> {
         }
         let mut conn = match self.connection_type {
             ConnectionType::Global => self.global_shared_conn.lock().unwrap(),
-            ConnectionType::PrivateShared => {
-                self.private_shared_conn.as_mut().unwrap().lock().unwrap()
-            }
+            ConnectionType::PrivateShared =>
+                self.private_shared_conn.as_mut().unwrap().lock().unwrap(),
             ConnectionType::Private => self.private_conn.lock().unwrap(),
         };
 
@@ -621,9 +619,7 @@ impl<T: Sendable> UniformSender<T> {
                     debug!("{} sender tcp stream shutdown failed {}", self.name, e);
                 }
             }
-            let now = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap();
+            let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
             // If the local timestamp adjustment requires recalculating the interval
             if conn.last_reconnect > now {
                 conn.last_reconnect = now;
@@ -655,7 +651,9 @@ impl<T: Sendable> UniformSender<T> {
                 if self.counter.dropped.load(Ordering::Relaxed) == 0 {
                     self.exception_handler.set(Exception::AnalyzerSocketError);
                     if conn.dest_ip.is_empty() || conn.dest_ip == "0.0.0.0" {
-                        warn!("'analyzer_ip' is not assigned, please check whether the Agent is successfully registered");
+                        warn!(
+                            "'analyzer_ip' is not assigned, please check whether the Agent is successfully registered"
+                        );
                     } else {
                         error!(
                             "{} sender tcp connection to {}:{} failed",
@@ -681,16 +679,14 @@ impl<T: Sendable> UniformSender<T> {
                     write_offset += size;
                     if write_offset == buffer.len() {
                         self.counter.tx.fetch_add(1, Ordering::Relaxed);
-                        self.counter
-                            .tx_bytes
-                            .fetch_add(buffer.len() as u64, Ordering::Relaxed);
+                        self.counter.tx_bytes.fetch_add(buffer.len() as u64, Ordering::Relaxed);
                         break;
                     }
-                }
+                },
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
                     debug!("{} sender tcp stream write data block {}", self.name, e);
                     continue;
-                }
+                },
                 Err(e) => {
                     if self.counter.dropped.load(Ordering::Relaxed) == 0 {
                         self.exception_handler.set(Exception::AnalyzerSocketError);
@@ -702,21 +698,21 @@ impl<T: Sendable> UniformSender<T> {
                     self.counter.dropped.fetch_add(1, Ordering::Relaxed);
                     conn.tcp_stream.take();
                     break;
-                }
+                },
             };
         }
     }
 
-
     fn log_when_traffic_overflow(&mut self, config: &SenderConfig) {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
         // to prevent frequent log printing, print at least once every 10 seconds
         if now - self.last_traffic_overflow > Duration::from_secs(10) {
             warn!(
                 "{} sender dropping message, throughput exceed setting value 'max_throughput_to_ingester' {}Mbps, action {:?}, total overwrittern count {}",
-                self.name, self.max_throughput_mbps, config.ingester_traffic_overflow_action, self.overwritten_count
+                self.name,
+                self.max_throughput_mbps,
+                config.ingester_traffic_overflow_action,
+                self.overwritten_count
             );
             self.last_traffic_overflow = now;
         }
@@ -731,8 +727,8 @@ impl<T: Sendable> UniformSender<T> {
             // When stopped, at least one acquire() is successfully triggered every 100ms, and the
             // loop can be exited quickly without getting stuck here.
             let mut wait_times = 0;
-            while !self.leaky_bucket.acquire(self.encoder.buffer_len() as u64)
-                && wait_times < MAX_WAIT_TIMES
+            while !self.leaky_bucket.acquire(self.encoder.buffer_len() as u64) &&
+                wait_times < MAX_WAIT_TIMES
             {
                 wait_times += 1;
                 // LeakyBucket token is updated every 100ms by default,
@@ -752,8 +748,7 @@ impl<T: Sendable> UniformSender<T> {
 
         if overflow || self.input.total_overwritten_count() > self.overwritten_count {
             self.overwritten_count = self.input.total_overwritten_count();
-            self.exception_handler
-                .set(Exception::DataBpsThresholdExceeded);
+            self.exception_handler.set(Exception::DataBpsThresholdExceeded);
             self.log_when_traffic_overflow(config);
         }
         overflow
@@ -804,9 +799,8 @@ impl<T: Sendable> UniformSender<T> {
                         );
 
                         let result = match socket_type {
-                            SocketType::File => {
-                                self.handle_target_file(send_item, &mut kv_string, &config)
-                            }
+                            SocketType::File =>
+                                self.handle_target_file(send_item, &mut kv_string, &config),
                             _ => self.handle_target_server(send_item, &config),
                         };
                         if let Err(e) = result {
@@ -821,14 +815,14 @@ impl<T: Sendable> UniformSender<T> {
                             self.counter.dropped.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                }
+                },
                 Err(Error::Timeout) => match socket_type {
                     SocketType::File => self.flush_writer(),
                     _ => {
                         self.update_connection(&config);
                         self.encoder.update_header(self.name, self.id, &config);
                         self.flush_encoder(&config);
-                    }
+                    },
                 },
                 Err(Error::Terminated(..)) => {
                     match socket_type {
@@ -836,7 +830,7 @@ impl<T: Sendable> UniformSender<T> {
                         _ => self.flush_encoder(&config),
                     }
                     break;
-                }
+                },
                 Err(Error::BatchTooLarge(_)) => unreachable!(),
             }
         }
@@ -870,17 +864,11 @@ impl<T: Sendable> UniformSender<T> {
 
         if self.buf_writer.is_none() {
             self.check_or_register_counterable(send_item.message_type());
-            let f = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .open(&self.file_path)?;
+            let f = OpenOptions::new().create(true).write(true).open(&self.file_path)?;
             self.buf_writer = Some(BufWriter::new(f));
         }
 
-        self.buf_writer
-            .as_mut()
-            .unwrap()
-            .write_all(kv_string.as_bytes())?;
+        self.buf_writer.as_mut().unwrap().write_all(kv_string.as_bytes())?;
         self.written_size += kv_string.len() as u64;
         kv_string.truncate(0);
 

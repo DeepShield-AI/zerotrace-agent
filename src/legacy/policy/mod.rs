@@ -22,7 +22,6 @@ pub mod labeler;
 pub mod policy;
 
 pub use policy::{Policy, PolicyGetter, PolicySetter};
-
 use thiserror::Error;
 
 const MAX_QUEUE_COUNT: usize = 128;

@@ -14,26 +14,26 @@
  * limitations under the License.
  */
 
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
-use std::time::Duration;
-use std::{fs, thread};
-
 use super::Error;
-use crate::config::handler::EnvironmentAccess;
-use crate::utils::environment::is_kernel_available;
-
+use crate::{config::handler::EnvironmentAccess, utils::environment::is_kernel_available};
 use arc_swap::access::Access;
 use cgroups_rs::{
+    Cgroup, CgroupPid, Controller, CpuResources, MemoryResources, Resources,
     cgroup_builder::CgroupBuilder,
     cpu::CpuController,
     hierarchies,
     memory::{MemController, Memory},
-    Cgroup, CgroupPid, Controller, CpuResources, MemoryResources, Resources,
 };
 use log::{debug, info, trace, warn};
 use public::consts::{DEFAULT_CPU_CFS_PERIOD_US, PROCESS_NAME};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::{Arc, Condvar, Mutex},
+    thread,
+    thread::JoinHandle,
+    time::Duration,
+};
 
 pub struct Cgroups {
     config: EnvironmentAccess,
@@ -50,8 +50,7 @@ fn cgroups_supported() -> bool {
     let Ok(fs) = fs::read_to_string("/proc/filesystems") else {
         return false;
     };
-    fs.lines()
-        .any(|line| line.to_lowercase().contains("cgroup"))
+    fs.lines().any(|line| line.to_lowercase().contains("cgroup"))
 }
 
 impl Cgroups {
@@ -71,7 +70,7 @@ impl Cgroups {
                 return Err(Error::CpuControllerSetFailed(format!(
                     "maybe cgroups is not installed"
                 )));
-            }
+            },
         };
         let mem: &MemController = match cg.controller_of() {
             Some(controller) => controller,
@@ -79,7 +78,7 @@ impl Cgroups {
                 return Err(Error::MemControllerSetFailed(format!(
                     "maybe cgroups is not installed"
                 )));
-            }
+            },
         };
 
         if !is_cgroup_procs_writable() {
@@ -306,11 +305,11 @@ pub(crate) fn memory_info() -> Option<Memory> {
         Ok(None) => {
             debug!("cgroups memory mount point not found or is invalid");
             return None;
-        }
+        },
         Err(e) => {
             warn!("get memory path failed: {e}");
             return None;
-        }
+        },
     };
 
     Some(MemController::new(mem_mount.clone(), false).memory_stat())
@@ -329,11 +328,11 @@ pub(crate) fn page_cache_reclaim_check(threshold: u8) -> bool {
         Ok(None) => {
             debug!("cgroups memory mount point not found or is invalid");
             return false;
-        }
+        },
         Err(e) => {
             warn!("get memory path failed: {e}");
             return false;
-        }
+        },
     };
     let mc = MemController::new(mem_mount.clone(), false);
     let mut reclaim_path = mem_mount;

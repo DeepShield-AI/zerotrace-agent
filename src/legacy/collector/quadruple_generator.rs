@@ -14,46 +14,46 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, VecDeque};
-use std::net::{IpAddr, SocketAddr};
-use std::sync::{
-    atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-    Arc, Weak,
-};
-use std::thread;
-use std::time::Duration;
-
-use arc_swap::access::Access;
-use log::{debug, error, info, warn};
-use thread::JoinHandle;
-
 use super::{
-    check_active_host,
+    MetricsType, QgStats, check_active_host,
     consts::*,
     reset_delay_seconds, round_to_minute,
     types::{FlowMeterWithFlow, MiniFlow},
-    MetricsType, QgStats,
 };
-
-use crate::common::{
-    endpoint::EPC_INTERNET,
-    enums::{CaptureNetworkType, EthernetType, IpProtocol},
-    flow::{CloseType, L7Protocol, SignalSource},
-    tagged_flow::TaggedFlow,
+use crate::{
+    common::{
+        endpoint::EPC_INTERNET,
+        enums::{CaptureNetworkType, EthernetType, IpProtocol},
+        flow::{CloseType, L7Protocol, SignalSource},
+        tagged_flow::TaggedFlow,
+    },
+    config::handler::{CollectorAccess, CollectorConfig},
+    metric::meter::{FlowMeter, Latency, Performance, Traffic},
+    platform::process_info_enabled,
+    rpc::get_timestamp,
+    utils::{
+        lru::Lru,
+        possible_host::PossibleHost,
+        stats::{Collector, Countable, Counter, CounterType, CounterValue, RefCountable},
+    },
 };
-use crate::config::handler::{CollectorAccess, CollectorConfig};
-use crate::metric::meter::{FlowMeter, Latency, Performance, Traffic};
-use crate::platform::process_info_enabled;
-use crate::rpc::get_timestamp;
-use crate::utils::{
-    lru::Lru,
-    possible_host::PossibleHost,
-    stats::{Collector, Countable, Counter, CounterType, CounterValue, RefCountable},
-};
+use arc_swap::access::Access;
+use log::{debug, error, info, warn};
 use public::{
     buffer::BatchedBox,
     queue::{DebugSender, Error, Receiver},
 };
+use std::{
+    collections::{HashMap, VecDeque},
+    net::{IpAddr, SocketAddr},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
+    thread,
+    time::Duration,
+};
+use thread::JoinHandle;
 
 #[derive(Debug, Default)]
 pub struct QgCounter {
@@ -189,20 +189,26 @@ impl ConcurrentConnection {
                 let now = time_in_second.as_secs();
                 if self.v6_connections.is_full() && now > self.last_log_time + Self::LOG_INTERVAL {
                     self.last_log_time = now;
-                    error!("The capacity({:?}) of the concurrent table v6 will be exceeded. please adjust the configuration", self.v6_connections.cap());
+                    error!(
+                        "The capacity({:?}) of the concurrent table v6 will be exceeded. please adjust the configuration",
+                        self.v6_connections.cap()
+                    );
                 }
                 self.v6_connections
                     .put(*k, QuadrupleConnections::new(sum, living, time_in_second));
-            }
+            },
             QgKey::V4(k) => {
                 let now = time_in_second.as_secs();
                 if self.v4_connections.is_full() && now > self.last_log_time + Self::LOG_INTERVAL {
                     self.last_log_time = now;
-                    error!("The capacity({:?}) of the concurrent table v4 will be exceeded. please adjust the configuration", self.v4_connections.cap());
+                    error!(
+                        "The capacity({:?}) of the concurrent table v4 will be exceeded. please adjust the configuration",
+                        self.v4_connections.cap()
+                    );
                 }
                 self.v4_connections
                     .put(*k, QuadrupleConnections::new(sum, living, time_in_second));
-            }
+            },
         };
     }
 
@@ -342,23 +348,19 @@ impl SubQuadGen {
         possible_host: &mut Option<PossibleHost>,
     ) -> bool {
         if time_in_second < self.window_start {
-            self.counter
-                .drop_before_window
-                .fetch_add(1, Ordering::Relaxed);
+            self.counter.drop_before_window.fetch_add(1, Ordering::Relaxed);
             return false;
         }
 
         let ts = get_timestamp(self.ntp_diff.load(Ordering::Relaxed));
         while time_in_second.as_secs() >= self.window_start.as_secs() + self.delay_seconds {
             let delay = ts.as_nanos() as i64 - self.window_start.as_nanos() as i64;
-            self.counter
-                .window_delay
-                .fetch_max(delay, Ordering::Relaxed);
+            self.counter.window_delay.fetch_max(delay, Ordering::Relaxed);
 
             let slots_to_shift =
-                (time_in_second.as_secs() - self.window_start.as_secs() - self.delay_seconds)
-                    / self.slot_interval
-                    + 1;
+                (time_in_second.as_secs() - self.window_start.as_secs() - self.delay_seconds) /
+                    self.slot_interval +
+                    1;
             if slots_to_shift >= self.number_of_slots {
                 if let Some(mut current) = self.connections.take() {
                     for i in 0..self.stashs.len() {
@@ -436,16 +438,16 @@ impl SubQuadGen {
                 &acc_flow.flow.flow_key.ip_dst,
             );
 
-            if acc_flow.flow.flow_key.proto == IpProtocol::TCP
-                || acc_flow.flow.flow_key.proto == IpProtocol::UDP
+            if acc_flow.flow.flow_key.proto == IpProtocol::TCP ||
+                acc_flow.flow.flow_key.proto == IpProtocol::UDP
             {
                 if let Some(current) = connection {
                     acc_flow.flow_meter.flow_load.load =
                         current.get_concurrent(acc_flow.time_in_second.into(), &mut acc_flow.key);
                 }
 
-                acc_flow.flow_meter.flow_load.flow_count = if acc_flow.flow_meter.flow_load.load
-                    > acc_flow.flow_meter.traffic.closed_flow
+                acc_flow.flow_meter.flow_load.flow_count = if acc_flow.flow_meter.flow_load.load >
+                    acc_flow.flow_meter.traffic.closed_flow
                 {
                     acc_flow.flow_meter.flow_load.load - acc_flow.flow_meter.traffic.closed_flow
                 } else {
@@ -530,12 +532,8 @@ impl SubQuadGen {
             len += s.v4_flows.len() + s.v6_flows.len();
             cap += s.v4_flows.capacity() + s.v6_flows.len();
         }
-        self.counter
-            .stash_total_len
-            .store(len as u64, Ordering::Relaxed);
-        self.counter
-            .stash_total_capacity
-            .store(cap as u64, Ordering::Relaxed);
+        self.counter.stash_total_len.store(len as u64, Ordering::Relaxed);
+        self.counter.stash_total_capacity.store(cap as u64, Ordering::Relaxed);
     }
 
     // TODO 策略统计
@@ -553,13 +551,13 @@ impl SubQuadGen {
         let stash = &mut self.stashs[slot];
 
         // Only count the number of concurrent connections between TCP and UDP with the signal_source of packet
-        if (tagged_flow.flow.flow_key.proto == IpProtocol::TCP
-            || tagged_flow.flow.flow_key.proto == IpProtocol::UDP)
-            && tagged_flow.flow.signal_source == SignalSource::Packet
+        if (tagged_flow.flow.flow_key.proto == IpProtocol::TCP ||
+            tagged_flow.flow.flow_key.proto == IpProtocol::UDP) &&
+            tagged_flow.flow.signal_source == SignalSource::Packet
         {
             if let Some(current) = self.connections.as_mut() {
-                if tagged_flow.flow.is_new_flow
-                    && tagged_flow.flow.close_type == CloseType::ForcedReport
+                if tagged_flow.flow.is_new_flow &&
+                    tagged_flow.flow.close_type == CloseType::ForcedReport
                 {
                     current[slot].add_connection(time_in_second, key);
                 } else if tagged_flow.flow.close_type != CloseType::ForcedReport {
@@ -772,15 +770,23 @@ impl QuadrupleGenerator {
         stats: Arc<Collector>,
     ) -> Self {
         let conf = config.load();
-        info!("new quadruple_generator id: {}, second_delay: {}, minute_delay: {}, l7_metrics_enabled: {}, vtap_flow_1s_enabled: {} collector_enabled: {}", id, second_delay_seconds, minute_delay_seconds, conf.l7_metrics_enabled, conf.vtap_flow_1s_enabled, conf.enabled);
+        info!(
+            "new quadruple_generator id: {}, second_delay: {}, minute_delay: {}, l7_metrics_enabled: {}, vtap_flow_1s_enabled: {} collector_enabled: {}",
+            id,
+            second_delay_seconds,
+            minute_delay_seconds,
+            conf.l7_metrics_enabled,
+            conf.vtap_flow_1s_enabled,
+            conf.enabled
+        );
         let minute_delay_seconds = reset_delay_seconds(minute_delay_seconds);
 
         let second_slots = second_delay_seconds as usize;
         let minute_slots = 2 as usize;
         let mut second_quad_gen = None;
         let mut minute_quad_gen = None;
-        let window_start = round_to_minute(get_timestamp(ntp_diff.load(Ordering::Relaxed)))
-            - Duration::from_secs(2 * SECONDS_IN_MINUTE);
+        let window_start = round_to_minute(get_timestamp(ntp_diff.load(Ordering::Relaxed))) -
+            Duration::from_secs(2 * SECONDS_IN_MINUTE);
 
         if metrics_type.contains(MetricsType::SECOND) {
             second_quad_gen = Some(SubQuadGen {
@@ -804,11 +810,7 @@ impl QuadrupleGenerator {
             });
 
             for _ in 0..second_slots {
-                second_quad_gen
-                    .as_mut()
-                    .unwrap()
-                    .stashs
-                    .push_back(QuadrupleStash::new());
+                second_quad_gen.as_mut().unwrap().stashs.push_back(QuadrupleStash::new());
                 if let Some(connections) = second_quad_gen.as_mut().unwrap().connections.as_mut() {
                     connections
                         .push_back(ConcurrentConnection::with_capacity(connection_lru_capacity));
@@ -843,11 +845,7 @@ impl QuadrupleGenerator {
             });
 
             for _ in 0..minute_slots {
-                minute_quad_gen
-                    .as_mut()
-                    .unwrap()
-                    .stashs
-                    .push_back(QuadrupleStash::new());
+                minute_quad_gen.as_mut().unwrap().stashs.push_back(QuadrupleStash::new());
                 if let Some(connections) = minute_quad_gen.as_mut().unwrap().connections.as_mut() {
                     connections
                         .push_back(ConcurrentConnection::with_capacity(connection_lru_capacity));
@@ -912,9 +910,9 @@ impl QuadrupleGenerator {
         for i in 0..2 {
             let side = &tagged_flow.flow.flow_metrics_peers[i];
             let is_l2_and_l3_end = side.is_l3_end && side.is_l2_end;
-            if (tagged_flow.flow.flow_key.tap_type == CaptureNetworkType::Cloud && is_l2_and_l3_end)
-                || (tagged_flow.flow.flow_key.tap_type != CaptureNetworkType::Cloud
-                    && side.l3_epc_id != EPC_INTERNET)
+            if (tagged_flow.flow.flow_key.tap_type == CaptureNetworkType::Cloud && is_l2_and_l3_end) ||
+                (tagged_flow.flow.flow_key.tap_type != CaptureNetworkType::Cloud &&
+                    side.l3_epc_id != EPC_INTERNET)
             {
                 no_endpoint_flag = false;
                 break;
@@ -976,8 +974,8 @@ impl QuadrupleGenerator {
 
         let perf_stats = tagged_flow.flow.flow_perf_stats.as_ref();
         // Only count the flow_meter whose signal_source of flow is SignalSource::Packet or SignalSource::XFlow
-        if tagged_flow.flow.signal_source == SignalSource::Packet
-            || tagged_flow.flow.signal_source == SignalSource::XFlow
+        if tagged_flow.flow.signal_source == SignalSource::Packet ||
+            tagged_flow.flow.signal_source == SignalSource::XFlow
         {
             flow_meter.traffic = Traffic {
                 packet_tx: src.packet_count,
@@ -1006,22 +1004,19 @@ impl QuadrupleGenerator {
                     CloseType::TcpClientRst => flow_meter.anomaly.client_rst_flow = 1,
                     CloseType::ServerSynAckRepeat => flow_meter.anomaly.client_ack_miss = 1,
                     CloseType::ClientHalfClose => flow_meter.anomaly.client_half_close_flow = 1,
-                    CloseType::ClientSourcePortReuse => {
-                        flow_meter.anomaly.client_source_port_reuse = 1
-                    }
+                    CloseType::ClientSourcePortReuse =>
+                        flow_meter.anomaly.client_source_port_reuse = 1,
                     CloseType::ServerReset => flow_meter.anomaly.server_reset = 1,
                     CloseType::ServerQueueLack => flow_meter.anomaly.server_queue_lack = 1,
-                    CloseType::ClientEstablishReset => {
-                        flow_meter.anomaly.client_establish_reset = 1
-                    }
-                    CloseType::ServerEstablishReset => {
-                        flow_meter.anomaly.server_establish_reset = 1
-                    }
-                    CloseType::ForcedReport
-                    | CloseType::Finish
-                    | CloseType::Unknown
-                    | CloseType::TcpFinClientRst
-                    | CloseType::Max => (),
+                    CloseType::ClientEstablishReset =>
+                        flow_meter.anomaly.client_establish_reset = 1,
+                    CloseType::ServerEstablishReset =>
+                        flow_meter.anomaly.server_establish_reset = 1,
+                    CloseType::ForcedReport |
+                    CloseType::Finish |
+                    CloseType::Unknown |
+                    CloseType::TcpFinClientRst |
+                    CloseType::Max => (),
                 }
             }
 
@@ -1030,9 +1025,9 @@ impl QuadrupleGenerator {
                 None => return flow_meter,
             };
 
-            if tagged_flow.flow.flow_key.proto == IpProtocol::TCP
-                || tagged_flow.flow.flow_key.proto == IpProtocol::ICMPV4
-                || tagged_flow.flow.flow_key.proto == IpProtocol::ICMPV6
+            if tagged_flow.flow.flow_key.proto == IpProtocol::TCP ||
+                tagged_flow.flow.flow_key.proto == IpProtocol::ICMPV4 ||
+                tagged_flow.flow.flow_key.proto == IpProtocol::ICMPV6
             {
                 flow_meter.latency = Latency {
                     rtt_max: stats.tcp.rtt,
@@ -1094,7 +1089,7 @@ impl QuadrupleGenerator {
             (
                 L7Protocol::Unknown,
                 SignalSource::Packet | SignalSource::EBPF | SignalSource::XFlow,
-            ) => {}
+            ) => {},
             (_, _) => {
                 flow_meter.traffic.l7_request = l7_perf_stats.request_count;
                 flow_meter.traffic.l7_response = l7_perf_stats.response_count;
@@ -1104,7 +1099,7 @@ impl QuadrupleGenerator {
                 flow_meter.anomaly.l7_client_error = l7_perf_stats.err_client_count;
                 flow_meter.anomaly.l7_server_error = l7_perf_stats.err_server_count;
                 flow_meter.anomaly.l7_timeout = l7_perf_stats.err_timeout;
-            }
+            },
         }
 
         flow_meter
@@ -1138,8 +1133,8 @@ impl QuadrupleGenerator {
         key[OFFSET_TAP_PORT + 7] = tagged_flow.flow.tap_side as u8;
         key[OFFSET_PROTOCOL] = u8::from(tagged_flow.flow.flow_key.proto);
         // 对于sflow, netflow流量，仅当确定目的IP是服务端时，将目的端口作为查询key
-        if tagged_flow.flow.signal_source == SignalSource::Packet
-            || tagged_flow.flow.is_active_service
+        if tagged_flow.flow.signal_source == SignalSource::Packet ||
+            tagged_flow.flow.is_active_service
         {
             key[OFFSET_PORT] = (tagged_flow.flow.flow_key.port_dst >> 8) as u8;
             key[OFFSET_PORT + 1] = tagged_flow.flow.flow_key.port_dst as u8;
@@ -1168,7 +1163,7 @@ impl QuadrupleGenerator {
                 (IpAddr::V6(src), IpAddr::V6(dst)) => {
                     key[OFFSET_IP..OFFSET_IP + 16].copy_from_slice(src.octets().as_slice());
                     key[OFFSET_IP + 16..OFFSET_IP + 32].copy_from_slice(dst.octets().as_slice())
-                }
+                },
                 _ => (),
             }
             QgKey::V6(key)
@@ -1182,7 +1177,7 @@ impl QuadrupleGenerator {
                 (IpAddr::V4(src), IpAddr::V4(dst)) => {
                     key[OFFSET_IP..OFFSET_IP + 4].copy_from_slice(src.octets().as_slice());
                     key[OFFSET_IP + 4..OFFSET_IP + 8].copy_from_slice(dst.octets().as_slice());
-                }
+                },
                 _ => (),
             }
             QgKey::V4(key)
@@ -1233,14 +1228,14 @@ impl QuadrupleGenerator {
                     if let Some(g) = self.minute_quad_gen.as_mut() {
                         g.calc_stash_counters();
                     }
-                }
+                },
                 Err(Error::Timeout) => {
                     self.handle(
                         &config,
                         None,
                         get_timestamp(self.ntp_diff.load(Ordering::Relaxed)),
                     );
-                }
+                },
                 Err(Error::Terminated(_, _)) => {
                     if let Some(g) = self.second_quad_gen.as_mut() {
                         g.flush_all_flow(&mut self.possible_host);
@@ -1249,7 +1244,7 @@ impl QuadrupleGenerator {
                         g.flush_all_flow(&mut self.possible_host);
                     }
                     break;
-                }
+                },
                 Err(Error::BatchTooLarge(_)) => unreachable!(),
             }
         }
@@ -1259,7 +1254,6 @@ impl QuadrupleGenerator {
 #[cfg(test)]
 mod test {
     use super::*;
-
     use public::{buffer::Allocator, debug::QueueDebugger, queue};
 
     fn new_acc_flow(tagged_flow: Arc<BatchedBox<TaggedFlow>>) -> FlowMeterWithFlow {
@@ -1278,8 +1272,8 @@ mod test {
     #[test]
     fn second_inject_flow() {
         let ntp_diff = Arc::new(AtomicI64::new(0));
-        let window_start = round_to_minute(get_timestamp(ntp_diff.load(Ordering::Relaxed)))
-            - Duration::from_secs(2 * SECONDS_IN_MINUTE);
+        let window_start = round_to_minute(get_timestamp(ntp_diff.load(Ordering::Relaxed))) -
+            Duration::from_secs(2 * SECONDS_IN_MINUTE);
         let queue_debugger = QueueDebugger::new();
         let (s, r, _) = queue::bounded_with_debug(100, "", &queue_debugger);
         let slots = 30u64;

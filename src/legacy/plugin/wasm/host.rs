@@ -14,31 +14,29 @@
  * limitations under the License.
  */
 
-use std::{
-    sync::atomic::Ordering,
-    time::{SystemTime, UNIX_EPOCH},
+use super::{
+    HOOK_POINT_HTTP_REQ, HOOK_POINT_HTTP_RESP, HOOK_POINT_ON_CUSTOM_MESSAGE,
+    HOOK_POINT_PAYLOAD_PARSE, VmCtxBase, VmHttpReqCtx, VmHttpRespCtx, VmOnCustomMessageCtx,
+    VmParseCtx,
+    abi_export::{InstanceWrap, VmParser},
+    abi_import::get_linker,
 };
-
-use anyhow::Result;
-use log::error;
-use prost::Message as ProstMessage;
-use public::l7_protocol::LogMessageType;
-use wasmtime::{Engine, Linker, Store, StoreLimits, StoreLimitsBuilder};
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
-
 use crate::{
     common::l7_protocol_log::ParseParam,
     flow_generator::protocol_logs::HttpInfo,
     plugin::{CustomInfo, L7Protocol, PluginCounterInfo},
     wasm_error,
 };
-
-use super::{
-    abi_export::{InstanceWrap, VmParser},
-    abi_import::get_linker,
-    VmCtxBase, VmHttpReqCtx, VmHttpRespCtx, VmOnCustomMessageCtx, VmParseCtx, HOOK_POINT_HTTP_REQ,
-    HOOK_POINT_HTTP_RESP, HOOK_POINT_ON_CUSTOM_MESSAGE, HOOK_POINT_PAYLOAD_PARSE,
+use anyhow::Result;
+use log::error;
+use prost::Message as ProstMessage;
+use public::l7_protocol::LogMessageType;
+use std::{
+    sync::atomic::Ordering,
+    time::{SystemTime, UNIX_EPOCH},
 };
+use wasmtime::{Engine, Linker, Store, StoreLimits, StoreLimitsBuilder};
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
 pub(super) const WASM_MODULE_NAME: &str = "zerotrace";
 
@@ -203,12 +201,7 @@ impl WasmVm {
             let start_time = SystemTime::now();
             let start_time = start_time.duration_since(UNIX_EPOCH).unwrap();
 
-            self.store
-                .data_mut()
-                .parse_ctx
-                .as_mut()
-                .unwrap()
-                .set_ins_name(ins.name.clone());
+            self.store.data_mut().parse_ctx.as_mut().unwrap().set_ins_name(ins.name.clone());
 
             let result = ins.check_payload(&mut self.store);
 
@@ -218,9 +211,7 @@ impl WasmVm {
 
             if result.is_err() {
                 wasm_error!(ins.name, "check payload fail: {}", result.unwrap_err());
-                ins.check_payload_counter
-                    .fail_cnt
-                    .fetch_add(1, Ordering::Relaxed);
+                ins.check_payload_counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -270,13 +261,9 @@ impl WasmVm {
             return None;
         }
 
-        let _ = self
-            .store
-            .data_mut()
-            .parse_ctx
-            .insert(VmParseCtx::ParseCtx(VmCtxBase::from((
-                param, proto, payload,
-            ))));
+        let _ = self.store.data_mut().parse_ctx.insert(VmParseCtx::ParseCtx(VmCtxBase::from((
+            param, proto, payload,
+        ))));
 
         let mut ret = None;
 
@@ -289,12 +276,7 @@ impl WasmVm {
             let start_time = SystemTime::now();
             let start_time = start_time.duration_since(UNIX_EPOCH).unwrap();
 
-            self.store
-                .data_mut()
-                .parse_ctx
-                .as_mut()
-                .unwrap()
-                .set_ins_name(ins.name.clone());
+            self.store.data_mut().parse_ctx.as_mut().unwrap().set_ins_name(ins.name.clone());
 
             let abort = ins.parse_payload(&mut self.store);
 
@@ -304,9 +286,7 @@ impl WasmVm {
 
             if abort.is_err() {
                 wasm_error!(ins.name, "parse payload fail: {}", abort.unwrap_err());
-                ins.parse_payload_counter
-                    .fail_cnt
-                    .fetch_add(1, Ordering::Relaxed);
+                ins.parse_payload_counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -371,12 +351,7 @@ impl WasmVm {
             let start_time = SystemTime::now();
             let start_time = start_time.duration_since(UNIX_EPOCH).unwrap();
 
-            self.store
-                .data_mut()
-                .parse_ctx
-                .as_mut()
-                .unwrap()
-                .set_ins_name(ins.name.clone());
+            self.store.data_mut().parse_ctx.as_mut().unwrap().set_ins_name(ins.name.clone());
 
             let abort = ins.on_http_req(&mut self.store);
 
@@ -386,9 +361,7 @@ impl WasmVm {
 
             if abort.is_err() {
                 wasm_error!(ins.name, "wasm on http req fail: {}", abort.unwrap_err());
-                ins.on_http_req_counter
-                    .fail_cnt
-                    .fetch_add(1, Ordering::Relaxed);
+                ins.on_http_req_counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -437,13 +410,13 @@ impl WasmVm {
             return None;
         }
 
-        let _ = self
-            .store
-            .data_mut()
-            .parse_ctx
-            .insert(VmParseCtx::HttpRespCtx(VmHttpRespCtx::from((
-                param, info, payload,
-            ))));
+        let _ =
+            self.store
+                .data_mut()
+                .parse_ctx
+                .insert(VmParseCtx::HttpRespCtx(VmHttpRespCtx::from((
+                    param, info, payload,
+                ))));
 
         let mut ret = None;
         for ins in self.instance.iter() {
@@ -454,12 +427,7 @@ impl WasmVm {
             let start_time = SystemTime::now();
             let start_time = start_time.duration_since(UNIX_EPOCH).unwrap();
 
-            self.store
-                .data_mut()
-                .parse_ctx
-                .as_mut()
-                .unwrap()
-                .set_ins_name(ins.name.clone());
+            self.store.data_mut().parse_ctx.as_mut().unwrap().set_ins_name(ins.name.clone());
 
             let abort = ins.on_http_resp(&mut self.store);
 
@@ -469,9 +437,7 @@ impl WasmVm {
 
             if abort.is_err() {
                 wasm_error!(ins.name, "wasm on http resp fail: {}", abort.unwrap_err());
-                ins.on_http_resp_counter
-                    .fail_cnt
-                    .fetch_add(1, Ordering::Relaxed);
+                ins.on_http_resp_counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -523,13 +489,9 @@ impl WasmVm {
         let wasm_data_hook_point = wasm_data.hook_point as u16;
         let wasm_data_type_code = wasm_data.type_code;
 
-        let _ = self
-            .store
-            .data_mut()
-            .parse_ctx
-            .insert(VmParseCtx::OnCustomMessageCtx(VmOnCustomMessageCtx::from(
-                (param, payload, wasm_data),
-            )));
+        let _ = self.store.data_mut().parse_ctx.insert(VmParseCtx::OnCustomMessageCtx(
+            VmOnCustomMessageCtx::from((param, payload, wasm_data)),
+        ));
 
         let mut ret = None;
         for ins in self.instance.iter() {
@@ -554,12 +516,7 @@ impl WasmVm {
             let start_time = SystemTime::now();
             let start_time = start_time.duration_since(UNIX_EPOCH).unwrap();
 
-            self.store
-                .data_mut()
-                .parse_ctx
-                .as_mut()
-                .unwrap()
-                .set_ins_name(ins.name.clone());
+            self.store.data_mut().parse_ctx.as_mut().unwrap().set_ins_name(ins.name.clone());
 
             let abort = ins.on_custom_message(&mut self.store);
 
@@ -573,9 +530,7 @@ impl WasmVm {
                     "wasm on custom message fail: {}",
                     abort.unwrap_err()
                 );
-                ins.on_custom_message_counter
-                    .fail_cnt
-                    .fetch_add(1, Ordering::Relaxed);
+                ins.on_custom_message_counter.fail_cnt.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
 

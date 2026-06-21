@@ -14,19 +14,10 @@
  * limitations under the License.
  */
 
-use std::{borrow::Cow, cell::OnceCell, collections::HashMap, fmt, str};
-
-use serde::{Serialize, Serializer};
-use strum_macros::Display;
-
-#[cfg(feature = "enterprise")]
-use enterprise_utils::l7::custom_policy::custom_field_policy::{
-    enums::{Op, Source},
-    Store,
+use super::{
+    super::{AppProtoHead, L7ResponseStatus, value_is_default},
+    ObfuscateCache,
 };
-use public::l7_protocol::{Field, FieldSetter, L7Log, L7LogAttribute, LogMessageType};
-use public_derive::L7Log;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -44,11 +35,16 @@ use crate::{
         },
     },
 };
-
-use super::{
-    super::{value_is_default, AppProtoHead, L7ResponseStatus},
-    ObfuscateCache,
+#[cfg(feature = "enterprise")]
+use enterprise_utils::l7::custom_policy::custom_field_policy::{
+    Store,
+    enums::{Op, Source},
 };
+use public::l7_protocol::{Field, FieldSetter, L7Log, L7LogAttribute, LogMessageType};
+use public_derive::L7Log;
+use serde::{Serialize, Serializer};
+use std::{borrow::Cow, cell::OnceCell, collections::HashMap, fmt, str};
+use strum_macros::Display;
 
 const SEPARATOR_SIZE: usize = 2;
 
@@ -287,8 +283,8 @@ impl RedisInfo {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::Redis) {
             self.is_on_blacklist = t
                 .request_resource
-                .is_on_blacklist(str::from_utf8(&self.request).unwrap_or_default())
-                || t.request_type
+                .is_on_blacklist(str::from_utf8(&self.request).unwrap_or_default()) ||
+                t.request_type
                     .is_on_blacklist(str::from_utf8(&self.request_type).unwrap_or_default());
         }
     }
@@ -425,7 +421,7 @@ impl L7ProtocolParserInterface for RedisLog {
                             key: key.to_string(),
                             val: String::from_utf8_lossy(payload).to_string(),
                         });
-                    }
+                    },
                     _ => (),
                 }
             }
@@ -494,8 +490,8 @@ impl RedisLog {
             b'-' | b'!' => {
                 info.error = context;
                 info.resp_status = L7ResponseStatus::ServerError;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -515,12 +511,10 @@ impl RedisLog {
 
         match direction {
             // only parse the request with payload start with '*' which indicate is a command start, otherwise assume tcp fragment of request
-            PacketDirection::ClientToServer if payload.get(0) == Some(&b'*') => {
-                self.fill_request(CommandLine::new(payload)?, info)
-            }
-            PacketDirection::ServerToClient if self.has_request => {
-                self.fill_response(stringifier::decode(payload, false)?, info)
-            }
+            PacketDirection::ClientToServer if payload.get(0) == Some(&b'*') =>
+                self.fill_request(CommandLine::new(payload)?, info),
+            PacketDirection::ServerToClient if self.has_request =>
+                self.fill_response(stringifier::decode(payload, false)?, info),
             _ => return Err(Error::L7ProtocolUnknown),
         };
         Ok(())
@@ -544,10 +538,8 @@ mod stringifier {
     {
         let payload = &payload[1..];
         // find the first invalid character or '\r'
-        let Some(end) = payload
-            .iter()
-            .enumerate()
-            .position(|(i, &b)| !condition(i, b) || b == b'\r')
+        let Some(end) =
+            payload.iter().enumerate().position(|(i, &b)| !condition(i, b) || b == b'\r')
         else {
             return Err(Error::RedisLogParseFailed);
         };
@@ -813,9 +805,8 @@ mod stringifier {
             _ => Vec::new(),
         };
         match (strict, decode_resp_type(Some(&mut output), payload)) {
-            (_, Err(Error::RedisLogParseFailed)) | (true, Err(Error::RedisLogParsePartial)) => {
-                Err(Error::RedisLogParseFailed)
-            }
+            (_, Err(Error::RedisLogParseFailed)) | (true, Err(Error::RedisLogParsePartial)) =>
+                Err(Error::RedisLogParseFailed),
             _ => Ok((output, ResponseType::from(payload[0]))),
         }
     }
@@ -933,7 +924,7 @@ impl<'a> CommandLine<'a> {
             let cmds = cell.get_or_init(all_commands);
             match cmds.binary_search_by_key(&cmd_upper, |cmd| &cmd.cmd) {
                 Ok(id) if cmds[id].sub.is_empty() => true,
-                Ok(id) => {
+                Ok(id) =>
                     if let Some(next) = next_cmds {
                         let Ok((_, next_cmd)) = Self::decode_bulk_string(next) else {
                             return false;
@@ -945,8 +936,7 @@ impl<'a> CommandLine<'a> {
                         cmds[id].sub.binary_search(&next_cmd_upper).is_ok()
                     } else {
                         false
-                    }
-                }
+                    },
                 Err(_) => false,
             }
         })
@@ -1002,7 +992,7 @@ impl<'a> CommandLine<'a> {
                 if args.next().is_some() {
                     output.extend_from_slice(b" ?");
                 }
-            }
+            },
             "HELLO" => {
                 // obfuscate everything after 'AUTH' if there is one
                 while let Some(arg) = args.next() {
@@ -1015,9 +1005,9 @@ impl<'a> CommandLine<'a> {
                         break;
                     }
                 }
-            }
-            "APPEND" | "GETSET" | "LPUSHX" | "GEORADIUSBYMEMBER" | "RPUSHX" | "SET" | "SETNX"
-            | "SISMEMBER" | "ZRANK" | "ZREVRANK" | "ZSCORE" => {
+            },
+            "APPEND" | "GETSET" | "LPUSHX" | "GEORADIUSBYMEMBER" | "RPUSHX" | "SET" | "SETNX" |
+            "SISMEMBER" | "ZRANK" | "ZREVRANK" | "ZSCORE" => {
                 // obfuscate 2nd argument
                 // - APPEND key value
                 // - GETSET key value
@@ -1031,9 +1021,9 @@ impl<'a> CommandLine<'a> {
                 // - ZREVRANK key member
                 // - ZSCORE key member
                 args.obfuscate_nth_in(&mut output, 1);
-            }
-            "HSETNX" | "LREM" | "LSET" | "SETBIT" | "SETEX" | "PSETEX" | "SETRANGE" | "ZINCRBY"
-            | "SMOVE" | "RESTORE" => {
+            },
+            "HSETNX" | "LREM" | "LSET" | "SETBIT" | "SETEX" | "PSETEX" | "SETRANGE" |
+            "ZINCRBY" | "SMOVE" | "RESTORE" => {
                 // obfuscate 3rd argument
                 // - HSETNX key field value
                 // - LREM key count value
@@ -1046,12 +1036,12 @@ impl<'a> CommandLine<'a> {
                 // - SMOVE source destination member
                 // - RESTORE key ttl serialized-value [REPLACE]
                 args.obfuscate_nth_in(&mut output, 2);
-            }
+            },
             "LINSERT" => {
                 // obfuscate 4th argument
                 // - LINSERT key BEFORE|AFTER pivot value
                 args.obfuscate_nth_in(&mut output, 3);
-            }
+            },
             "GEOHASH" | "GEOPOS" | "GEODIST" | "LPUSH" | "RPUSH" | "SREM" | "ZREM" | "SADD" => {
                 // obfuscate everything after the first
                 // - GEOHASH key member [member ...]
@@ -1069,7 +1059,7 @@ impl<'a> CommandLine<'a> {
                         output.extend_from_slice(b" ?");
                     }
                 }
-            }
+            },
             "GEOADD" => {
                 // obfuscate every 3rd argument after the first
                 // - GEOADD key longitude latitude member [longitude latitude member ...]
@@ -1078,7 +1068,7 @@ impl<'a> CommandLine<'a> {
                     output.extend_from_slice(arg);
                     args.obfuscate_every_nth_in(&mut output, 3);
                 }
-            }
+            },
             "HSET" | "HMSET" => {
                 // obfuscate every 2nd argument after the first
                 // - HSET key field value [field value ...]
@@ -1088,13 +1078,13 @@ impl<'a> CommandLine<'a> {
                     output.extend_from_slice(arg);
                     args.obfuscate_every_nth_in(&mut output, 2);
                 }
-            }
+            },
             "MSET" | "MSETNX" => {
                 // obfuscate every 2nd argument
                 // - MSET key value [key value ...]
                 // - MSETNX key value [key value ...]
                 args.obfuscate_every_nth_in(&mut output, 2);
-            }
+            },
             "CONFIG" => {
                 // obfuscate every 2nd argument after 'SET'
                 // - CONFIG SET parameter value [parameter value ...]
@@ -1106,7 +1096,7 @@ impl<'a> CommandLine<'a> {
                         break;
                     }
                 }
-            }
+            },
             "BITFIELD" => {
                 // obfuscate 3rd argument to 'SET'
                 // - BITFIELD key [GET encoding offset | [OVERFLOW <WRAP | SAT | FAIL>]
@@ -1132,7 +1122,7 @@ impl<'a> CommandLine<'a> {
                         index_after_set = Some(0);
                     }
                 }
-            }
+            },
             "ZADD" => {
                 // obfuscate every 2nd argument after optional arguments
                 // - ZADD key [NX | XX] [GT | LT] [CH] [INCR] score member [score member ...]
@@ -1164,10 +1154,10 @@ impl<'a> CommandLine<'a> {
                     // rest
                     args.obfuscate_every_nth_in(&mut output, 2);
                 }
-            }
+            },
             _ => {
                 args.stringify_in(&mut output);
-            }
+            },
         }
 
         output
@@ -1238,17 +1228,13 @@ impl<'a> Iterator for CommandIterator<'a> {
 // test log parse
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::rc::Rc;
-    use std::{cell::RefCell, fs};
-
     use super::*;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/redis";
 
@@ -1369,10 +1355,7 @@ mod tests {
         for (input, expected) in testcases.iter() {
             let output = stringifier::decode(&input.0.as_bytes(), input.1);
             assert_eq!(
-                output
-                    .ok()
-                    .as_ref()
-                    .and_then(|vs| str::from_utf8(&vs.0).ok()),
+                output.ok().as_ref().and_then(|vs| str::from_utf8(&vs.0).ok()),
                 *expected,
                 "testcase input '{}' failed",
                 str::from_utf8(input.0.as_bytes()).unwrap().escape_default()
@@ -1523,81 +1506,141 @@ mod tests {
     #[test]
     fn check_obfuscation() {
         let testcases = [
-                ("GET key ", "GET key"),
-                ("AUTH", "AUTH"),
-                ("AUTH my-secret-password", "AUTH ?"),
-                ("AUTH james my-secret-password", "AUTH ?"),
-                ("HELLO 3 AUTH username passwd SETNAME cliname", "HELLO 3 AUTH ?"),
-                ("APPEND key value", "APPEND key ?"),
-                ("GETSET key value", "GETSET key ?"),
-                ("LPUSHX key value", "LPUSHX key ?"),
-                ("GEORADIUSBYMEMBER Sicily Agrigento 100 km", "GEORADIUSBYMEMBER Sicily ? 100 km"),
-                ("RPUSHX key value", "RPUSHX key ?"),
-                ("SET key value", "SET key ?"),
-                ("SET anotherkey value EX 60", "SET anotherkey ? EX 60"),
-                ("SETNX key value", "SETNX key ?"),
-                ("SISMEMBER key member", "SISMEMBER key ?"),
-                ("ZRANK key member", "ZRANK key ?"),
-                ("ZREVRANK key member", "ZREVRANK key ?"),
-                ("ZSCORE key member", "ZSCORE key ?"),
-                ("BITFIELD key GET type offset SET type offset value INCRBY type", "BITFIELD key GET type offset SET type offset ? INCRBY type"),
-                ("BITFIELD key SET type offset value INCRBY type", "BITFIELD key SET type offset ? INCRBY type"),
-                ("BITFIELD key GET type offset INCRBY type", "BITFIELD key GET type offset INCRBY type"),
-                ("BITFIELD key SET type offset", "BITFIELD key SET type offset"),
-                ("CONFIG SET parameter value", "CONFIG SET parameter ?"),
-                ("CONFIG GET foo bar baz", "CONFIG GET foo bar baz"),
-                ("GEOADD key longitude latitude member longitude latitude member longitude latitude member", "GEOADD key longitude latitude ? longitude latitude ? longitude latitude ?"),
-                ("GEOADD key longitude latitude member longitude latitude member", "GEOADD key longitude latitude ? longitude latitude ?"),
-                ("GEOADD key longitude latitude member", "GEOADD key longitude latitude ?"),
-                ("GEOADD key longitude latitude", "GEOADD key longitude latitude"),
-                ("GEOADD key", "GEOADD key"),
-                ("GEOHASH key", "GEOHASH key"),
-                ("GEOPOS key", "GEOPOS key"),
-                ("GEODIST key", "GEODIST key"),
-                ("GEOHASH key member", "GEOHASH key ?"),
-                ("GEOPOS key member", "GEOPOS key ?"),
-                ("GEODIST key member", "GEODIST key ?"),
-                ("GEOHASH key member member member", "GEOHASH key ?"),
-                ("GEOPOS key member member", "GEOPOS key ?"),
-                ("GEODIST key member member member", "GEODIST key ?"),
-                ("SREM key member1 member2 member3", "SREM key ?"),
-                ("ZREM key member1 member2 member3", "ZREM key ?"),
-                ("SADD key member1 member2 member3", "SADD key ?"),
-                ("GEODIST key member1 member2 m", "GEODIST key ?"),
-                ("LPUSH key value1 value2 value3", "LPUSH key ?"),
-                ("RPUSH key value1 value2 value3", "RPUSH key ?"),
-                ("HSET key field value", "HSET key field ?"),
-                ("HSETNX key field value", "HSETNX key field ?"),
-                ("HSET key field value field1 value1 field2 value2", "HSET key field ? field1 ? field2 ?"),
-                ("HSETNX key field value", "HSETNX key field ?"),
-                ("LREM key count value", "LREM key count ?"),
-                ("LSET key index value", "LSET key index ?"),
-                ("SETBIT key offset value", "SETBIT key offset ?"),
-                ("SETRANGE key offset value", "SETRANGE key offset ?"),
-                ("SETEX key seconds value", "SETEX key seconds ?"),
-                ("PSETEX key milliseconds value", "PSETEX key milliseconds ?"),
-                ("ZINCRBY key increment member", "ZINCRBY key increment ?"),
-                ("SMOVE source destination member", "SMOVE source destination ?"),
-                ("RESTORE key ttl serialized-value [REPLACE]", "RESTORE key ttl ? [REPLACE]"),
-                ("LINSERT key BEFORE pivot value", "LINSERT key BEFORE pivot ?"),
-                ("LINSERT key AFTER pivot value", "LINSERT key AFTER pivot ?"),
-                ("HMSET key field value field value", "HMSET key field ? field ?"),
-                ("HMSET key field value", "HMSET key field ?"),
-                ("HMSET key field", "HMSET key field"),
-                ("MSET key value key value", "MSET key ? key ?"),
-                ("MSET", "MSET"),
-                ("MSET key value", "MSET key ?"),
-                ("MSETNX key value key value", "MSETNX key ? key ?"),
-                ("ZADD key score member score member", "ZADD key score ? score ?"),
-                ("ZADD key NX score member score member", "ZADD key NX score ? score ?"),
-                ("ZADD key NX CH score member score member", "ZADD key NX CH score ? score ?"),
-                ("ZADD key NX CH INCR score member score member", "ZADD key NX CH INCR score ? score ?"),
-                ("ZADD key XX INCR score member score member", "ZADD key XX INCR score ? score ?"),
-                ("ZADD key XX INCR score member", "ZADD key XX INCR score ?"),
-                ("ZADD key XX INCR score", "ZADD key XX INCR score"),
-                ("SET *😊®© ❤️", "SET *😊®© ?"),
-                ("ZADD key 😊 member score 😊", "ZADD key 😊 ? score ?"),
-            ];
+            ("GET key ", "GET key"),
+            ("AUTH", "AUTH"),
+            ("AUTH my-secret-password", "AUTH ?"),
+            ("AUTH james my-secret-password", "AUTH ?"),
+            (
+                "HELLO 3 AUTH username passwd SETNAME cliname",
+                "HELLO 3 AUTH ?",
+            ),
+            ("APPEND key value", "APPEND key ?"),
+            ("GETSET key value", "GETSET key ?"),
+            ("LPUSHX key value", "LPUSHX key ?"),
+            (
+                "GEORADIUSBYMEMBER Sicily Agrigento 100 km",
+                "GEORADIUSBYMEMBER Sicily ? 100 km",
+            ),
+            ("RPUSHX key value", "RPUSHX key ?"),
+            ("SET key value", "SET key ?"),
+            ("SET anotherkey value EX 60", "SET anotherkey ? EX 60"),
+            ("SETNX key value", "SETNX key ?"),
+            ("SISMEMBER key member", "SISMEMBER key ?"),
+            ("ZRANK key member", "ZRANK key ?"),
+            ("ZREVRANK key member", "ZREVRANK key ?"),
+            ("ZSCORE key member", "ZSCORE key ?"),
+            (
+                "BITFIELD key GET type offset SET type offset value INCRBY type",
+                "BITFIELD key GET type offset SET type offset ? INCRBY type",
+            ),
+            (
+                "BITFIELD key SET type offset value INCRBY type",
+                "BITFIELD key SET type offset ? INCRBY type",
+            ),
+            (
+                "BITFIELD key GET type offset INCRBY type",
+                "BITFIELD key GET type offset INCRBY type",
+            ),
+            (
+                "BITFIELD key SET type offset",
+                "BITFIELD key SET type offset",
+            ),
+            ("CONFIG SET parameter value", "CONFIG SET parameter ?"),
+            ("CONFIG GET foo bar baz", "CONFIG GET foo bar baz"),
+            (
+                "GEOADD key longitude latitude member longitude latitude member longitude latitude member",
+                "GEOADD key longitude latitude ? longitude latitude ? longitude latitude ?",
+            ),
+            (
+                "GEOADD key longitude latitude member longitude latitude member",
+                "GEOADD key longitude latitude ? longitude latitude ?",
+            ),
+            (
+                "GEOADD key longitude latitude member",
+                "GEOADD key longitude latitude ?",
+            ),
+            (
+                "GEOADD key longitude latitude",
+                "GEOADD key longitude latitude",
+            ),
+            ("GEOADD key", "GEOADD key"),
+            ("GEOHASH key", "GEOHASH key"),
+            ("GEOPOS key", "GEOPOS key"),
+            ("GEODIST key", "GEODIST key"),
+            ("GEOHASH key member", "GEOHASH key ?"),
+            ("GEOPOS key member", "GEOPOS key ?"),
+            ("GEODIST key member", "GEODIST key ?"),
+            ("GEOHASH key member member member", "GEOHASH key ?"),
+            ("GEOPOS key member member", "GEOPOS key ?"),
+            ("GEODIST key member member member", "GEODIST key ?"),
+            ("SREM key member1 member2 member3", "SREM key ?"),
+            ("ZREM key member1 member2 member3", "ZREM key ?"),
+            ("SADD key member1 member2 member3", "SADD key ?"),
+            ("GEODIST key member1 member2 m", "GEODIST key ?"),
+            ("LPUSH key value1 value2 value3", "LPUSH key ?"),
+            ("RPUSH key value1 value2 value3", "RPUSH key ?"),
+            ("HSET key field value", "HSET key field ?"),
+            ("HSETNX key field value", "HSETNX key field ?"),
+            (
+                "HSET key field value field1 value1 field2 value2",
+                "HSET key field ? field1 ? field2 ?",
+            ),
+            ("HSETNX key field value", "HSETNX key field ?"),
+            ("LREM key count value", "LREM key count ?"),
+            ("LSET key index value", "LSET key index ?"),
+            ("SETBIT key offset value", "SETBIT key offset ?"),
+            ("SETRANGE key offset value", "SETRANGE key offset ?"),
+            ("SETEX key seconds value", "SETEX key seconds ?"),
+            ("PSETEX key milliseconds value", "PSETEX key milliseconds ?"),
+            ("ZINCRBY key increment member", "ZINCRBY key increment ?"),
+            (
+                "SMOVE source destination member",
+                "SMOVE source destination ?",
+            ),
+            (
+                "RESTORE key ttl serialized-value [REPLACE]",
+                "RESTORE key ttl ? [REPLACE]",
+            ),
+            (
+                "LINSERT key BEFORE pivot value",
+                "LINSERT key BEFORE pivot ?",
+            ),
+            ("LINSERT key AFTER pivot value", "LINSERT key AFTER pivot ?"),
+            (
+                "HMSET key field value field value",
+                "HMSET key field ? field ?",
+            ),
+            ("HMSET key field value", "HMSET key field ?"),
+            ("HMSET key field", "HMSET key field"),
+            ("MSET key value key value", "MSET key ? key ?"),
+            ("MSET", "MSET"),
+            ("MSET key value", "MSET key ?"),
+            ("MSETNX key value key value", "MSETNX key ? key ?"),
+            (
+                "ZADD key score member score member",
+                "ZADD key score ? score ?",
+            ),
+            (
+                "ZADD key NX score member score member",
+                "ZADD key NX score ? score ?",
+            ),
+            (
+                "ZADD key NX CH score member score member",
+                "ZADD key NX CH score ? score ?",
+            ),
+            (
+                "ZADD key NX CH INCR score member score member",
+                "ZADD key NX CH INCR score ? score ?",
+            ),
+            (
+                "ZADD key XX INCR score member score member",
+                "ZADD key XX INCR score ? score ?",
+            ),
+            ("ZADD key XX INCR score member", "ZADD key XX INCR score ?"),
+            ("ZADD key XX INCR score", "ZADD key XX INCR score"),
+            ("SET *😊®© ❤️", "SET *😊®© ?"),
+            ("ZADD key 😊 member score 😊", "ZADD key 😊 ? score ?"),
+        ];
         for (input, expected) in testcases.iter() {
             let redis_str = encode_redis_command(input);
             let Ok(cmdline) = CommandLine::new(&redis_str) else {

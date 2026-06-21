@@ -26,9 +26,8 @@ pub mod plugin;
 pub(crate) mod rpc;
 pub(crate) mod sql;
 
-pub use self::http::{check_http_method, parse_v1_headers, HttpInfo, HttpLog};
+pub use self::http::{HttpInfo, HttpLog, check_http_method, parse_v1_headers};
 use self::pb_adapter::L7ProtocolSendLog;
-
 pub use dns::{DnsInfo, DnsLog};
 pub use mq::{
     AmqpInfo, AmqpLog, KafkaInfo, KafkaLog, MqttInfo, MqttLog, NatsInfo, NatsLog, OpenWireInfo,
@@ -37,8 +36,8 @@ pub use mq::{
 pub use parser::{AppProto, MetaAppProto, SessionAggregator};
 pub use ping::{PingInfo, PingLog};
 pub use rpc::{
-    decode_new_rpc_trace_context_with_type, BrpcInfo, BrpcLog, DubboInfo, DubboLog, SofaRpcInfo,
-    SofaRpcLog, TarsInfo, TarsLog, SOFA_NEW_RPC_TRACE_CTX_KEY,
+    BrpcInfo, BrpcLog, DubboInfo, DubboLog, SOFA_NEW_RPC_TRACE_CTX_KEY, SofaRpcInfo, SofaRpcLog,
+    TarsInfo, TarsLog, decode_new_rpc_trace_context_with_type,
 };
 pub use sql::{
     MemcachedInfo, MemcachedLog, MongoDBInfo, MongoDBLog, MysqlInfo, MysqlLog, PostgreInfo,
@@ -58,33 +57,32 @@ cfg_if::cfg_if! {
 }
 
 #[cfg(test)]
-pub use self::plugin::wasm::{get_wasm_parser, WasmLog};
-
+pub use self::plugin::wasm::{WasmLog, get_wasm_parser};
+use crate::{
+    common::{
+        Timestamp,
+        ebpf::EbpfType,
+        enums::{CaptureNetworkType, IpProtocol},
+        flow::{L7Protocol, PacketDirection, SignalSource},
+        tap_port::TapPort,
+    },
+    metric::document::TapSide,
+};
+use base64::{Engine, prelude::BASE64_STANDARD};
+use prost::Message;
+use public::{
+    l7_protocol::LogMessageType,
+    proto::flow_log,
+    sender::{SendMessageType, Sendable},
+    utils::net::MacAddr,
+};
+use serde::{Serialize, Serializer};
 use std::{
     collections::HashSet,
     fmt,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str,
 };
-
-use base64::{prelude::BASE64_STANDARD, Engine};
-use prost::Message;
-use serde::{Serialize, Serializer};
-
-use crate::{
-    common::{
-        ebpf::EbpfType,
-        enums::{CaptureNetworkType, IpProtocol},
-        flow::{L7Protocol, PacketDirection, SignalSource},
-        tap_port::TapPort,
-        Timestamp,
-    },
-    metric::document::TapSide,
-};
-use public::l7_protocol::LogMessageType;
-use public::proto::flow_log;
-use public::sender::{SendMessageType, Sendable};
-use public::utils::net::MacAddr;
 
 const NANOS_PER_MICRO: u64 = 1000;
 
@@ -292,12 +290,10 @@ where
 impl From<AppProtoLogsBaseInfo> for flow_log::AppProtoLogsBaseInfo {
     fn from(f: AppProtoLogsBaseInfo) -> Self {
         let (ip4_src, ip4_dst, ip6_src, ip6_dst) = match (f.ip_src, f.ip_dst) {
-            (IpAddr::V4(ip4), IpAddr::V4(ip4_1)) => {
-                (ip4, ip4_1, Ipv6Addr::UNSPECIFIED, Ipv6Addr::UNSPECIFIED)
-            }
-            (IpAddr::V6(ip6), IpAddr::V6(ip6_1)) => {
-                (Ipv4Addr::UNSPECIFIED, Ipv4Addr::UNSPECIFIED, ip6, ip6_1)
-            }
+            (IpAddr::V4(ip4), IpAddr::V4(ip4_1)) =>
+                (ip4, ip4_1, Ipv6Addr::UNSPECIFIED, Ipv6Addr::UNSPECIFIED),
+            (IpAddr::V6(ip6), IpAddr::V6(ip6_1)) =>
+                (Ipv4Addr::UNSPECIFIED, Ipv4Addr::UNSPECIFIED, ip6, ip6_1),
             _ => panic!("{:?} ip_src,ip_dst type mismatch", &f),
         };
         flow_log::AppProtoLogsBaseInfo {
@@ -469,9 +465,7 @@ impl Sendable for BoxAppProtoLogsData {
             log.resp.status = status;
         }
         log.fill_app_proto_log(&mut pb_proto_logs_data);
-        pb_proto_logs_data
-            .encode(buf)
-            .map(|_| pb_proto_logs_data.encoded_len())
+        pb_proto_logs_data.encode(buf).map(|_| pb_proto_logs_data.encoded_len())
     }
 
     fn file_name(&self) -> &str {
@@ -559,15 +553,13 @@ macro_rules! set_captured_byte {
             LogMessageType::Response => $this.captured_response_byte = $param.captured_byte as u32,
             _ => {
                 match LogMessageType::from($param.direction) {
-                    LogMessageType::Request => {
-                        $this.captured_request_byte = $param.captured_byte as u32
-                    }
-                    LogMessageType::Response => {
-                        $this.captured_response_byte = $param.captured_byte as u32
-                    }
+                    LogMessageType::Request =>
+                        $this.captured_request_byte = $param.captured_byte as u32,
+                    LogMessageType::Response =>
+                        $this.captured_response_byte = $param.captured_byte as u32,
                     _ => unimplemented!(),
                 };
-            }
+            },
         }
     };
 }
@@ -579,8 +571,7 @@ const BASE_FIELD_PRIORITY: u8 = 128;
 const CUSTOM_FIELD_POLICY_PRIORITY: u8 = 64;
 const PLUGIN_FIELD_PRIORITY: u8 = 32;
 
-pub use public::types::PrioField;
-pub use public::types::PrioStrings;
+pub use public::types::{PrioField, PrioStrings};
 
 // Wrapper around Option<Vec<PrioField<String>>> for easier manipulation
 #[derive(Serialize, Debug, Default, Clone, Eq, PartialEq)]
@@ -610,7 +601,7 @@ impl PrioFields {
                     i += 1;
                 }
                 i
-            }
+            },
             // no larger one found, insert it at position i
             Err(i) => i,
         };

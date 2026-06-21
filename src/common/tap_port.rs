@@ -14,12 +14,9 @@
  * limitations under the License.
  */
 
-use std::fmt;
-use std::net::Ipv4Addr;
-
-use serde::Serialize;
-
 use super::decapsulate::TunnelType;
+use serde::Serialize;
+use std::{fmt, net::Ipv4Addr};
 
 // 64     60         40           36         32                                    0
 // +------+----------+------------+----------+-------------------------------------+
@@ -82,10 +79,10 @@ impl TapPort {
 
     pub fn from_local_mac(nat_source: u8, tunnel_type: TunnelType, mac: u32) -> Self {
         Self(
-            mac as u64
-                | ((tunnel_type as u64 & Self::TUNNEL_TYPE_MASK) << Self::TUNNEL_TYPE_OFFSET)
-                | ((nat_source as u64) << Self::NAT_SOURCE_OFFSET)
-                | ((Self::FROM_LOCAL_MAC as u64) << Self::FROM_OFFSET),
+            mac as u64 |
+                ((tunnel_type as u64 & Self::TUNNEL_TYPE_MASK) << Self::TUNNEL_TYPE_OFFSET) |
+                ((nat_source as u64) << Self::NAT_SOURCE_OFFSET) |
+                ((Self::FROM_LOCAL_MAC as u64) << Self::FROM_OFFSET),
         )
     }
 
@@ -99,30 +96,30 @@ impl TapPort {
 
     pub fn from_gateway_mac(tunnel_type: TunnelType, mac: u32) -> Self {
         Self(
-            mac as u64
-                | ((tunnel_type as u64 & Self::TUNNEL_TYPE_MASK) << Self::TUNNEL_TYPE_OFFSET)
-                | ((Self::FROM_GATEWAY_MAC as u64) << Self::FROM_OFFSET),
+            mac as u64 |
+                ((tunnel_type as u64 & Self::TUNNEL_TYPE_MASK) << Self::TUNNEL_TYPE_OFFSET) |
+                ((Self::FROM_GATEWAY_MAC as u64) << Self::FROM_OFFSET),
         )
     }
 
     pub fn from_tunnel_ip(ip: u32, is_ip_v6: bool) -> Self {
         Self(
-            ip as u64
-                | ((if is_ip_v6 {
+            ip as u64 |
+                ((if is_ip_v6 {
                     Self::FROM_TUNNEL_IPV6
                 } else {
                     Self::FROM_TUNNEL_IPV4
-                } as u64)
-                    << Self::FROM_OFFSET),
+                } as u64) <<
+                    Self::FROM_OFFSET),
         )
     }
 
     pub fn from_id(tunnel_type: TunnelType, id: u32, tunnel_from: u32) -> Self {
         Self(
-            ((id as u64) & 0xff)
-                | ((tunnel_from << 8) as u64)
-                | ((tunnel_type as u64 & Self::TUNNEL_TYPE_MASK) << Self::TUNNEL_TYPE_OFFSET)
-                | ((Self::FROM_ID as u64) << Self::FROM_OFFSET),
+            ((id as u64) & 0xff) |
+                ((tunnel_from << 8) as u64) |
+                ((tunnel_type as u64 & Self::TUNNEL_TYPE_MASK) << Self::TUNNEL_TYPE_OFFSET) |
+                ((Self::FROM_ID as u64) << Self::FROM_OFFSET),
         )
     }
 
@@ -132,9 +129,9 @@ impl TapPort {
     // +------+----------+------------+----------+---------------+----------------+
     pub fn from_ebpf(process_id: u32, data_source: u8) -> Self {
         Self(
-            (Self::FROM_EBPF as u64) << Self::FROM_OFFSET
-                | (data_source as u64) << Self::DATA_SOURCE_OFFSET
-                | process_id as u64,
+            (Self::FROM_EBPF as u64) << Self::FROM_OFFSET |
+                (data_source as u64) << Self::DATA_SOURCE_OFFSET |
+                process_id as u64,
         )
     }
 
@@ -166,7 +163,7 @@ impl fmt::Display for TapPort {
                     "LMAC@{}@{:02x}:{:02x}:{:02x}:{:02x}",
                     tt, bs[0], bs[1], bs[2], bs[3]
                 )
-            }
+            },
             TapPort::FROM_GATEWAY_MAC => {
                 let bs = p.to_be_bytes();
                 write!(
@@ -174,25 +171,25 @@ impl fmt::Display for TapPort {
                     "GMAC@{}@{:02x}:{:02x}:{:02x}:{:02x}",
                     tt, bs[0], bs[1], bs[2], bs[3]
                 )
-            }
+            },
             TapPort::FROM_TUNNEL_IPV4 => {
                 write!(f, "IPv4@{}", Ipv4Addr::from(p))
-            }
+            },
             TapPort::FROM_TUNNEL_IPV6 => {
                 write!(f, "IPv6@{:#10x}", p)
-            }
+            },
             TapPort::FROM_ID => {
                 write!(f, "ID@{}@{}", tt, p)
-            }
+            },
             TapPort::FROM_NETFLOW => {
                 write!(f, "NetFlow@{}", p)
-            }
+            },
             TapPort::FROM_SFLOW => {
                 write!(f, "sFlow@{}", p)
-            }
+            },
             TapPort::FROM_EBPF => {
                 write!(f, "eBPF@{}", p)
-            }
+            },
             _ => panic!("Invalid tap_port type {}.", t),
         }
     }

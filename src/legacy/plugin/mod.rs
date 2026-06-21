@@ -20,14 +20,7 @@ pub mod c_ffi;
 pub mod shared_obj;
 pub mod wasm;
 
-use prost::Message;
-use public::{
-    bytes::read_u32_be,
-    counter::Countable,
-    l7_protocol::{L7Protocol, LogMessageType},
-};
-use serde::Serialize;
-
+use self::wasm::{read_wasm_str, wasm_plugin as pb};
 use crate::{
     common::{
         flow::PacketDirection,
@@ -36,18 +29,24 @@ use crate::{
     },
     config::handler::LogParserConfig,
     flow_generator::{
+        AppProtoHead, Error,
         protocol_logs::{
+            L7ResponseStatus,
             pb_adapter::{
                 ExtendedInfo, KeyVal, L7ProtocolSendLog, L7Request, L7Response, MetricKeyVal,
                 TraceInfo,
             },
-            swap_if, L7ResponseStatus,
+            swap_if,
         },
-        AppProtoHead, Error,
     },
 };
-
-use self::wasm::{read_wasm_str, wasm_plugin as pb};
+use prost::Message;
+use public::{
+    bytes::read_u32_be,
+    counter::Countable,
+    l7_protocol::{L7Protocol, LogMessageType},
+};
+use serde::Serialize;
 
 #[derive(Debug, Default, Serialize, Clone)]
 pub struct CustomInfoRequest {
@@ -231,12 +230,12 @@ impl CustomInfo {
                 }
                 info.request_id = Some(read_u32_be(&buf[off..off + 4]));
                 off += 4
-            }
+            },
             _ => {
                 return Err(Error::WasmSerializeFail(
                     "has request_id must 0 or 1".to_string(),
-                ))
-            }
+                ));
+            },
         }
 
         match dir {
@@ -265,7 +264,7 @@ impl CustomInfo {
                         "buf len too short when parse request".to_string(),
                     ));
                 }
-            }
+            },
             PacketDirection::ServerToClient => {
                 // parse resp
                 let status = buf[off];
@@ -278,8 +277,8 @@ impl CustomInfo {
                     _ => {
                         return Err(Error::WasmSerializeFail(
                             "recv unexpected status ".to_string(),
-                        ))
-                    }
+                        ));
+                    },
                 }
                 off += 1;
                 let has_code = buf[off];
@@ -295,12 +294,12 @@ impl CustomInfo {
                         }
                         info.resp.code = Some(read_u32_be(&buf[off..off + 4]) as i32);
                         off += 4;
-                    }
+                    },
                     _ => {
                         return Err(Error::WasmSerializeFail(
                             "recv unexpected has_code ".to_string(),
-                        ))
-                    }
+                        ));
+                    },
                 }
 
                 if read_wasm_str(buf, &mut off)
@@ -318,7 +317,7 @@ impl CustomInfo {
                         "buf len too short when parse exception and result".to_string(),
                     ));
                 }
-            }
+            },
         }
 
         if let Some(proto_str) = read_wasm_str(buf, &mut off) {
@@ -355,7 +354,7 @@ impl CustomInfo {
         let has_trace = buf[off];
         off += 1;
         match has_trace {
-            0 => {}
+            0 => {},
             1 => {
                 if read_wasm_str(buf, &mut off)
                     .and_then(|s| {
@@ -376,12 +375,12 @@ impl CustomInfo {
                         "buf len too short when parse trace info".to_string(),
                     ));
                 }
-            }
+            },
             _ => {
                 return Err(Error::WasmSerializeFail(
                     "has trace return unexpected value".to_string(),
                 ));
-            }
+            },
         }
 
         // key val
@@ -394,12 +393,12 @@ impl CustomInfo {
         off += 1;
 
         match has_kv {
-            0 => {}
+            0 => {},
             1 => loop {
                 if let (Some(key), Some(val)) =
                     (read_wasm_str(buf, &mut off), read_wasm_str(buf, &mut off))
                 {
-                    info.attributes.push(KeyVal { key: key, val: val });
+                    info.attributes.push(KeyVal { key, val });
                 } else {
                     break;
                 }
@@ -407,8 +406,8 @@ impl CustomInfo {
             _ => {
                 return Err(Error::WasmSerializeFail(
                     "has kv return unexpected value".to_string(),
-                ))
-            }
+                ));
+            },
         }
 
         // biz type
@@ -428,8 +427,8 @@ impl CustomInfo {
             Err(e) => {
                 return Err(Error::WasmSerializeFail(format!(
                     "decode protobuf failed: {e:?}"
-                )))
-            }
+                )));
+            },
         };
 
         let mut info = Self {
@@ -471,7 +470,7 @@ impl CustomInfo {
                     resource: r.resource.unwrap_or_default(),
                     endpoint: r.endpoint.unwrap_or_default(),
                 };
-            }
+            },
             Some(pb::app_info::Info::Resp(r)) => {
                 info.resp = CustomInfoResp {
                     status: match r.status.and_then(|s| pb::AppRespStatus::try_from(s).ok()) {
@@ -483,8 +482,8 @@ impl CustomInfo {
                         _ => {
                             return Err(Error::WasmSerializeFail(
                                 "unexpected resp status".to_string(),
-                            ))
-                        }
+                            ));
+                        },
                     },
                     code: r.code,
                     result: r.result.unwrap_or_default(),
@@ -492,7 +491,7 @@ impl CustomInfo {
                     req_type: r.r#type.unwrap_or_default(),
                     endpoint: r.endpoint.unwrap_or_default(),
                 };
-            }
+            },
             _ => (),
         }
         if let Some(t) = pb_info.trace {
@@ -512,10 +511,10 @@ impl CustomInfo {
             match dir {
                 PacketDirection::ClientToServer => {
                     info.trace.x_request_id_0 = t.x_request_id;
-                }
+                },
                 PacketDirection::ServerToClient => {
                     info.trace.x_request_id_1 = t.x_request_id;
-                }
+                },
             }
         }
         Ok(info)
@@ -523,10 +522,10 @@ impl CustomInfo {
 
     pub fn set_is_on_blacklist(&mut self, config: &LogParserConfig) {
         if let Some(t) = config.l7_log_blacklist_trie.get(&L7Protocol::Custom) {
-            self.is_on_blacklist = t.request_type.is_on_blacklist(&self.req.req_type)
-                || t.request_resource.is_on_blacklist(&self.req.resource)
-                || t.endpoint.is_on_blacklist(&self.req.endpoint)
-                || t.request_domain.is_on_blacklist(&self.req.domain);
+            self.is_on_blacklist = t.request_type.is_on_blacklist(&self.req.req_type) ||
+                t.request_resource.is_on_blacklist(&self.req.resource) ||
+                t.endpoint.is_on_blacklist(&self.req.endpoint) ||
+                t.request_domain.is_on_blacklist(&self.req.domain);
         }
     }
 }
@@ -671,9 +670,9 @@ impl From<CustomInfo> for L7ProtocolSendLog {
                 exception: w.resp.exception,
                 result: w.resp.result,
             },
-            trace_info: if !w.trace.trace_ids.is_empty()
-                || w.trace.span_id.is_some()
-                || w.trace.parent_span_id.is_some()
+            trace_info: if !w.trace.trace_ids.is_empty() ||
+                w.trace.span_id.is_some() ||
+                w.trace.parent_span_id.is_some()
             {
                 Some(TraceInfo {
                     trace_ids: w.trace.trace_ids,

@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-use std::{fmt, mem, str};
-
-use serde::Serialize;
-
-use public::l7_protocol::LogMessageType;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -32,11 +26,14 @@ use crate::{
     flow_generator::{
         error::{Error, Result},
         protocol_logs::{
-            pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
             AppProtoHead, L7ResponseStatus, PacketDirection,
+            pb_adapter::{L7ProtocolSendLog, L7Request, L7Response},
         },
     },
 };
+use public::l7_protocol::LogMessageType;
+use serde::Serialize;
+use std::{fmt, mem, str};
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
@@ -112,15 +109,14 @@ impl TryFrom<&str> for Command {
 impl Command {
     pub fn is_matched(&self, resp: &Response) -> bool {
         match self {
-            Self::Set | Self::Add | Self::Replace | Self::Append | Self::Prepend | Self::Cas => {
+            Self::Set | Self::Add | Self::Replace | Self::Append | Self::Prepend | Self::Cas =>
                 match resp {
-                    Response::Stored
-                    | Response::NotStored
-                    | Response::Exists
-                    | Response::NotFound => true,
+                    Response::Stored |
+                    Response::NotStored |
+                    Response::Exists |
+                    Response::NotFound => true,
                     _ => false,
-                }
-            }
+                },
 
             Self::Get | Self::Gets | Self::Gat | Self::Gats => resp == &Response::Value,
 
@@ -294,9 +290,8 @@ impl MemcachedInfo {
             return false;
         };
 
-        t.request_resource.is_on_blacklist(&self.request)
-            || self
-                .command
+        t.request_resource.is_on_blacklist(&self.request) ||
+            self.command
                 .map(|c| t.request_type.is_on_blacklist(&c.to_string()))
                 .unwrap_or(false)
     }
@@ -307,7 +302,13 @@ impl fmt::Display for MemcachedInfo {
         write!(
             f,
             "MemcachedInfo {{ msg_type: {:?} request: {} req_size: {} result: {} err_msg: {} res_size: {} rtt: {} }}",
-            &self.msg_type, &self.request, &self.captured_request_byte, &self.result, &self.err_msg, &self.captured_response_byte, self.rrt,
+            &self.msg_type,
+            &self.request,
+            &self.captured_request_byte,
+            &self.result,
+            &self.err_msg,
+            &self.captured_response_byte,
+            self.rrt,
         )
     }
 }
@@ -349,10 +350,7 @@ impl From<&MemcachedInfo> for LogCache {
     fn from(info: &MemcachedInfo) -> Self {
         LogCache {
             msg_type: info.msg_type,
-            resp_status: info
-                .response
-                .map(|r| L7ResponseStatus::from(&r))
-                .unwrap_or_default(),
+            resp_status: info.response.map(|r| L7ResponseStatus::from(&r)).unwrap_or_default(),
             on_blacklist: info.is_on_blacklist,
             ..Default::default()
         }
@@ -376,14 +374,13 @@ impl MemcachedLog {
                 Ok((next, info)) => {
                     payload = next;
                     mis.push(info);
-                }
-                Err(e) => {
+                },
+                Err(e) =>
                     if mis.is_empty() {
                         return Err(e);
                     } else {
                         return Ok(mis);
-                    }
-                }
+                    },
             }
         }
         Ok(mis)
@@ -422,18 +419,18 @@ impl MemcachedLog {
                     Some(msg) if msg.len() != 0 => info.err_msg = msg.to_owned(),
                     _ => (),
                 }
-            }
+            },
             Response::Value => {
-                return Self::parse_value_response(line, &payload[eol + Self::CRLF.len()..], info)
-            }
+                return Self::parse_value_response(line, &payload[eol + Self::CRLF.len()..], info);
+            },
             Response::ValueEnd => (),
-            Response::Stored
-            | Response::NotStored
-            | Response::Exists
-            | Response::NotFound
-            | Response::Deleted
-            | Response::Touched
-            | Response::RawValue(_) => (),
+            Response::Stored |
+            Response::NotStored |
+            Response::Exists |
+            Response::NotFound |
+            Response::Deleted |
+            Response::Touched |
+            Response::RawValue(_) => (),
         }
         Ok(info)
     }
@@ -471,17 +468,15 @@ impl MemcachedLog {
         let command = Command::try_from(first)?;
         match command {
             // storage commands are followed by unstructured data which needs to be consumed
-            Command::Set
-            | Command::Add
-            | Command::Replace
-            | Command::Append
-            | Command::Prepend
-            | Command::Cas => {
-                Self::parse_storage_command(command, line, &payload[eol + Self::CRLF.len()..])
-            }
-            Command::Get | Command::Gets | Command::Gat | Command::Gats => {
-                Self::parse_retrieval_command(command, line, &payload[eol + Self::CRLF.len()..])
-            }
+            Command::Set |
+            Command::Add |
+            Command::Replace |
+            Command::Append |
+            Command::Prepend |
+            Command::Cas =>
+                Self::parse_storage_command(command, line, &payload[eol + Self::CRLF.len()..]),
+            Command::Get | Command::Gets | Command::Gat | Command::Gats =>
+                Self::parse_retrieval_command(command, line, &payload[eol + Self::CRLF.len()..]),
             _ => Ok((
                 &payload[eol + Self::CRLF.len()..],
                 MemcachedInfo {
@@ -566,11 +561,7 @@ impl MemcachedLog {
         // followed by
         // END\r\n
         let mut splits = line.split_ascii_whitespace();
-        if splits
-            .nth(3)
-            .and_then(|s| s.parse::<usize>().ok())
-            .is_none()
-        {
+        if splits.nth(3).and_then(|s| s.parse::<usize>().ok()).is_none() {
             return Err(Error::L7LogParseFailed {
                 proto: L7Protocol::Memcached,
                 reason: format!("invalid <bytes> in value response: {}", line).into(),
@@ -616,14 +607,14 @@ impl L7ProtocolParserInterface for MemcachedLog {
                     on_blacklist = cmds.iter().all(|cmd| cmd.is_on_blacklist(conf));
                 }
                 cmds
-            }
+            },
             PacketDirection::ServerToClient => {
                 let resp = Self::parse_response(payload)?;
                 if let Some(conf) = param.parse_config {
                     on_blacklist = resp.is_on_blacklist(conf);
                 }
                 vec![resp]
-            }
+            },
         };
         let Some(info) = results.get(0) else {
             return Err(Error::L7LogParseFailed {
@@ -653,10 +644,7 @@ impl L7ProtocolParserInterface for MemcachedLog {
                 )))
             } else {
                 Ok(L7ParseResult::Multi(
-                    results
-                        .into_iter()
-                        .map(|r| L7ProtocolInfo::MemcachedInfo(r))
-                        .collect(),
+                    results.into_iter().map(|r| L7ProtocolInfo::MemcachedInfo(r)).collect(),
                 ))
             }
         } else {
@@ -684,18 +672,12 @@ impl L7ProtocolParserInterface for MemcachedLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::cell::RefCell;
-    use std::fmt::Write;
-    use std::fs;
-    use std::path::Path;
-    use std::rc::Rc;
-
     use crate::{
-        common::{flow::PacketDirection, l7_protocol_log::L7PerfCache, MetaPacket},
+        common::{MetaPacket, flow::PacketDirection, l7_protocol_log::L7PerfCache},
         flow_generator::L7_RRT_CACHE_CAPACITY,
         utils::test_utils::Capture,
     };
+    use std::{cell::RefCell, fmt::Write, fs, path::Path, rc::Rc};
 
     const FILE_DIR: &str = "resources/test/flow_generator/memcached";
 
@@ -733,27 +715,25 @@ mod tests {
             param.set_captured_byte(payload.len());
 
             let is_memcached = match packet.lookup_key.direction {
-                PacketDirection::ClientToServer => {
-                    memcached.check_payload(payload, param).is_some()
-                }
+                PacketDirection::ClientToServer =>
+                    memcached.check_payload(payload, param).is_some(),
                 PacketDirection::ServerToClient => MemcachedLog::parse_response(payload).is_ok(),
             };
 
             match memcached.parse_payload(payload, param) {
                 Ok(L7ParseResult::Single(L7ProtocolInfo::MemcachedInfo(info))) => {
                     let _ = write!(&mut output, "{} is_memcached: {}\n", info, is_memcached);
-                }
-                Ok(L7ParseResult::Multi(m)) => {
+                },
+                Ok(L7ParseResult::Multi(m)) =>
                     for info in m {
                         if let L7ProtocolInfo::MemcachedInfo(info) = info {
                             let _ =
                                 write!(&mut output, "{} is_memcached: {}\n", info, is_memcached);
                         }
-                    }
-                }
+                    },
                 Err(e) => {
                     let _ = write!(&mut output, "parse failed {}\n", e);
-                }
+                },
                 _ => (),
             }
         }

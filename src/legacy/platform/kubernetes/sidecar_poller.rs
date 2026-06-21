@@ -14,18 +14,15 @@
  * limitations under the License.
  */
 
-use std::net::IpAddr;
-
-use log::info;
-use regex::Regex;
-
 use super::Poller;
 use crate::utils::environment::get_ctrl_ip_and_mac;
-
+use log::info;
 use public::{
     netns::{self, InterfaceInfo, NsFile},
     utils::net::link_list,
 };
+use regex::Regex;
+use std::net::IpAddr;
 
 pub struct SidecarPoller(InterfaceInfo);
 
@@ -38,11 +35,7 @@ impl SidecarPoller {
         let Ok(links) = link_list() else {
             return Err("call link_list() failed".to_owned());
         };
-        let Some(link) = links
-            .into_iter()
-            .filter(|link| link.mac_addr == ctrl_mac)
-            .next()
-        else {
+        let Some(link) = links.into_iter().filter(|link| link.mac_addr == ctrl_mac).next() else {
             return Err(format!("cannot find ctrl interface with mac {}", ctrl_mac));
         };
         let path = netns::current_netns_path();

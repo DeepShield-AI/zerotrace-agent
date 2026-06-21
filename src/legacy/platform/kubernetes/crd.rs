@@ -13,18 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::collections::BTreeMap;
-
+use super::resource_watcher::Trimmable;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use kube_derive::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-use super::resource_watcher::Trimmable;
+use std::collections::BTreeMap;
 
 pub mod pingan_cloud {
     use super::*;
-
     use k8s_openapi::api::core::v1::{ServicePort, ServiceStatus};
 
     #[derive(CustomResource, Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -73,7 +70,6 @@ pub mod pingan_cloud {
 
 pub mod kruise {
     use super::*;
-
     use k8s_openapi::{
         api::core::v1::PodTemplateSpec, apimachinery::pkg::apis::meta::v1::LabelSelector,
     };
@@ -214,7 +210,6 @@ pub mod opengauss {
 
 pub mod tkex {
     use super::*;
-
     use k8s_openapi::{
         api::core::v1::PodTemplateSpec, apimachinery::pkg::apis::meta::v1::LabelSelector,
     };
@@ -255,7 +250,6 @@ pub mod tkex {
 
 pub mod legacy {
     use super::*;
-
     use k8s_openapi::api::networking::v1::IngressTLS;
 
     #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]

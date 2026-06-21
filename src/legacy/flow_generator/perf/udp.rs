@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-use std::cmp::max;
-
-use crate::common::{
-    flow::{FlowPerfStats, L4Protocol, PacketDirection},
-    meta_packet::MetaPacket,
-    Timestamp,
+use super::{ART_MAX, L4FlowPerf};
+use crate::{
+    common::{
+        Timestamp,
+        flow::{FlowPerfStats, L4Protocol, PacketDirection},
+        meta_packet::MetaPacket,
+    },
+    flow_generator::error::{Error, Result},
 };
-use crate::flow_generator::error::{Error, Result};
-
-use super::{L4FlowPerf, ART_MAX};
+use std::cmp::max;
 
 #[derive(Debug, Default)]
 pub struct UdpPerf {
@@ -50,9 +50,9 @@ impl L4FlowPerf for UdpPerf {
         let pkt_timestamp = header.lookup_key.timestamp;
         if header.lookup_key.direction == PacketDirection::ClientToServer {
             self.req_timestamp = pkt_timestamp.into();
-        } else if self.req_timestamp != Timestamp::ZERO
-            && self.req_timestamp <= pkt_timestamp
-            && header.lookup_key.direction != self.last_pkt_direction
+        } else if self.req_timestamp != Timestamp::ZERO &&
+            self.req_timestamp <= pkt_timestamp &&
+            header.lookup_key.direction != self.last_pkt_direction
         {
             let art = Timestamp::from(pkt_timestamp - self.req_timestamp);
             if art <= ART_MAX {
@@ -86,12 +86,9 @@ impl L4FlowPerf for UdpPerf {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::Path;
-
-    use crate::utils::test_utils::Capture;
-
     use super::*;
+    use crate::utils::test_utils::Capture;
+    use std::{fs, path::Path};
 
     const FILE_DIR: &'static str = "resources/test/flow_generator";
 

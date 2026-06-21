@@ -14,32 +14,28 @@
  * limitations under the License.
  */
 
-use std::cell::RefMut;
-
-use super::flow::PacketDirection;
-use enum_dispatch::enum_dispatch;
-use log::{debug, error, warn};
-use serde::Serialize;
-
+use super::{flow::PacketDirection, l7_protocol_log::ParseParam};
 use crate::{
     common::{
         flow::L7PerfStats,
         l7_protocol_log::{L7PerfCache, LogCache, LogCacheKey},
     },
     flow_generator::{
-        protocol_logs::{
-            fastcgi::FastCGIInfo, pb_adapter::L7ProtocolSendLog, AmqpInfo, BrpcInfo, DnsInfo,
-            DubboInfo, HttpInfo, KafkaInfo, MemcachedInfo, MongoDBInfo, MqttInfo, MysqlInfo,
-            NatsInfo, OpenWireInfo, PingInfo, PostgreInfo, PulsarInfo, RedisInfo, RocketmqInfo,
-            SofaRpcInfo, TarsInfo, ZmtpInfo,
-        },
         AppProtoHead, Result,
+        protocol_logs::{
+            AmqpInfo, BrpcInfo, DnsInfo, DubboInfo, HttpInfo, KafkaInfo, MemcachedInfo,
+            MongoDBInfo, MqttInfo, MysqlInfo, NatsInfo, OpenWireInfo, PingInfo, PostgreInfo,
+            PulsarInfo, RedisInfo, RocketmqInfo, SofaRpcInfo, TarsInfo, ZmtpInfo,
+            fastcgi::FastCGIInfo, pb_adapter::L7ProtocolSendLog,
+        },
     },
     plugin::CustomInfo,
 };
-
-use super::l7_protocol_log::ParseParam;
+use enum_dispatch::enum_dispatch;
+use log::{debug, error, warn};
 use public::l7_protocol::LogMessageType;
+use serde::Serialize;
+use std::cell::RefMut;
 
 macro_rules! all_protocol_info {
     ($($name:ident($info_struct:ty)),+$(,)?) => {
@@ -214,7 +210,7 @@ where
                 if log.is_response_of(&cached) {
                     return Some(cached.endpoint.as_ref().unwrap().clone());
                 }
-            }
+            },
             _ => (),
         }
         None
@@ -246,8 +242,8 @@ where
             ..LogCache::from(self)
         };
         assert!(
-            !self.need_merge()
-                || self.session_id().is_some() && cur_info.multi_merge_info.is_some()
+            !self.need_merge() ||
+                self.session_id().is_some() && cur_info.multi_merge_info.is_some()
         );
 
         if !self.needs_session_aggregation() {
@@ -405,9 +401,9 @@ where
                 }
             }
         } else {
-            if !prev_info.on_blacklist
-                && prev_info.msg_type != cur_info.msg_type
-                && !prev_info.multi_merge_info.as_ref().unwrap().merged
+            if !prev_info.on_blacklist &&
+                prev_info.msg_type != cur_info.msg_type &&
+                !prev_info.multi_merge_info.as_ref().unwrap().merged
             {
                 timeout_counter.timeout[index] += 1;
             }

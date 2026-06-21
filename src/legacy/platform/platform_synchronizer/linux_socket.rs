@@ -14,35 +14,31 @@
  * limitations under the License.
  */
 
+use crate::{
+    config::handler::OsProcScanConfig, platform::platform_synchronizer::ProcessData,
+    policy::PolicyGetter,
+};
+use log::{debug, trace};
+use procfs::{
+    ProcError,
+    net::TcpState,
+    process::{FDTarget, Process},
+};
+use public::{
+    bytes::read_u32_be,
+    netns::NsFile,
+    proto::agent::{GpidSyncEntry, RoleType, ServiceProtocol},
+};
 #[cfg(target_os = "android")]
 use std::os::android::fs::MetadataExt;
 #[cfg(target_os = "linux")]
 use std::os::linux::fs::MetadataExt;
-
 use std::{
     collections::{HashMap, HashSet},
     fmt, fs,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
-};
-
-use log::{debug, trace};
-use procfs::{
-    net::TcpState,
-    process::{FDTarget, Process},
-    ProcError,
-};
-
-use crate::{
-    config::handler::OsProcScanConfig, platform::platform_synchronizer::ProcessData,
-    policy::PolicyGetter,
-};
-
-use public::{
-    bytes::read_u32_be,
-    netns::NsFile,
-    proto::agent::{GpidSyncEntry, RoleType, ServiceProtocol},
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -104,8 +100,8 @@ impl TryFrom<SockEntry> for GpidSyncEntry {
             _ => {
                 return Err(ProcError::Other(
                     "unreachable: not support ipv6".to_string(),
-                ))
-            }
+                ));
+            },
         };
 
         let (epc_0, pid_0, ip_0, port_0, epc_1, pid_1, ip_1, port_1) = match s.role {
@@ -144,12 +140,12 @@ impl TryFrom<SockEntry> for GpidSyncEntry {
             }),
             epc_id_1: epc_1,
             ipv4_1: ip_1,
-            port_1: port_1,
-            pid_1: pid_1,
+            port_1,
+            pid_1,
             epc_id_0: epc_0,
             ipv4_0: ip_0,
-            port_0: port_0,
-            pid_0: pid_0,
+            port_0,
+            pid_0,
             netns_idx: Some(s.netns_idx as u32),
             ..Default::default()
         };
@@ -162,8 +158,8 @@ impl TryFrom<SockEntry> for GpidSyncEntry {
                 _ => {
                     return Err(ProcError::Other(
                         "unreachable: not support ipv6".to_string(),
-                    ))
-                }
+                    ));
+                },
             });
             r.port_real = Some(real.port as u32);
         }
@@ -225,10 +221,7 @@ pub(super) fn get_all_socket(
     epc_id: u32,
     pids: Vec<u32>,
 ) -> Result<Vec<SockEntry>, ProcError> {
-    let epoch = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // find fd in processes and their net namespaces
     let mut socket_inode_to_pid = HashMap::new();
@@ -241,7 +234,7 @@ pub(super) fn get_all_socket(
             Err(e) => {
                 debug!("get process #{pid} failed: {e}");
                 continue;
-            }
+            },
         };
         let Ok(p_data) = ProcessData::try_from(&process) else {
             continue;
@@ -255,7 +248,7 @@ pub(super) fn get_all_socket(
                     conf.os_proc_socket_min_lifetime
                 );
                 continue;
-            }
+            },
         }
 
         let netns = NsFile::from_pid_with_root(&conf.os_proc_root, pid).unwrap_or_default();
@@ -264,7 +257,7 @@ pub(super) fn get_all_socket(
             Err(e) => {
                 debug!("get process #{pid} fd failed: {e}");
                 continue;
-            }
+            },
         };
 
         let mut interested = false;
@@ -277,14 +270,14 @@ pub(super) fn get_all_socket(
                     Ok(ctime) if ctime >= conf.os_proc_socket_min_lifetime as u64 => {
                         interested = true;
                         socket_inode_to_pid.insert(inode, pid);
-                    }
+                    },
                     _ => {
                         debug!(
                             "process #{pid} fd #{} ignored because ctime invalid or less than {}",
                             fd.fd, conf.os_proc_socket_min_lifetime
                         );
                         continue;
-                    }
+                    },
                 }
             }
         }
@@ -308,35 +301,35 @@ pub(super) fn get_all_socket(
                 Err(e) => {
                     debug!("get process #{pid} failed: {e}");
                     continue;
-                }
+                },
             };
             let mut tcp = match process.tcp() {
                 Ok(tcp) => tcp,
                 Err(e) => {
                     debug!("get netns {ns} tcp from process #{pid} failed: {e}");
                     continue;
-                }
+                },
             };
             match process.tcp6() {
                 Ok(mut tcp6) => tcp.append(&mut tcp6),
                 Err(e) => {
                     debug!("get netns {ns} tcp6 from process #{pid} failed: {e}");
                     continue;
-                }
+                },
             };
             let udp = match process.udp() {
                 Ok(udp) => udp,
                 Err(e) => {
                     debug!("get netns {ns} udp from process #{pid} failed: {e}");
                     continue;
-                }
+                },
             };
             let udp6 = match process.udp6() {
                 Ok(udp6) => udp6,
                 Err(e) => {
                     debug!("get netns {ns} udp6 from process #{pid} failed: {e}");
                     continue;
-                }
+                },
             };
 
             // tcp sockets that listen on 0.0.0.0
@@ -359,7 +352,7 @@ pub(super) fn get_all_socket(
                         }
                     }
                     false
-                }
+                },
                 TcpState::Established => true,
                 _ => false,
             });
@@ -370,9 +363,11 @@ pub(super) fn get_all_socket(
                 let pid = match socket_inode_to_pid.get(&tcp.inode) {
                     Some(pid) => *pid,
                     None => {
-                        debug!("netns {ns} tcp entry {tcp:?} ignored because inode not found or too recent");
+                        debug!(
+                            "netns {ns} tcp entry {tcp:?} ignored because inode not found or too recent"
+                        );
                         continue;
-                    }
+                    },
                 };
 
                 let local_addr = &mut tcp.local_address;
@@ -387,15 +382,15 @@ pub(super) fn get_all_socket(
                 sockets.push(SockEntry {
                     pid,
                     proto: Protocol::Tcp,
-                    role: if listen_any.contains(&local_addr.port())
-                        || listen_spec.contains(&local_addr)
+                    role: if listen_any.contains(&local_addr.port()) ||
+                        listen_spec.contains(&local_addr)
                     {
                         Role::Server
                     } else {
                         Role::Client
                     },
                     local: SockAddrData {
-                        epc_id: epc_id,
+                        epc_id,
                         ip: local_addr.ip(),
                         port: local_addr.port(),
                     },
@@ -418,9 +413,11 @@ pub(super) fn get_all_socket(
                 let pid = match socket_inode_to_pid.get(&udp.inode) {
                     Some(pid) => *pid,
                     None => {
-                        debug!("netns {ns} udp entry {udp:?} ignored because inode not found or too recent");
+                        debug!(
+                            "netns {ns} udp entry {udp:?} ignored because inode not found or too recent"
+                        );
                         continue;
-                    }
+                    },
                 };
 
                 if udp.remote_address.ip().is_unspecified() {
@@ -442,7 +439,7 @@ pub(super) fn get_all_socket(
                     proto: Protocol::Udp,
                     role: Role::Client,
                     local: SockAddrData {
-                        epc_id: epc_id,
+                        epc_id,
                         ip: local_addr.ip(),
                         port: local_addr.port(),
                     },
@@ -479,16 +476,13 @@ fn convert_i32_epc_id(epc_id: i32) -> u32 {
 }
 
 fn get_fd_ctime(proc_root: &str, pid: u32, fd: i32) -> Result<u64, std::io::Error> {
-    let path: PathBuf = [proc_root, &pid.to_string(), "fd", &fd.to_string()]
-        .iter()
-        .collect();
+    let path: PathBuf = [proc_root, &pid.to_string(), "fd", &fd.to_string()].iter().collect();
     Ok(fs::symlink_metadata(path)?.st_ctime() as u64)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::{config::handler::OsProcScanConfig, policy::Policy};
 
     #[test]

@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-use std::{ffi::OsString, io, os::windows::ffi::OsStringExt, path::PathBuf, ptr};
-
-use bytesize::ByteSize;
-use sysinfo::{System, SystemExt};
-use winapi::{
-    shared::minwindef::{DWORD, MAX_PATH},
-    um::libloaderapi::GetModuleFileNameW,
-};
-
 use crate::{
     error::{Error, Result},
     exception::ExceptionHandler,
     utils::process::get_memory_rss,
 };
+use bytesize::ByteSize;
 use public::proto::agent::Exception;
+use std::{ffi::OsString, io, os::windows::ffi::OsStringExt, path::PathBuf, ptr};
+use sysinfo::{System, SystemExt};
+use winapi::{
+    shared::minwindef::{DWORD, MAX_PATH},
+    um::libloaderapi::GetModuleFileNameW,
+};
 
 pub fn free_memory_check(required: u64, exception_handler: &ExceptionHandler) -> Result<()> {
     get_memory_rss()

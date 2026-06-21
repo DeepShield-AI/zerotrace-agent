@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-use pnet::packet::icmp::{IcmpType, IcmpTypes};
-use serde::Serialize;
-
 use crate::{
     common::{
         enums::IpProtocol,
@@ -24,14 +21,18 @@ use crate::{
         l7_protocol_info::{L7ProtocolInfo, L7ProtocolInfoInterface},
         l7_protocol_log::{L7ParseResult, L7ProtocolParserInterface, LogCache, ParseParam},
     },
-    flow_generator::error::{Error, Result},
-    flow_generator::protocol_logs::{
-        pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
-        set_captured_byte, AppProtoHead, L7ResponseStatus,
+    flow_generator::{
+        error::{Error, Result},
+        protocol_logs::{
+            AppProtoHead, L7ResponseStatus,
+            pb_adapter::{ExtendedInfo, L7ProtocolSendLog, L7Request, L7Response},
+            set_captured_byte,
+        },
     },
 };
-
+use pnet::packet::icmp::{IcmpType, IcmpTypes};
 use public::l7_protocol::LogMessageType;
+use serde::Serialize;
 
 const PING_HEADER_SIZE: u32 = 8;
 
@@ -83,12 +84,12 @@ impl PingInfo {
                 self.rrt = other.rrt;
                 self.captured_response_byte = other.captured_response_byte;
                 self.status = L7ResponseStatus::Ok;
-            }
+            },
             LogMessageType::Request => {
                 self.captured_request_byte = other.captured_request_byte;
                 self.status = L7ResponseStatus::Ok;
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         Ok(())
@@ -165,8 +166,8 @@ impl L7ProtocolParserInterface for PingLog {
             return Err(Error::PingHeaderParseFailed);
         };
 
-        if icmp_data.icmp_type != IcmpTypes::EchoRequest.0
-            && icmp_data.icmp_type != IcmpTypes::EchoReply.0
+        if icmp_data.icmp_type != IcmpTypes::EchoRequest.0 &&
+            icmp_data.icmp_type != IcmpTypes::EchoReply.0
         {
             return Err(Error::PingHeaderParseFailed);
         }
@@ -192,7 +193,7 @@ impl L7ProtocolParserInterface for PingLog {
                     self.perf_stats.push(perf_stat);
                 }
                 Ok(L7ParseResult::Single(L7ProtocolInfo::PingInfo(info)))
-            }
+            },
             IcmpTypes::EchoReply => {
                 let mut info = PingInfo {
                     msg_type: LogMessageType::Response,
@@ -212,7 +213,7 @@ impl L7ProtocolParserInterface for PingLog {
                     self.perf_stats.push(perf_stat);
                 }
                 Ok(L7ParseResult::Single(L7ProtocolInfo::PingInfo(info)))
-            }
+            },
             _ => Err(Error::PingHeaderParseFailed),
         }
     }

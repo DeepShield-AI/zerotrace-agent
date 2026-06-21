@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::fmt;
-use std::fs;
-use std::io;
-
 use bincode::{Decode, Encode};
+use std::{collections::HashMap, fmt, fs, io};
 
 /// Memory information from /proc/meminfo (values in kB)
 #[derive(Debug, Default, Clone, Encode, Decode, PartialEq)]
@@ -148,7 +144,12 @@ impl fmt::Display for MemInfo {
         writeln!(f, "MemTotal:       {} kB", self.mem_total)?;
         writeln!(f, "MemFree:        {} kB", self.mem_free)?;
         writeln!(f, "MemAvailable:   {} kB", self.mem_available)?;
-        writeln!(f, "MemUsed:        {} kB ({:.1}%)", self.used_kb(), self.usage_pct())?;
+        writeln!(
+            f,
+            "MemUsed:        {} kB ({:.1}%)",
+            self.used_kb(),
+            self.usage_pct()
+        )?;
         writeln!(f, "Buffers:        {} kB", self.buffers)?;
         writeln!(f, "Cached:         {} kB", self.cached)?;
         writeln!(f, "SwapCached:     {} kB", self.swap_cached)?;
@@ -156,7 +157,12 @@ impl fmt::Display for MemInfo {
         writeln!(f, "Inactive:       {} kB", self.inactive)?;
         writeln!(f, "SwapTotal:      {} kB", self.swap_total)?;
         writeln!(f, "SwapFree:       {} kB", self.swap_free)?;
-        writeln!(f, "SwapUsed:       {} kB ({:.1}%)", self.swap_used_kb(), self.swap_usage_pct())?;
+        writeln!(
+            f,
+            "SwapUsed:       {} kB ({:.1}%)",
+            self.swap_used_kb(),
+            self.swap_usage_pct()
+        )?;
         writeln!(f, "Dirty:          {} kB", self.dirty)?;
         writeln!(f, "Slab:           {} kB", self.slab)?;
         writeln!(f, "KernelStack:    {} kB", self.kernel_stack)?;

@@ -14,37 +14,39 @@
  * limitations under the License.
  */
 
-use core::panic;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr};
-use std::rc::Rc;
-use std::time::Duration;
-
-use flate2::read::GzDecoder;
-use public::enums::IpProtocol;
-use public::l7_protocol::{CustomProtocol, LogMessageType};
-
-use crate::common::ebpf::EbpfType;
-use crate::common::flow::PacketDirection;
-use crate::common::l7_protocol_info::L7ProtocolInfo;
-use crate::common::l7_protocol_log::L7PerfCache;
-
-use crate::config::handler::LogParserConfig;
-use crate::config::{
-    config::{Iso8583ParseConfig, WebSphereMqParseConfig},
-    OracleConfig,
-};
-use crate::flow_generator::protocol_logs::pb_adapter::L7ProtocolSendLog;
-use crate::flow_generator::protocol_logs::{get_wasm_parser, L7ResponseStatus, WasmLog};
-use crate::{
-    common::l7_protocol_log::{L7ProtocolParserInterface, ParseParam},
-    HttpLog,
-};
-
 use super::WasmVm;
+use crate::{
+    HttpLog,
+    common::{
+        ebpf::EbpfType,
+        flow::PacketDirection,
+        l7_protocol_info::L7ProtocolInfo,
+        l7_protocol_log::{L7PerfCache, L7ProtocolParserInterface, ParseParam},
+    },
+    config::{
+        OracleConfig,
+        config::{Iso8583ParseConfig, WebSphereMqParseConfig},
+        handler::LogParserConfig,
+    },
+    flow_generator::protocol_logs::{
+        L7ResponseStatus, WasmLog, get_wasm_parser, pb_adapter::L7ProtocolSendLog,
+    },
+};
+use core::panic;
+use flate2::read::GzDecoder;
+use public::{
+    enums::IpProtocol,
+    l7_protocol::{CustomProtocol, LogMessageType},
+};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fs::File,
+    io::Read,
+    net::{IpAddr, Ipv4Addr},
+    rc::Rc,
+    time::Duration,
+};
 
 fn get_req_param<'a>(
     vm: Rc<RefCell<Option<WasmVm>>>,
@@ -159,23 +161,11 @@ fn test_wasm_http_req() {
     if let L7ProtocolInfo::HttpInfo(http) = info.unwrap_single() {
         let i: L7ProtocolSendLog = http.into();
         assert_eq!(
-            i.trace_info
-                .as_ref()
-                .unwrap()
-                .trace_ids
-                .first()
-                .unwrap()
-                .as_str(),
+            i.trace_info.as_ref().unwrap().trace_ids.first().unwrap().as_str(),
             "aaa"
         );
         assert_eq!(
-            i.trace_info
-                .as_ref()
-                .unwrap()
-                .span_id
-                .as_ref()
-                .unwrap()
-                .as_str(),
+            i.trace_info.as_ref().unwrap().span_id.as_ref().unwrap().as_str(),
             "bbb"
         );
 
@@ -217,23 +207,11 @@ fn test_wasm_http_resp() {
     if let L7ProtocolInfo::HttpInfo(http) = info.unwrap_single() {
         let i: L7ProtocolSendLog = http.into();
         assert_eq!(
-            i.trace_info
-                .as_ref()
-                .unwrap()
-                .trace_ids
-                .first()
-                .unwrap()
-                .as_str(),
+            i.trace_info.as_ref().unwrap().trace_ids.first().unwrap().as_str(),
             ""
         );
         assert_eq!(
-            i.trace_info
-                .as_ref()
-                .unwrap()
-                .span_id
-                .as_ref()
-                .unwrap()
-                .as_str(),
+            i.trace_info.as_ref().unwrap().span_id.as_ref().unwrap().as_str(),
             ""
         );
 
@@ -292,11 +270,7 @@ fn test_wasm_parse_payload_req() {
         10, 6, 100, 111, 109, 97, 105, 110, 18, 8, 114, 101, 115, 111, 117, 114, 99, 101, 26, 4,
         116, 121, 112, 101, 34, 8, 101, 110, 100, 112, 111, 105, 110, 116,
     ];
-    let info1 = wasm_log
-        .parse_payload(&payload[..], &param)
-        .unwrap()
-        .unwrap_multi()
-        .remove(0);
+    let info1 = wasm_log.parse_payload(&payload[..], &param).unwrap().unwrap_multi().remove(0);
     if let L7ProtocolInfo::CustomInfo(ci) = info1 {
         assert_eq!(ci.req_len.unwrap(), 999);
         assert_eq!(ci.resp_len.unwrap(), 9999);
@@ -324,11 +298,7 @@ fn test_wasm_parse_payload_req() {
         unreachable!()
     }
 
-    let info2 = wasm_log
-        .parse_payload(&payload[..], &param)
-        .unwrap()
-        .unwrap_multi()
-        .remove(1);
+    let info2 = wasm_log.parse_payload(&payload[..], &param).unwrap().unwrap_multi().remove(1);
 
     if let L7ProtocolInfo::CustomInfo(ci) = info2 {
         assert_eq!(ci.req_len.unwrap(), 999);
@@ -367,11 +337,7 @@ fn test_wasm_parse_payload_resp() {
 
     let mut wasm_log = get_wasm_parser(1, "".to_string());
     let payload: [u8; 11] = [8, 231, 7, 18, 6, 114, 101, 115, 117, 108, 116];
-    let info1 = wasm_log
-        .parse_payload(&payload[..], &param)
-        .unwrap()
-        .unwrap_multi()
-        .remove(0);
+    let info1 = wasm_log.parse_payload(&payload[..], &param).unwrap().unwrap_multi().remove(0);
     if let L7ProtocolInfo::CustomInfo(ci) = info1 {
         assert_eq!(ci.req_len.unwrap(), 999);
         assert_eq!(ci.resp_len.unwrap(), 9999);
@@ -396,11 +362,7 @@ fn test_wasm_parse_payload_resp() {
         unreachable!()
     }
 
-    let info2 = wasm_log
-        .parse_payload(&payload[..], &param)
-        .unwrap()
-        .unwrap_multi()
-        .remove(1);
+    let info2 = wasm_log.parse_payload(&payload[..], &param).unwrap().unwrap_multi().remove(1);
     if let L7ProtocolInfo::CustomInfo(ci) = info2 {
         assert_eq!(ci.req_len.unwrap(), 999);
         assert_eq!(ci.resp_len.unwrap(), 9999);
