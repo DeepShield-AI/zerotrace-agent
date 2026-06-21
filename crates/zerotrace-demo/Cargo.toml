@@ -1,14 +1,17 @@
 [package]
-name = "zerotrace-runtime"
+name = "zerotrace-demo"
 version = "0.1.0"
 edition = "2024"
+description = "ZeroTrace DI framework demo — collector → processor → reporter with YAML bundles"
 
 [dependencies]
 zerotrace-core = { path = "../zerotrace-core" }
 zerotrace-kernel = { path = "../zerotrace-kernel" }
-async-trait = "0.1"
+zerotrace-kernel-derive = { path = "../zerotrace-kernel-derive" }
+zerotrace-runtime = { path = "../zerotrace-runtime" }
 parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
+tracing-subscriber = "0.3"

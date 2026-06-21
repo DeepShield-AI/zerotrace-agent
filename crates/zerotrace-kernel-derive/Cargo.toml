@@ -1,0 +1,17 @@
+[package]
+name = "zerotrace-kernel-derive"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+trybuild = "1"
+parking_lot = "0.12"
+zerotrace-kernel = { path = "../zerotrace-kernel" }

@@ -7,10 +7,9 @@
 //! Run (server must be the new build, listening on :30417):
 //!     ZT_API_KEY=zt-test-key cargo run -p zerotrace-forwarder --example e2e_l7
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use prost::Message;
 use public::proto::flow_log::{AppProtoHead, AppProtoLogsBaseInfo, AppProtoLogsData};
+use std::time::{SystemTime, UNIX_EPOCH};
 use zerotrace_forwarder::Forwarder;
 
 const MSG_PROTOCOLLOG: u8 = 5; // datatype.MESSAGE_TYPE_PROTOCOLLOG
@@ -45,10 +44,7 @@ fn frame(msg_type: u8, payload: &[u8]) -> Vec<u8> {
 async fn main() {
     // l7 base start/end times are nanoseconds since epoch (the writer derives the
     // row `time` column from them).
-    let now_ns = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64;
+    let now_ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
 
     let data = AppProtoLogsData {
         base: Some(AppProtoLogsBaseInfo {

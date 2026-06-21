@@ -19,8 +19,16 @@ pub struct KernelMetrics {
     pub world_get_count: AtomicU64,
     pub world_get_total_ns: AtomicU64,
 
-    /// P99 world_get latency tracking (simple: count calls exceeding 1µs).
+    /// P99 world_get latency tracking (simple: count calls exceeding
+    /// `world_get_slow_threshold_ns`, which defaults to 1_000 ns = 1 µs).
     pub world_get_slow_count: AtomicU64,
+
+    /// Threshold in nanoseconds for classifying a world_get as "slow".
+    /// Default: 1_000 (1 µs).  Set via [`set_slow_threshold`](Self::set_slow_threshold).
+    pub world_get_slow_threshold_ns: AtomicU64,
+
+    /// Number of times a resource was overwritten via `World::insert()`.
+    pub resource_overwrite_count: AtomicU64,
 
     /// Current aggregate length of all pipeline channels.
     pub pipeline_channel_len: AtomicU64,
@@ -50,6 +58,8 @@ impl KernelMetrics {
             world_get_count: AtomicU64::new(0),
             world_get_total_ns: AtomicU64::new(0),
             world_get_slow_count: AtomicU64::new(0),
+            world_get_slow_threshold_ns: AtomicU64::new(1_000),
+            resource_overwrite_count: AtomicU64::new(0),
             pipeline_channel_len: AtomicU64::new(0),
             bundle_load_total: AtomicU64::new(0),
             bundle_load_total_ms: AtomicU64::new(0),
@@ -65,11 +75,16 @@ impl KernelMetrics {
     /// Record a `world_get` call with its latency in nanoseconds.
     pub fn record_world_get(&self, latency_ns: u64) {
         self.world_get_count.fetch_add(1, Ordering::Relaxed);
-        self.world_get_total_ns
-            .fetch_add(latency_ns, Ordering::Relaxed);
-        if latency_ns > 1000 {
+        self.world_get_total_ns.fetch_add(latency_ns, Ordering::Relaxed);
+        if latency_ns > self.world_get_slow_threshold_ns.load(Ordering::Relaxed) {
             self.world_get_slow_count.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    /// Set the threshold for "slow" world_get classification.
+    /// Default is 1_000 ns (1 µs).
+    pub fn set_slow_threshold(&self, ns: u64) {
+        self.world_get_slow_threshold_ns.store(ns, Ordering::Release);
     }
 
     /// Approximate average world_get latency (0 if no calls).
@@ -123,6 +138,10 @@ impl KernelMetrics {
             (
                 "pipeline_channel_len",
                 self.pipeline_channel_len.load(Ordering::Relaxed),
+            ),
+            (
+                "resource_overwrite_count",
+                self.resource_overwrite_count.load(Ordering::Relaxed),
             ),
             (
                 "bundle_load_total",

@@ -1,6 +1,5 @@
-use reqwest::RequestBuilder;
-
 use crate::Forwarder;
+use reqwest::RequestBuilder;
 
 impl Forwarder {
     /// Attach the `X-Api-Key` (and optional `X-Agent-Id`) authentication headers,
