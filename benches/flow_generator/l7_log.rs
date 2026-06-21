@@ -14,21 +14,16 @@
  * limitations under the License.
  */
 
-use std::path::Path;
-use std::time::Instant;
-use std::{cell::RefCell, rc::Rc, sync::Arc};
-
 use criterion::*;
-
+use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use zerotrace_agent::{
     _FlowPerfCounter as FlowPerfCounter, _L7PerfCache as L7PerfCache,
     _PacketDirection as PacketDirection, _TcpPerf as TcpPerf,
     _benchmark_report as benchmark_report,
     _benchmark_session_peer_seq_no_assert as benchmark_session_peer_seq_no_assert,
-    _meta_flow_perf_update as meta_flow_perf_update,
+    _meta_flow_perf_update as meta_flow_perf_update, HttpLog,
     common::l7_protocol_log::{L7ProtocolParserInterface, ParseParam},
     utils::test_utils::Capture,
-    HttpLog,
 };
 
 pub(super) fn bench(c: &mut Criterion) {

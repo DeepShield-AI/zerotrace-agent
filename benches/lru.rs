@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-use std::hash::Hash;
-use std::net::Ipv6Addr;
-use std::time::Duration;
-use std::{net::Ipv4Addr, time::Instant};
-
 use criterion::*;
-use zerotrace_agent::{
-    _L7PerfCache as L7PerfCache, _LogCache as LogCache, _LogCacheKey as LogCacheKey,
-};
 use lru::LruCache;
 use public::l7_protocol::LogMessageType;
 use rand::prelude::*;
+use std::{
+    hash::Hash,
+    net::{Ipv4Addr, Ipv6Addr},
+    time::{Duration, Instant},
+};
 use uluru::LRUCache;
+use zerotrace_agent::{
+    _L7PerfCache as L7PerfCache, _LogCache as LogCache, _LogCacheKey as LogCacheKey,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct SmallStruct {

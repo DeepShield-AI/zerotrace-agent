@@ -14,23 +14,15 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
-use std::path::Path;
-use std::rc::Rc;
-
+use std::{cell::RefCell, path::Path, rc::Rc};
 use zerotrace_agent::{
-    _PacketDirection as PacketDirection,
+    _PacketDirection as PacketDirection, HttpLog,
     common::l7_protocol_log::{L7PerfCache, L7ProtocolParserInterface, ParseParam},
     utils::test_utils::Capture,
-    HttpLog,
 };
 
 fn main() {
-    let iters: usize = std::env::args()
-        .nth(1)
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(1024);
+    let iters: usize = std::env::args().nth(1).unwrap_or_default().parse().unwrap_or(1024);
 
     let capture = Capture::load_pcap(Path::new(
         "./resources/test/flow_generator/http/httpv1.pcap",
