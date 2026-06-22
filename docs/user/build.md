@@ -176,9 +176,84 @@ docker run --privileged --rm -it \
 rm -rf .docker-cache/target
 ```
 
-## 6. 常见问题
+## 6. 运行 Agent
 
-### 6.1 Docker 服务启动失败：`process with PID XXXX is still running`
+编译完成后，需要申请 API Key 并配置 Agent 连接 ZeroTrace Server。
+
+### 6.1 申请 API Key
+
+在浏览器打开 `http://202.112.237.37:5173`，注册账号后申请 API Key，记下 Key 值。
+
+### 6.2 创建配置文件
+
+创建 `/etc/zerotrace-agent.yaml`，填入以下内容（将 `<YOUR_API_KEY>` 替换为上一步获取的 Key）：
+
+```yaml
+## ingester addresses
+ingester_ip:
+  - 202.112.237.37
+
+## proxy controller
+proxy_controller_ip:
+  - 202.112.237.37
+
+proxy_controller_port:
+  - 30035
+
+## analyzer
+analyzer_ip:
+  - 202.112.237.37
+
+## controller ip
+controller-ips:
+  - 202.112.237.37
+
+## controller listen port
+controller-port: 30035
+
+## logfile path
+log-file: /opt/zerotrace-agent/var/log/zerotrace-agent.log
+
+## API Key for authentication
+api_key: <YOUR_API_KEY>
+```
+
+### 6.3 创建日志目录
+
+```bash
+sudo mkdir -p /opt/zerotrace-agent/var/log/
+```
+
+### 6.4 启动 Agent
+
+```bash
+# 杀死可能存在的旧进程
+sudo pkill zerotrace-agent 2>/dev/null || true
+
+# 以 Managed 模式启动 Agent
+sudo RUST_LOG=info ./target/debug/zerotrace-agent \
+    -f /etc/zerotrace-agent.yaml > /opt/zerotrace-agent/var/log/zerotrace-agent-stdout.log 2>&1 &
+
+# 查看日志确认启动成功
+tail -f /opt/zerotrace-agent/var/log/zerotrace-agent.log
+```
+
+> **注意**：Agent 需要 root 权限运行（eBPF 采集需要），并且必须通过 `-f` 参数指定配置文件路径。
+
+### 6.5 验证运行状态
+
+```bash
+# 检查进程是否在运行
+ps aux | grep zerotrace-agent
+
+# 用 ctl 工具检查 Agent 状态（调试端口固定为 30033）
+./target/debug/zerotrace-agent-ctl -p 30033 cpu show
+```
+
+
+## 7. 常见问题
+
+### 7.1 Docker 服务启动失败：`process with PID XXXX is still running`
 
 残留的 dockerd 进程占用 pid 文件导致 systemd 无法启动新 daemon：
 
@@ -196,7 +271,7 @@ sudo rm -f /var/run/docker.pid
 sudo systemctl start docker
 ```
 
-### 6.2 执行编译命令后无任何输出
+### 7.2 执行编译命令后无任何输出
 
 可能原因及排查步骤：
 
@@ -229,7 +304,7 @@ docker run --privileged --rm -it \
     bash -c "cd /zerotrace && cargo build -v"
 ```
 
-### 6.3 权限不足
+### 7.3 权限不足
 
 如果遇到 permission denied：
 ```bash
