@@ -202,6 +202,11 @@ controller-port: 30035
 
 ## logfile path
 log-file: /opt/zerotrace-agent/var/log/zerotrace-agent.log
+
+ebpf:
+  profile:
+    on_cpu:
+      disabled: true
 ```
 
 ### 6.2 启动 Agent
