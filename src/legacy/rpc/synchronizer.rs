@@ -1880,6 +1880,40 @@ impl Synchronizer {
         let ntp_diff = self.ntp_diff.clone();
         let mut ntp_receiver = ntp_receiver.take().unwrap();
         self.threads.lock().push(self.runtime.spawn(async move {
+            // Explicitly register with the server before the first sync so the
+            // agent is associated with the correct org (derived from the API key).
+            // Extract all values before .await — RwLockReadGuard is not Send.
+            {
+                let (hostname, ctrl_ip, ctrl_mac, arch, os, kernel_version, revision, cpu_num, memory_size, boot_time) = {
+                    let agent_id = agent_id.read();
+                    let status = status.read();
+                    (
+                        status.hostname.clone(),
+                        agent_id.ipmac.ip.to_string(),
+                        agent_id.ipmac.mac.to_string(),
+                        static_config.env.arch.clone(),
+                        static_config.env.os.clone(),
+                        static_config.env.kernel_version.clone(),
+                        static_config.version_info.revision.clone(),
+                        static_config.env.cpu_num,
+                        static_config.env.memory_size,
+                        static_config.boot_time
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as u32,
+                    )
+                }; // guards dropped here — before .await
+                if let Err(e) = session.register_agent(
+                    &hostname, &ctrl_ip, &ctrl_mac,
+                    &arch, &os, &kernel_version, &revision,
+                    cpu_num, memory_size, boot_time,
+                )
+                .await
+                {
+                    warn!("agent registration failed (will retry on next sync): {e}");
+                }
+            }
+
             let mut grpc_failed_count = 0;
             while running.load(Ordering::SeqCst) {
                 let upgrade_hostname = |s: &str| {

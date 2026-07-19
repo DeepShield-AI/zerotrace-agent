@@ -435,6 +435,37 @@ impl Session {
         self.grpc_sync_inner(request, true).await
     }
 
+    /// Register the agent with the ZeroTrace server via HTTP POST /api/v1/agent/register.
+    /// This establishes the org association from the API key before the first sync,
+    /// so the agent appears under the correct org in multi-tenant deployments.
+    /// Returns Ok(()) on success, or an error string if registration fails.
+    pub async fn register_agent(
+        &self,
+        hostname: &str,
+        ctrl_ip: &str,
+        ctrl_mac: &str,
+        arch: &str,
+        os: &str,
+        kernel_version: &str,
+        revision: &str,
+        cpu_num: u32,
+        memory_size: u64,
+        boot_time: u32,
+    ) -> std::result::Result<(), String> {
+        self.update_current_server().await;
+        let fwd = match self.http_control_forwarder() {
+            Some(f) => f,
+            None => return Err("HTTP forwarder not available (gRPC-only mode)".into()),
+        };
+        match fwd.register(hostname, ctrl_ip, ctrl_mac, arch, os, kernel_version, revision, cpu_num, memory_size, boot_time).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                log::warn!("Agent registration failed (non-fatal): {e}");
+                Err(e.to_string())
+            },
+        }
+    }
+
     pub async fn grpc_upgrade_with_statsd(
         &self,
         request: agent::UpgradeRequest,
