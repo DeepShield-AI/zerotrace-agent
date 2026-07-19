@@ -33,7 +33,10 @@ pub struct Forwarder {
 
 impl Forwarder {
     pub fn new(cfg: ForwarderConfig) -> Result<Self> {
-        let client = reqwest::Client::builder().timeout(cfg.timeout).build()?;
+        let client = reqwest::Client::builder()
+            .timeout(cfg.timeout)
+            .http2_prior_knowledge()
+            .build()?;
         Ok(Self { client, cfg })
     }
 
