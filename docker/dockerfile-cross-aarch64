@@ -1,0 +1,49 @@
+# Cross-compile zerotrace-agent for aarch64 on x86_64
+# Uses the local rust-build:cached image — no external network dependency other than
+# yum repos for the aarch64 cross-compiler.
+FROM 47.97.67.233:5000/deepshield/rust-build:cached AS cross-builder
+
+ARG GITHUB_REF_NAME=dev
+
+# Install Zig as cross-compiler — it ships a complete sysroot for every target,
+# avoiding the broken CentOS 7 aarch64 headers.
+RUN curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz \
+    -o /tmp/zig.tar.xz && \
+    tar -xf /tmp/zig.tar.xz -C /usr/local && \
+    ln -s /usr/local/zig-linux-x86_64-0.13.0/zig /usr/local/bin/zig && \
+    zig version
+
+# Upgrade Rust to match rust-toolchain.toml (1.96.0) and add aarch64 target
+RUN cp -a /usr/local/rustup /tmp/rustup && \
+    cp -a /usr/local/cargo /tmp/cargo && \
+    RUSTUP_HOME=/tmp/rustup CARGO_HOME=/tmp/cargo rustup toolchain install 1.96.0 \
+        --profile minimal \
+        --component rustfmt \
+        --component clippy \
+        --component rust-src && \
+    RUSTUP_HOME=/tmp/rustup CARGO_HOME=/tmp/cargo rustup default 1.96.0 && \
+    rm -rf /usr/local/rustup /usr/local/cargo && \
+    mv /tmp/rustup /usr/local/rustup && \
+    mv /tmp/cargo /usr/local/cargo && \
+    rustup target add aarch64-unknown-linux-gnu
+
+# Create wrapper scripts for zig as cross-compiler/linker.
+# Translate Rust-style target triple (aarch64-unknown-linux-gnu) to
+# Zig-style (aarch64-linux-gnu) before invoking zig.
+RUN printf '#!/bin/sh\nARGS=$(echo " $* " | sed "s/ --target=aarch64-unknown-linux-gnu / --target=aarch64-linux-gnu /g")\nexec zig cc -target aarch64-linux-gnu $ARGS\n' > /usr/local/bin/aarch64-zig-cc && \
+    printf '#!/bin/sh\nARGS=$(echo " $* " | sed "s/ --target=aarch64-unknown-linux-gnu / --target=aarch64-linux-gnu /g")\nexec zig c++ -target aarch64-linux-gnu $ARGS\n' > /usr/local/bin/aarch64-zig-cxx && \
+    chmod +x /usr/local/bin/aarch64-zig-cc /usr/local/bin/aarch64-zig-cxx
+
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-zig-cc \
+    CC_aarch64_unknown_linux_gnu=aarch64-zig-cc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-zig-cxx \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true
+
+COPY . /zerotrace/
+WORKDIR /zerotrace/
+
+RUN cargo build --release --target aarch64-unknown-linux-gnu && \
+    cp target/aarch64-unknown-linux-gnu/release/zerotrace-agent /zerotrace-agent
+
+FROM scratch
+COPY --from=cross-builder /zerotrace-agent /
