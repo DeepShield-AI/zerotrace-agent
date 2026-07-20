@@ -235,7 +235,6 @@ ps aux | grep zerotrace-agent
 ./target/debug/zerotrace-agent-ctl -p 30033 cpu show
 ```
 
-
 ## 7. 常见问题
 
 ### 7.1 Docker 服务启动失败：`process with PID XXXX is still running`
