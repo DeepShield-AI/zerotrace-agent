@@ -169,44 +169,33 @@ docker run --privileged --rm -it \
               ↑ 仅编译有改动的文件
 ```
 
-### 清理缓存
-
-```bash
-# 清理编译产物（下次从头编译项目代码）
-rm -rf .docker-cache/target
-```
-
 ## 6. 运行 Agent
 
 编译完成后，需要申请 API Key 并配置 Agent 连接 ZeroTrace Server。
 
-### 6.1 申请 API Key
+### 6.1  创建配置文件
 
-在浏览器打开 `http://202.112.237.37:5173`，注册账号后申请 API Key，记下 Key 值。
-
-### 6.2 创建配置文件
-
-创建 `/etc/zerotrace-agent.yaml`，填入以下内容（将 `<YOUR_API_KEY>` 替换为上一步获取的 Key）：
+修改 `config/zerotrace-agent.yaml`，填入以下内容（<zerotrace-server ip>替换为真实ip）：
 
 ```yaml
 ## ingester addresses
 ingester_ip:
-  - 202.112.237.37
+  - <zerotrace-server ip>
 
 ## proxy controller
 proxy_controller_ip:
-  - 202.112.237.37
+  - <zerotrace-server ip>
 
 proxy_controller_port:
   - 30035
 
 ## analyzer
 analyzer_ip:
-  - 202.112.237.37
+  - <zerotrace-server ip>
 
 ## controller ip
 controller-ips:
-  - 202.112.237.37
+  - <zerotrace-server ip>
 
 ## controller listen port
 controller-port: 30035
@@ -214,33 +203,29 @@ controller-port: 30035
 ## logfile path
 log-file: /opt/zerotrace-agent/var/log/zerotrace-agent.log
 
-## API Key for authentication
-api_key: <YOUR_API_KEY>
+ebpf:
+  profile:
+    on_cpu:
+      disabled: true
 ```
 
-### 6.3 创建日志目录
-
-```bash
-sudo mkdir -p /opt/zerotrace-agent/var/log/
-```
-
-### 6.4 启动 Agent
+### 6.2 启动 Agent
 
 ```bash
 # 杀死可能存在的旧进程
 sudo pkill zerotrace-agent 2>/dev/null || true
 
 # 以 Managed 模式启动 Agent
-sudo RUST_LOG=info ./target/debug/zerotrace-agent \
-    -f /etc/zerotrace-agent.yaml > /opt/zerotrace-agent/var/log/zerotrace-agent-stdout.log 2>&1 &
+sudo ZT_DATA_VIA_HTTP=false RUST_LOG=info ./target/debug/zerotrace-agent \
+  -f config/zerotrace-agent.yaml > logs/test.log 2>&1
 
 # 查看日志确认启动成功
-tail -f /opt/zerotrace-agent/var/log/zerotrace-agent.log
+tail -f logs/test.log
 ```
 
 > **注意**：Agent 需要 root 权限运行（eBPF 采集需要），并且必须通过 `-f` 参数指定配置文件路径。
 
-### 6.5 验证运行状态
+### 6.3 验证运行状态
 
 ```bash
 # 检查进程是否在运行
@@ -249,7 +234,6 @@ ps aux | grep zerotrace-agent
 # 用 ctl 工具检查 Agent 状态（调试端口固定为 30033）
 ./target/debug/zerotrace-agent-ctl -p 30033 cpu show
 ```
-
 
 ## 7. 常见问题
 

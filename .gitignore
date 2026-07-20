@@ -34,3 +34,7 @@ logs/
 .vscode/
 .zed/
 ignored/
+src/collectors/ebpf/legacy/libs/jattach/build/
+src/collectors/ebpf/legacy/kernel/build/
+*.back
+

@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # ==================== 数据库 ====================
+  mysql:
+    image: mysql:8.0
+    container_name: df-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: deepflow
+      MYSQL_DATABASE: deepflow
+      MYSQL_USER: deepflow
+      MYSQL_PASSWORD: deepflow
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    command: |
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_connections=1000
+    restart: always
+    networks:
+      - deepflow
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: df-clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ./data/clickhouse:/var/lib/clickhouse
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    restart: always
+    networks:
+      - deepflow
+
+  # ==================== DeepFlow Server ====================
+  deepflow-server:
+    image: deepflowce/deepflow-server:v7.0
+    container_name: df-server
+    network_mode: "host"
+    environment:
+      DEEPFLOW_MODE: standalone
+      # MySQL 连接配置
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: deepflow
+      MYSQL_PASSWORD: deepflow
+      MYSQL_DATABASE: deepflow
+      # ClickHouse 连接配置
+      CK_HOST: 127.0.0.1
+      CK_PORT: 9000
+      CK_CLUSTER: default
+      # Server 监听 IP（物理机 IP）
+      CONTROLLER_IP: ${HOST_IP:-127.0.0.1}
+      # 日志
+      LOG_LEVEL: info
+    volumes:
+      - ./data/server:/deepflow/data
+      - ./data/log:/deepflow/log
+    depends_on:
+      mysql:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+    restart: always
+
+  # ==================== Grafana（Web 可视化） ====================
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: df-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: deepflow
+      GF_INSTALL_PLUGINS: deepflow-datasource  # DeepFlow 数据源插件
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning  # 可选：预置 datasource 和 dashboards
+    restart: always
+    networks:
+      - deepflow
+
+networks:
+  deepflow:
+    driver: bridge

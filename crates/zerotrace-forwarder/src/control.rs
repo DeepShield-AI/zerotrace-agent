@@ -8,9 +8,58 @@ use public::proto::agent::{
 };
 
 impl Forwarder {
+    /// Explicit agent registration — POST JSON to `/api/v1/agent/register`.
+    /// Must be called before the first sync so the server associates the agent
+    /// with the correct org (derived from the API key).
+    /// Returns Ok(()) on success (HTTP 2xx), or an error on failure.
+    pub async fn register(
+        &self,
+        hostname: &str,
+        ctrl_ip: &str,
+        ctrl_mac: &str,
+        arch: &str,
+        os: &str,
+        kernel_version: &str,
+        revision: &str,
+        cpu_num: u32,
+        memory_size: u64,
+        boot_time: u32,
+    ) -> Result<()> {
+        // Build JSON body manually — avoids adding serde_json dependency
+        // which isn't in the builder's cargo-chef cache.
+        let body = format!(
+            r#"{{"hostname":"{}","ctrl_ip":"{}","ctrl_mac":"{}","arch":"{}","os":"{}","kernel_version":"{}","process_name":"zerotrace-agent","revision":"{}","cpu_num":{},"memory_size":{},"boot_time":{},"type":3}}"#,
+            json_escape(hostname),
+            json_escape(ctrl_ip),
+            json_escape(ctrl_mac),
+            json_escape(arch),
+            json_escape(os),
+            json_escape(kernel_version),
+            json_escape(revision),
+            cpu_num,
+            memory_size,
+            boot_time,
+        );
+        let resp = self
+            .authed(self.client.post(self.url("/api/v1/agent/register")))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(ForwarderError::StatusWithBody(status.as_u16(), text));
+        }
+        log::info!(
+            "Agent registered: {ctrl_ip} ({hostname}) arch={arch} os={os} cpu={cpu_num}",
+        );
+        Ok(())
+    }
+
     /// Config sync — POST a `SyncRequest`, receive a `SyncResponse`. Replaces the gRPC
     /// `Synchronizer.Sync`; the server reuses the exact trisolaris processing logic.
-    /// Periodic calls also serve as registration + heartbeat (as in the gRPC model).
+    /// Periodic calls also serve as heartbeat.
     pub async fn sync(&self, req: &SyncRequest) -> Result<SyncResponse> {
         self.post_proto("/api/v1/agent/sync", req).await
     }
@@ -110,4 +159,20 @@ impl Forwarder {
         let bytes = resp.bytes().await?;
         Ok(Resp::decode(bytes)?)
     }
+}
+
+/// Minimal JSON string escaping: escape backslash and double-quote.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+    out
 }

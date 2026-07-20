@@ -109,7 +109,7 @@ futures = "0.3"
 grpc = { path = "crates/plugins/grpc" }
 hex = "0.4"
 hostname = "0.3"
-hpack = { git = "https://github.com/deepflowio/hpack-rs/" }
+hpack = { path = "crates/vendor-hpack" }
 http = "0.2"
 http2 = { path = "crates/plugins/http2" }
 humantime = "2.1"
@@ -171,7 +171,7 @@ zstd = "0.13"
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 cgroups-rs = "0.2"
 nix = "0.23"
-procfs = { git = "https://github.com/deepflowio/procfs/" }
+procfs = { path = "crates/vendor-procfs" }
 reorder = { path = "crates/plugins/reorder" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

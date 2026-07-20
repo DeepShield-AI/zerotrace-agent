@@ -2533,7 +2533,7 @@ impl Default for Communication {
             request_via_nat_ip: false,
             // HTTP is the default transport now; set ZT_DATA_VIA_HTTP=false to fall
             // back to the legacy gRPC/TCP path (kept until it is removed).
-            data_via_http: true,
+            data_via_http: false,
             data_http_port: 30417,
             api_key: "".to_string(),
         }
