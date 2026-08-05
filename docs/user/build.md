@@ -219,6 +219,11 @@ sudo pkill zerotrace-agent 2>/dev/null || true
 sudo ZT_DATA_VIA_HTTP=false RUST_LOG=info ./target/debug/zerotrace-agent \
   -f config/zerotrace-agent.yaml > logs/test.log 2>&1
 
+# 启动 k8s 数据采集
+# 需先根据 k8s采集配置文件 (./k8s-collection.md) 修改配置
+sudo K8S_WATCH_POLICY=watch-only ZT_DATA_VIA_HTTP=false RUST_LOG=info \
+ ./target/debug/zerotrace-agent -f config/zerotrace-agent.yaml > logs/test.log 2>&1
+
 # 查看日志确认启动成功
 tail -f logs/test.log
 ```

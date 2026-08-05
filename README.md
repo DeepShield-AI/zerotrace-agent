@@ -24,6 +24,7 @@ Internal architecture uses a modular pipeline of collectors, processors, and rep
 | Document | Location |
 |----------|----------|
 | Build Guide | [docs/user/build.md](docs/user/build.md) |
+| k8s Collection Guide | [docs/user/k8s-collection.md](docs/user/k8s-collection.md) |
 | Developer Guide | [docs/dev/DEVELOPER_GUIDE.md](docs/dev/DEVELOPER_GUIDE.md) |
 | Contribution Guide | [docs/dev/CONTRIBUTING.md](docs/dev/CONTRIBUTING.md) |
 | Architecture | [docs/design/](docs/design/) |
