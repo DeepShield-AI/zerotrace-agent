@@ -22,6 +22,11 @@ use log::error;
 use signal_hook::{consts::TERM_SIGNALS, iterator::Signals};
 use std::{panic, path::Path};
 
+#[cfg(windows)]
+const DEFAULT_CONFIG_FILE: &str = "zerotrace-agent.yaml";
+#[cfg(not(windows))]
+const DEFAULT_CONFIG_FILE: &str = "/etc/zerotrace-agent.yaml";
+
 #[derive(Parser)]
 struct Opts {
     /// Specify config file location
@@ -29,7 +34,7 @@ struct Opts {
         short = 'f',
         visible_short_alias = 'c',
         long,
-        default_value = "/etc/zerotrace-agent.yaml"
+        default_value = DEFAULT_CONFIG_FILE
     )]
     config_file: String,
 
@@ -90,7 +95,20 @@ fn wait_on_signals() {
 
 // windows系统
 #[cfg(windows)]
-fn wait_on_signals() {}
+fn wait_on_signals() {
+    // An empty implementation makes the Windows process start and immediately
+    // return from main. Wait for Ctrl+C/Ctrl+Break like the Unix implementation
+    // waits for SIGTERM.
+    let (tx, rx) = std::sync::mpsc::channel();
+    if let Err(err) = ctrlc::set_handler(move || {
+        let _ = tx.send(());
+    }) {
+        log::error!("failed to install Windows console handler: {err}");
+        std::thread::park();
+        return;
+    }
+    let _ = rx.recv();
+}
 
 // 版本信息
 const VERSION_INFO: &'static trident::VersionInfo = &trident::VersionInfo {

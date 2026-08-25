@@ -189,6 +189,10 @@ trace-utils = { path = "crates/legacy/trace-utils" }
 zerotrace-forwarder = { path = "crates/zerotrace-forwarder" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# Windows-specific platform code uses the legacy WinAPI bindings directly.
+ctrlc = "3"
+winapi = { version = "0.3", features = ["minwindef", "libloaderapi"] }
+zerotrace-forwarder = { path = "crates/zerotrace-forwarder" }
 windows = { version = "0.30", features = [
     "Win32_Foundation",
     "Win32_System_Diagnostics_ToolHelp",
