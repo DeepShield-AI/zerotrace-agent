@@ -15,6 +15,9 @@
  */
 
 extern crate libc;
+
+// trace-utils is Linux/eBPF-only and is not part of the Windows build.
+#[cfg(target_os = "linux")]
 extern crate trace_utils;
 
 pub use libc::c_uchar; // u8

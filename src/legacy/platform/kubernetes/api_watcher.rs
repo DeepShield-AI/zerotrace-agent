@@ -200,7 +200,8 @@ impl ApiWatcher {
                 false
             },
         };
-        if !enabled || !running_in_container() {
+        // if !enabled || !running_in_container() {
+        if !enabled {
             return;
         }
 
