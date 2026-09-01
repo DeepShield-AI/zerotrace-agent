@@ -2,6 +2,8 @@
 
 本文档介绍如何使用 Docker 编译 `zerotrace-agent` 和 `zerotrace-agent-ctl`，无需配置本地 Rust 环境。
 
+Windows 安装、Npcap 依赖、配置和运行方式请参阅 [Windows 部署指南](./windows-deployment.md)。
+
 ## 1. 安装 Docker
 
 如果系统尚未安装 Docker，请按以下步骤安装。
@@ -146,6 +148,45 @@ docker run --privileged --rm -it \
 ```
 
 产物路径：`target/release/zerotrace-agent`、`target/release/zerotrace-agent-ctl`
+
+### 4.4 编译 Windows x64 版本
+
+Windows 版本使用 GNU 目标进行交叉编译。以下命令在 Ubuntu/Debian Linux 主机上执行：
+
+```bash
+# 安装 MinGW 工具链
+sudo apt-get update
+sudo apt-get install -y \
+  gcc-mingw-w64-x86-64 \
+  binutils-mingw-w64-x86-64 \
+  unzip
+
+# 安装 Rust Windows GNU 目标
+rustup target add x86_64-pc-windows-gnu
+
+# 下载并解压 Npcap SDK（提供 wpcap.lib）
+curl -L -o /tmp/npcap-sdk.zip https://npcap.com/dist/npcap-sdk-1.15.zip
+mkdir -p /tmp/npcap-sdk
+unzip -q /tmp/npcap-sdk.zip -d /tmp/npcap-sdk
+
+# 编译（需要 Npcap SDK 的 x64 导入库）
+export NpcapSdk=/tmp/npcap-sdk
+export CARGO_TARGET_DIR=/tmp/zerotrace-target
+export RUSTFLAGS="-C force-frame-pointers=yes -L native=$NpcapSdk/Lib/x64"
+export LIBPCAP_VER=1.10.6
+export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc-posix
+
+cargo build --release \
+  --target x86_64-pc-windows-gnu \
+  --no-default-features
+
+mkdir -p dist/windows
+cp "$CARGO_TARGET_DIR/x86_64-pc-windows-gnu/release/zerotrace-agent.exe" dist/windows/
+cp "$CARGO_TARGET_DIR/x86_64-pc-windows-gnu/release/zerotrace-agent-ctl.exe" dist/windows/
+cp config/zerotrace-agent-windows.yaml dist/windows/zerotrace-agent.yaml
+```
+
+Windows 运行时必须安装 Npcap，并确保 `wpcap.dll` 和 `Packet.dll` 可被 Agent 加载。
 
 ## 5. 编译参数说明
 
