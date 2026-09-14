@@ -363,15 +363,17 @@ pub fn get_ctrl_ip_and_mac(dest: &IpAddr) -> Result<(IpAddr, MacAddr)> {
                 _ => vec![],
             },
         };
-        // 筛选全局单播 IP (忽略 127.0.0.1 等本地地址)
+        // 筛选全局单播 IP，并优先选择与 Controller 地址相同地址族的 IP。
+        // Windows 网卡通常同时拥有 IPv4/IPv6 地址；如果 Controller 是 IPv4，
+        // 不能因为 GetAdaptersAddresses 返回顺序而把 IPv6 地址用作 Agent 身份。
         for ip in ips {
-            if is_global(&ip) {
+            if is_global(&ip) && ip.is_ipv4() == dest.is_ipv4() {
                 return Ok((ip, link.mac_addr));
             }
         }
         return Err(Error::Environment(format!(
-            "interface {} in env {} does not have valid ip address",
-            name, ENV_INTERFACE_NAME
+            "interface {} in env {} does not have a valid IP address matching controller {}",
+            name, ENV_INTERFACE_NAME, dest
         )));
     };
     // 使用 K8s Node IP
