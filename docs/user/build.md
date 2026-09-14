@@ -212,7 +212,7 @@ Windows 运行时必须安装 Npcap，并确保 `wpcap.dll` 和 `Packet.dll` 可
 
 ## 6. 运行 Agent
 
-编译完成后，需要申请 API Key 并配置 Agent 连接 ZeroTrace Server。
+编译完成后，需配置 Agent 连接 ZeroTrace Server。
 
 ### 6.1  创建配置文件
 
