@@ -16,11 +16,9 @@
 
 use super::{Addr, Error, Link, LinkFlags, MacAddr, NeighborEntry, Result, Route};
 use crate::{enums::IfType, utils::WIN_ERROR_CODE_STR};
-use log::{debug, trace, warn};
-use pcap;
+use log::{debug, warn};
 use regex::Regex;
 use std::{
-    ffi::CStr,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     ptr,
 };
@@ -386,22 +384,17 @@ pub fn route_get(dest_addr: IpAddr) -> Result<Route> {
 }
 
 fn get_pcap_interfaces() -> Result<Vec<Link>> {
-    let devices = pcap::Device::list()
-        .map_err(|e| Error::Windows(format!("list pcap interfaces failed: {}", e)))?;
-    let adapters = get_adapters_addresses().map(|(adapters, _)| adapters)?;
-    let mut pcap_interfaces = vec![];
-    for device in devices {
-        if let Some(link) = adapters
-            .iter()
-            .find(|&l| !&l.adapter_id.is_empty() && device.name.contains(&l.adapter_id))
-        {
-            let mut _link = link.clone();
-            _link.device_name = device.name;
-            pcap_interfaces.push(_link);
-        }
+    // pcap::Device::list() decodes both the device name and description as UTF-8.
+    // Npcap returns descriptions in the Windows ANSI code page on older systems,
+    // so localized descriptions (for example, Chinese adapter names on Server 2012 R2)
+    // make the whole device list fail with InvalidString. Npcap device names are
+    // deterministic and use the adapter GUID, which GetAdaptersAddresses exposes as
+    // adapter_id, so construct the capture name without decoding the description.
+    let (mut adapters, _) = get_adapters_addresses()?;
+    for link in adapters.iter_mut() {
+        link.device_name = format!(r"\Device\NPF_{}", link.adapter_id);
     }
-
-    Ok(pcap_interfaces)
+    Ok(adapters)
 }
 
 // Link { if_index: 6, mac_addr: 00:15:5d:70:01:03, adapter_uid: "{1AF9CCBA-3FEE-4CD1-810F-3761F8A4DE25}", name: "vEthernet (NAT-VM)", if_type: Some("ethernet"), peer_index: None }

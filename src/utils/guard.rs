@@ -87,8 +87,8 @@ impl SystemLoadGuard {
         system_load_circuit_breaker_recover: f32,
         system_load_circuit_breaker_metric: SystemLoadMetric,
     ) {
-        if system_load_circuit_breaker_threshold == 0.0 ||
-            system_load_circuit_breaker_recover == 0.0
+        if system_load_circuit_breaker_threshold == 0.0
+            || system_load_circuit_breaker_recover == 0.0
         {
             self.last_exceeded = Duration::ZERO;
             self.exception_handler.clear(Exception::SystemLoadCircuitBreaker);
@@ -356,8 +356,8 @@ impl Guard {
         };
         let cgroup_proc_path = cgroup_mount_path.as_ref().join(proc_path).to_owned();
         let cgroup_task_path = cgroup_mount_path.as_ref().join(task_path).to_owned();
-        check_file(cgroup_proc_path.to_str().unwrap()) &&
-            check_file(cgroup_task_path.to_str().unwrap())
+        check_file(cgroup_proc_path.to_str().unwrap())
+            && check_file(cgroup_task_path.to_str().unwrap())
     }
 
     fn check_cpu(system: Arc<Mutex<System>>, pid: Pid, cpu_limit: u32) -> bool {
@@ -444,15 +444,15 @@ impl Guard {
             match get_disk_usage(&directory) {
                 Ok((total, free)) => {
                     let free_percentage = free as f64 * 100.0 / total as f64;
-                    if free_percentage < percentage_trigger_threshold as f64 ||
-                        free < absolute_trigger_threshold
+                    if free_percentage < percentage_trigger_threshold as f64
+                        || free < absolute_trigger_threshold
                     {
                         exception_handler.set(Exception::FreeDiskCircuitBreaker);
                         return;
                     }
 
-                    if free_percentage > percentage_trigger_threshold as f64 * 1.1 &&
-                        free as f64 > absolute_trigger_threshold as f64 * 1.1
+                    if free_percentage > percentage_trigger_threshold as f64 * 1.1
+                        && free as f64 > absolute_trigger_threshold as f64 * 1.1
                     {
                         exception_handler.clear(Exception::FreeDiskCircuitBreaker);
                     }
@@ -760,10 +760,28 @@ impl Guard {
                     break;
                 }
                 feed.add(FeedTitle::WaitTimeout);
-                rg = notifier.wait_timeout(rg, config.guard_interval).unwrap().0;
-                if !*rg {
-                    break;
+                #[cfg(not(target_os = "windows"))]
+                {
+                    rg = notifier.wait_timeout(rg, config.guard_interval).unwrap().0;
+                    if !*rg {
+                        break;
+                    }
                 }
+                #[cfg(target_os = "windows")]
+                {
+                    // On Windows, Condvar::wait_timeout can remain blocked far
+                    // beyond its requested duration (notably after Npcap/config
+                    // activity). The guard watchdog then mistakes this normal
+                    // wait for a dead guard thread and terminates the agent.
+                    // Use a bounded sleep and reacquire the state lock instead.
+                    drop(rg);
+                    thread::sleep(config.guard_interval);
+                    rg = running.lock().unwrap();
+                    if !*rg {
+                        break;
+                    }
+                }
+
             }
             info!("guard exited");
         }).unwrap();
